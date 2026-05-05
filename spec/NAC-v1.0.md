@@ -1,0 +1,434 @@
+# NAC v1.0 -- Navegabilidad Automatica Compliance
+
+> A design norm for user interfaces that lets AI agents, voice
+> assistants, RPA bots and automated test runners navigate, fill,
+> operate and verify the system as if they were human users -- without
+> reading the source code, without fragile selectors, without manual
+> test scripts.
+
+**Status**: Stable.
+**Version**: 1.0.
+**Date**: 2026-05-05.
+**Authors**: Pablo Kuschnirof (lead), Sumi (collaboration).
+**License**: MIT.
+
+---
+
+## 1. Why NAC exists
+
+Modern software UIs are built for humans first and machines second. As
+a result:
+
+- Automated tests rely on fragile CSS selectors that break on every
+  refactor.
+- AI assistants cannot reliably operate a UI on behalf of the user.
+- RPA bots require costly per-app training and maintenance.
+- Coverage of E2E test suites rarely exceeds 50% because writing
+  specs manually does not scale with feature velocity.
+- Voice control requires bespoke wiring per surface.
+
+NAC reverses the polarity: a UI that complies with NAC v1.0 publishes
+its own contract -- semantic IDs, roles, states, events, and a
+programmatic API -- so any AI agent or automation tool can introspect,
+operate and verify it without privileged access. Compliant systems are
+testable end-to-end at near-100% coverage with auto-generated specs
+plus AI-guided exploration. Non-compliant systems are not.
+
+The norm is platform-agnostic: it can be implemented in any web or
+native UI stack that reaches a DOM-like accessible tree. This document
+describes the contract; reference implementations live in `js/`,
+`validator/`, and `runner/` of this repository.
+
+---
+
+## 2. Terminology
+
+- **Plugin**: any self-contained UI surface that follows the contract.
+  In a SPA, a plugin is typically a modal, drawer, or routed view. In
+  a desktop app, a plugin is a window or panel. In a mobile app, a
+  plugin is a screen.
+- **Element**: any interactive or informative DOM node addressable by
+  the contract: a form field, a button, a tab, a row, a KPI, a chart,
+  a region.
+- **Manifest**: the JSON document that a plugin publishes describing
+  every element it exposes. Source of truth for runtime validation
+  and test generation.
+- **Operator**: any external agent (human assistant, AI model, RPA
+  bot, test runner) that operates the UI through the NAC API.
+
+---
+
+## 3. The seven pillars (P1..P7)
+
+A UI surface that claims compliance with NAC v1.0 MUST satisfy all
+seven pillars listed below. The compliance level (NAC-1 / NAC-2 /
+NAC-3) declares how many pillars are satisfied (see section 6).
+
+### P1 -- Stable identity
+
+Every navigable element MUST expose `data-nac-id` containing a
+semantic, stable, plugin-namespaced identifier.
+
+- Semantic: human-readable, expresses intent (`apply_all`, not
+  `btn_3`).
+- Stable: identical across re-renders, page refreshes, theme switches,
+  locale changes.
+- Plugin-namespaced: scoped under `data-nac-plugin` attribute on the
+  plugin root, so identical IDs in different plugins do not collide.
+- Not auto-generated, not UUID, not timestamp-derived.
+
+```html
+<div data-nac-plugin="patch_manager" data-nac-state="ready">
+  <button data-nac-id="apply_all" data-nac-role="action">Apply all</button>
+  <input  data-nac-id="log.search" data-nac-role="field" data-nac-field-type="text">
+</div>
+```
+
+### P2 -- Roles and semantics
+
+Every NAC-tagged element MUST declare `data-nac-role` from the
+canonical vocabulary:
+
+| Role                  | Purpose                                          |
+|-----------------------|--------------------------------------------------|
+| `view`                | Top-level routed view                            |
+| `region`              | Logical group inside a plugin                    |
+| `field`               | Input control accepting user data                |
+| `action`              | Button / link that dispatches an operation       |
+| `tab`                 | Tab strip member                                 |
+| `row`                 | Repeating list/table row                         |
+| `cell`                | Cell inside a row                                |
+| `kpi`                 | Read-only metric card                            |
+| `chart`               | Visualization                                    |
+| `toolbar`             | Filter / search / sort container                 |
+| `feedback`            | Toast, alert, inline error                       |
+| `modal-mode-button`   | Visualization mode switcher (modal/max/tab/win)  |
+
+Fields MUST also declare `data-nac-field-type` from:
+
+`text` `number` `date` `datetime` `select` `multi` `checkbox` `radio`
+`file` `signature` `geo` `barcode` `richtext` `password`
+
+Actions MUST declare `data-nac-action` with a verb identifier
+(`submit`, `cancel`, `apply`, `retry`, `refresh`, `next`, `prev`,
+`delete`, `confirm`, `dismiss`, etc.). The verb is plugin-internal,
+human-readable, and matches the manifest entry.
+
+### P3 -- State exposed
+
+Every NAC-tagged element MUST expose its current state through
+`data-nac-state` from:
+
+`idle` `loading` `disabled` `invalid` `success` `error` `dirty`
+`pristine` `empty` `ready`
+
+Validation errors MUST expose `data-nac-error` containing a stable
+i18n key plus the localized message. Example:
+
+```html
+<input data-nac-id="email" data-nac-role="field" data-nac-field-type="text"
+       data-nac-state="invalid"
+       data-nac-error="cc.users.email_invalid|Email no valido">
+```
+
+The plugin root MUST expose `data-nac-plugin-state` from:
+`loading` `ready` `error` `empty` `partial`.
+
+### P4 -- Published events
+
+Plugins MUST emit standardized events on `document`. The event name
+follows `nac:{category}:{phase}`. Required event payload shape:
+
+```js
+{ plugin: 'patch_manager', nac_id: 'apply_all', value?: any,
+  error?: string, timestamp: 1714904100123 }
+```
+
+Required events:
+
+| Event                       | When                                       |
+|-----------------------------|--------------------------------------------|
+| `nac:plugin:opening`        | Plugin starts mounting                     |
+| `nac:plugin:opened`         | Plugin reached `ready` state               |
+| `nac:plugin:closing`        | Plugin starts unmounting                   |
+| `nac:plugin:closed`         | Plugin fully removed                       |
+| `nac:field:focused`         | Focus on a field                           |
+| `nac:field:changed`         | Field value changed by user or programmatic|
+| `nac:field:validated`       | Validation completed (success or error)    |
+| `nac:action:dispatching`    | Action click started side effect           |
+| `nac:action:succeeded`      | Side effect completed without error        |
+| `nac:action:failed`         | Side effect failed                         |
+| `nac:tab:changed`           | Active tab switched                        |
+| `nac:row:selected`          | Row selected/clicked                       |
+| `nac:feedback:shown`        | Toast / alert / inline message rendered    |
+
+Operators MAY listen to these events to drive workflows. Implementors
+MAY add custom events under the same namespace without breaking
+compliance.
+
+### P5 -- Programmatic API
+
+Compliant systems MUST expose `window.NAC` (or equivalent global in
+non-browser contexts) implementing this contract:
+
+```typescript
+interface NAC {
+  describe(): NacSnapshot;
+  list(role?: NacRole): NacElement[];
+  find(nac_id: string): NacElement | null;
+  click(nac_id: string): Promise<NacResult>;
+  fill(nac_id: string, value: any): Promise<NacResult>;
+  select(nac_id: string, option: string | string[]): Promise<NacResult>;
+  tab(plugin: string, tab_key: string): Promise<NacResult>;
+  read_feedback(): NacFeedback[];
+  wait_for(event: string, timeout_ms?: number): Promise<NacEvent>;
+  screenshot(): Promise<string>;        // base64 PNG / SVG
+  snapshot_state(): NacStateSnapshot;
+  manifest(plugin?: string): NacManifest | NacManifest[];
+  set_mode(mode: 'modal'|'maximized'|'new_tab'|'new_window'): void;
+}
+```
+
+The API MUST resolve `nac_id` first inside the active plugin, then
+fall back to global lookup. Operations on missing IDs MUST throw a
+typed `NacError` containing `code: 'not_found' | 'disabled' |
+'invalid' | 'timeout'`.
+
+### P6 -- i18n + accessibility
+
+NAC does not replace ARIA -- it complements it. Every element with a
+`data-nac-id` MUST also expose:
+
+- `aria-label` (or `aria-labelledby`) containing the localized,
+  human-readable label.
+- For inputs: associated `<label for="...">` or `aria-labelledby`.
+- For tabs: `role="tab"` and `aria-selected`.
+- For modals: `role="dialog"` and a working focus trap.
+
+Color contrast MUST meet WCAG AA. NAC linters MAY enforce this.
+
+### P7 -- Manifest declared
+
+Every plugin MUST publish a `manifest_nac` object describing its
+entire NAC surface. The manifest is:
+
+- Static at registration time (declarative, JSON-serializable).
+- Available via `NAC.manifest(plugin_slug)`.
+- Validated by the NAC runtime against the rendered DOM. Drift
+  (manifest declares an ID not present in DOM, or DOM emits an ID not
+  declared in manifest) is a CI blocker.
+
+Manifest schema:
+
+```typescript
+interface NacManifest {
+  plugin_slug: string;          // unique within the host system
+  version: string;              // semver of the plugin
+  i18n_namespace: string;       // e.g. 'cc.patch_manager'
+  needs_admin?: boolean;
+  size_hint?: 'small'|'medium'|'large'|'auto';
+  fields:   NacField[];
+  actions:  NacAction[];
+  tabs?:    NacTab[];
+  kpis?:    NacKpi[];
+  rows?:    NacRowDef;
+  charts?:  NacChart[];
+  modes_supported?: ('modal'|'maximized'|'new_tab'|'new_window')[];
+}
+
+interface NacField {
+  nac_id: string;
+  type: 'text'|'number'|'date'|'datetime'|'select'|'multi'|
+        'checkbox'|'radio'|'file'|'signature'|'geo'|
+        'barcode'|'richtext'|'password';
+  required?: boolean;
+  options?: string[] | { value: string, label_i18n: string }[];
+  validation?: { regex?: string, min?: number, max?: number };
+  label_i18n: string;
+}
+
+interface NacAction {
+  nac_id: string;
+  verb: string;
+  label_i18n: string;
+  destructive?: boolean;
+  needs_confirm?: boolean;
+}
+
+interface NacTab {
+  nac_id: string;
+  label_i18n: string;
+  default_active?: boolean;
+}
+
+interface NacKpi {
+  nac_id: string;
+  label_i18n: string;
+  unit?: string;
+  format?: 'integer'|'decimal'|'percent'|'currency'|'duration';
+}
+
+interface NacRowDef {
+  nac_id: string;
+  cells: { nac_id: string, label_i18n: string,
+           format?: NacKpi['format'] }[];
+  actions?: NacAction[];   // per-row actions
+}
+```
+
+---
+
+## 4. Lifecycle and cardinality
+
+A plugin in NAC has the following observable lifecycle:
+
+```
+[register]   --> manifest_nac exposed via NAC.manifest()
+[opening]    --> mount started; data-nac-plugin-state='loading'
+[opened]     --> data-nac-plugin-state='ready' or 'empty';
+                 nac:plugin:opened fired
+[interact]   --> any combination of fill / click / tab / select
+[closing]    --> nac:plugin:closing
+[closed]     --> plugin removed from DOM; nac:plugin:closed
+```
+
+Multiple plugin instances MAY coexist (e.g. two modals stacked). NAC
+addresses them with a synthetic `instance_id` appended to operations
+when ambiguous: `NAC.click('apply_all', { plugin: 'patch_manager',
+instance_id: 'i_2' })`.
+
+---
+
+## 5. Security boundaries
+
+NAC is a UX contract, NOT an authorization mechanism. The presence of
+`data-nac-id="delete_user"` on the page does not grant the operator
+permission to call it -- the server still checks the JWT and admin
+key on the underlying request.
+
+Compliant systems MUST:
+
+- Never expose secrets in `data-nac-*` attributes.
+- Never trust `NAC.click` / `fill` more than they trust the
+  equivalent human action -- the operator runs in the same browser
+  context with the same session.
+- Treat `NAC.set_mode('new_tab')` / `('new_window')` as inheriting
+  the parent session via shared origin storage. Cross-tab logout
+  must propagate (see `examples/cross_tab_logout.md`).
+
+---
+
+## 6. Compliance levels
+
+| Level   | Pillars satisfied | Allowed in            |
+|---------|-------------------|-----------------------|
+| NAC-0   | none              | -- (forbidden)        |
+| NAC-1   | P1 + P2 + P3      | dev / sandbox only    |
+| NAC-2   | P1..P5            | sandbox / pre-prod    |
+| NAC-3   | P1..P7            | production            |
+
+A plugin's compliance level is the minimum of:
+- The lowest pillar number where the plugin still satisfies all prior.
+- The result of the validator on the latest CI run.
+
+Implementors MAY publish a public `NAC_REGISTRY.md` listing every
+plugin's level. This repository's own systems do exactly that under
+`docs/NAC_REGISTRY.md`.
+
+The official NAC badge image (SVG) is published under
+`docs/badge/nac-{level}.svg` for embedding in READMEs.
+
+---
+
+## 7. Operator semantics
+
+Operators interact with compliant systems following these guarantees:
+
+1. **Idempotent reads**: `describe`, `list`, `find`, `manifest`,
+   `snapshot_state`, `read_feedback`, `screenshot` produce no side
+   effects.
+2. **Awaitable writes**: `click`, `fill`, `select`, `tab`,
+   `set_mode` return promises that resolve only after the
+   corresponding event fires. Timeouts default to 5000 ms and MAY be
+   tuned via `NAC.config.default_timeout_ms`.
+3. **State observability**: after any write, `snapshot_state` MUST
+   reflect the new state before the next operator step starts.
+4. **Failure visibility**: when an operation fails (`nac:action:
+   failed`, validation error, missing element), `NAC.read_feedback()`
+   MUST return a structured payload describing the failure. Silent
+   failures are non-compliant.
+
+---
+
+## 8. Test generation contract
+
+Compliant systems enable automated test generation. A NAC-aware
+runner MAY consume the manifest and produce, without manual scripting:
+
+- **Smoke tests**: each plugin opens, reaches `ready`, no
+  `nac:action:failed` events fire spontaneously.
+- **Field tests**: each field accepts a valid value, rejects an
+  invalid value, emits the right validation event.
+- **Action tests**: each action dispatches and either succeeds
+  idempotently or surfaces a structured error.
+- **Tab tests**: every tab activates, switches `data-nac-state`, fires
+  `nac:tab:changed`.
+- **KPI tests**: every KPI renders a non-null value matching its
+  declared format.
+- **Row CRUD**: when `rows` is declared, create/edit/delete cycles
+  exercise the row actions and assert backend state via the system's
+  own data API.
+
+Reference runner lives in `runner/` of this repository.
+
+---
+
+## 9. Voice and natural language
+
+Voice operators MAY map a transcribed utterance to NAC operations
+using the manifest's `label_i18n` fields and the active locale. NAC
+v1.0 does not mandate a specific NLU pipeline -- any model that
+consumes the manifest and returns a structured `NacOp` is compliant.
+
+A reference voice-to-NAC adapter is provided in
+`examples/voice_to_nac.md`.
+
+---
+
+## 10. Compatibility and versioning
+
+NAC follows semver:
+
+- **MAJOR**: breaking changes to the API or attribute names.
+- **MINOR**: new pillars or roles added without breaking existing
+  plugins.
+- **PATCH**: clarifications, doc updates, non-normative additions.
+
+Plugins MAY declare the NAC version they target via
+`manifest_nac.nac_version`. Runtimes MUST refuse to validate plugins
+whose declared version is newer than the runtime supports.
+
+---
+
+## 11. Trademark and citation
+
+NAC and the badge logo are unregistered trademarks of the authors
+released under MIT. Forks and derivatives are encouraged. Citation:
+
+```
+NAC v1.0 -- Navegabilidad Automatica Compliance.
+Pablo Kuschnirof, Sumi. 2026. MIT License.
+https://github.com/<TBD-after-publish>/nac-spec
+```
+
+---
+
+## 12. Glossary of acronyms
+
+- **NAC**: Navegabilidad Automatica Compliance.
+- **RPA**: Robotic Process Automation.
+- **WCAG**: Web Content Accessibility Guidelines.
+- **ARIA**: Accessible Rich Internet Applications.
+- **i18n**: internationalization.
+
+End of NAC v1.0 normative document.
