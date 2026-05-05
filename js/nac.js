@@ -128,7 +128,21 @@
       label:      el.getAttribute('aria-label')
                 || (el.id && document.querySelector('label[for="' + el.id + '"]')
                        ? document.querySelector('label[for="' + el.id + '"]').textContent.trim()
-                       : null),
+                       : null)
+                /* Fallback for KPI/feedback/static elements: look for an
+                   inner labeled child by convention. Resolves the case
+                   where the visible label is rendered as a child node
+                   (e.g. <div class="yj-kpi-label">Applied</div>) without
+                   aria-label on the wrapper. NAC v1.0 P6 still requires
+                   aria-label for inputs and actions; this fallback only
+                   helps observability (NAC.list / describe). */
+                || (function () {
+                       const inner = el.querySelector('[data-nac-role="label"], .yj-kpi-label, .yj-tab-label');
+                       if (inner && inner.textContent) return inner.textContent.trim();
+                       /* Last resort: trim el's own textContent capped at 80 chars. */
+                       const t = (el.textContent || '').trim();
+                       return t ? t.slice(0, 80) : null;
+                   })(),
       value:      _readElementValue(el),
       visible:    _isVisible(el),
       disabled:   el.disabled === true || el.getAttribute('aria-disabled') === 'true',
