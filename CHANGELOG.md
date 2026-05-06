@@ -20,7 +20,41 @@ Versioning conventions for the spec:
 
 ## [Unreleased]
 
-Nothing yet.
+### Documented
+
+- **`docs/IMPACT_RPA.md`** (new) -- long-form treatment of how
+  NAC changes the economics of an RPA factory. Covers the
+  selector-driven status quo, the five concrete savings (no
+  more selector hunting, no more redesign breakage, no more
+  flake, no more screenshot scraping, no more double
+  maintenance with QA), an incremental migration path from an
+  existing UiPath / Automation Anywhere / Power Automate
+  factory, and the comparative table against XPath, image/OCR,
+  vision-LLM agents and recorders.
+- **`docs/IMPACT_TESTING.md`** (new) -- parallel treatment for
+  QA automation. Covers what stops being a test problem under
+  NAC (selector maintenance, race-condition flake,
+  localisation breakage, theme/redesign breakage,
+  cross-framework portability), what NAC explicitly does NOT
+  change (unit tests, visual regression, accessibility audits,
+  performance), the migration path for an existing
+  Playwright/Cypress/Selenium suite, and the test-pyramid
+  reshape that follows.
+- **`README.md`** -- new "Impact on RPA and automated testing"
+  section pointing at the two new docs.
+- **`docs/MANUAL.md`** -- "Testing with the runner" section
+  cross-references `IMPACT_TESTING.md` and `IMPACT_RPA.md`.
+
+### Demo
+
+- **`yujin.app/nac-spec/example.php`** -- v1.1 widget extensions
+  exercised end to end: tabs, accordion, combobox autocomplete,
+  slider with live readout, sortable / filterable / paginated
+  table, drag-and-drop between two lists, file dropzone with
+  simulated upload progress. Driver API extensions added on
+  `window.NAC` (`expand`, `collapse`, `set_slider`, `sort`,
+  `go_to_page`, `drag_drop`). Chat NLU extended with phrases
+  for the new widgets. Asset cache buster bumped to `v2`.
 
 ## [1.1.0] - 2026-05-06
 

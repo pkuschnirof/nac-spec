@@ -84,6 +84,42 @@ systems are not.
   agent will use tomorrow. No bespoke API to expose; the UI itself
   is the API.
 
+## Impact on RPA and automated testing
+
+NAC has direct, measurable consequences for two industries that
+today carry the cost of UI brittleness: RPA factories and QA
+automation teams. In both cases the dominant operating expense
+is repair, and most of the repair is selector maintenance. NAC
+deletes that line item.
+
+- **For RPA**: bots stop hunting for selectors and stop scraping
+  pixels. They read `data-nac-id` and call `window.NAC.click()`.
+  Quarterly breakage from minor UI updates -- the 15 to 30 percent
+  number every RPA programme of scale lives with -- collapses to
+  near zero. The platform tier (Orchestrator, vault, audit, BPM)
+  stays; only the fragile last-mile selector layer goes away.
+  Migration is incremental: NAC sits underneath the existing
+  recorder, so you do not throw your factory away.
+  Full argument in [`docs/IMPACT_RPA.md`](docs/IMPACT_RPA.md).
+
+- **For automated testing**: tests assert on the application's own
+  state model (`NAC.snapshot_state()`) and wait on the application's
+  own lifecycle events (`NAC.wait_for('action:succeeded')`) instead
+  of selectors and visual cues. Suites stop breaking on every
+  redesign, every locale change, every CSS-in-JS class
+  regeneration. Flake from race conditions stops existing because
+  the contract is event-driven, not poll-driven. The
+  `data-test=`/`data-cy=` parallel attribute layer is no longer
+  needed: the same `data-nac-id` the bot uses is the one the test
+  uses. End-to-end stops being the "never trust this" tier of the
+  pyramid.
+  Full argument in [`docs/IMPACT_TESTING.md`](docs/IMPACT_TESTING.md).
+
+In both cases the cost of stability moves to where the change
+originates: the front-end developer who re-styles the button is
+the same person who maintains its `data-nac-id`. Cost lives where
+information lives.
+
 ## NAC vs ARIA -- why we did not extend ARIA
 
 The first reaction from any web-platform engineer is: "isn't this

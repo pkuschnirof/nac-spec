@@ -399,6 +399,24 @@ The runner:
    to propose extra edge cases.
 5. Reports pass/fail per test, with screenshots of failures.
 
+### Why this is different from a selector-based suite
+
+A selector-based test suite asserts on rendering choices --
+class names, label text, DOM order. Every redesign, every
+locale switch, every CSS-in-JS rebuild breaks a chunk of the
+suite even when no behaviour changed. A NAC-driven suite asserts
+on the application's own contract -- `data-nac-id`, lifecycle
+events, manifest entries -- so it only breaks when the
+application's intent actually changes. That is the correct
+breakage signal.
+
+For the full argument, including the migration recipe for an
+existing Playwright/Cypress/Selenium suite and the CI-gate
+integration with `axe-core` for ARIA, see
+[`docs/IMPACT_TESTING.md`](IMPACT_TESTING.md). The parallel
+argument for RPA factories is in
+[`docs/IMPACT_RPA.md`](IMPACT_RPA.md).
+
 ---
 
 ## Common mistakes
