@@ -4,6 +4,12 @@ A hands-on guide to making a UI navigable by AI, voice and RPA.
 Read [spec/NAC-v1.0.md](../spec/NAC-v1.0.md) first for the formal
 contract; this manual focuses on day-to-day patterns.
 
+> **Looking for a specific `window.NAC.*` method?**
+> See [`API_REFERENCE.md`](API_REFERENCE.md) -- one-page cheat
+> sheet listing every method, signature, version added, and the
+> spec section that formalises it. Faster than scanning the
+> spec's TypeScript interface block.
+
 ---
 
 ## Audience

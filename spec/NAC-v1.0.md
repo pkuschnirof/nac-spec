@@ -7,7 +7,19 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.4 (extends v1.3 which extends v1.2 which extends v1.1 which extends v1.0; sections 1-15 unchanged).
+**Version**: 1.4 (spec) / 1.4.1 (reference runtime). v1.4.1 is a
+patch-level release responding to the AI peer review of
+2026-05-06 (DeepSeek + Claude + Grok Fast); it adds five
+normative subsections (1.5.1 demo references, 1.5.2 adoption
+cost framing, 7.1 awaitable-write contract, 7.2 ARIA-NAC
+authority rule, 7.3 state mapping, 7.4 event scoping,
+P5.1 active-plugin resolution, 14.3.5 layer declaration) and
+patches the reference runtime accordingly. v1.4.1 is a strict
+superset of v1.4.0; every v1.0..v1.4.0 plugin remains valid.
+The spec base remains v1.4 because no new role / event /
+attribute vocabulary was added -- only contracts were tightened
+and missing rules made explicit. See CHANGELOG.md for the full
+diff.
 **Date**: 2026-05-06.
 **Authors**: Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com> (lead), Sumi (collaboration).
 **License**: MIT.
@@ -69,12 +81,24 @@ ARIA, for three reasons:
    automation tooling needs a contract today, not in 2028.
 
 3. **Adoption cost.** ARIA defines ~50 attributes plus 80+
-   patterns in WAI-ARIA Authoring Practices. Onboarding a
-   developer takes about a week. NAC v1.0 is 5 attributes,
-   7 events, and 5 driver functions. Onboarding takes about an
-   hour. A smaller surface keeps the contract adoptable for the
-   long tail of apps that have neither budget nor expertise to
-   onboard ARIA.
+   patterns in WAI-ARIA Authoring Practices. Onboarding a human
+   developer takes about a week. NAC v1.0 is 5 attributes, 7
+   events, and 5 driver functions; the full v1.4 surface adds
+   primitives but the per-element cost is still five attributes.
+   The relevant onboarding metric, however, is no longer
+   *human-developer time*: NAC is designed to be implemented by
+   AI coding agents inside an existing project. With a
+   `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` pointing the agent at
+   this spec plus `AI_INSTRUCTIONS.md`, a coding agent applies
+   NAC to a typical screen in minutes, not weeks. The five
+   attributes per element + one manifest call + seven event
+   emissions are mechanical work that an agent executes faster
+   than any human review of the output. See section 1.5.2 below
+   for the authoritative adoption-cost framing. A smaller surface
+   keeps the contract adoptable for the long tail of apps that
+   have neither budget nor expertise to onboard ARIA -- and
+   keeps it tractable for an agent applying it across thousands
+   of screens.
 
 The seven gaps that NAC addresses, which ARIA does not:
 
@@ -86,7 +110,7 @@ The seven gaps that NAC addresses, which ARIA does not:
 | Lifecycle as events | `aria-busy="true"` (state attribute) | `nac:action:dispatching | succeeded | failed`, `nac:plugin:opening | opened | closing | closed`, `nac:field:changed`, `nac:state:changed` | Consumers SUBSCRIBE to events with payloads instead of polling DOM mutations |
 | Declarative manifest | Each ARIA widget is self-contained in DOM; no index | `manifest_nac` declared up front with `{kpis, actions, fields, tabs, rows, modes_supported}` | An agent or workflow engine introspects with `NAC.describe(plugin)` BEFORE rendering, enabling planning |
 | Modes supported | None | `modes_supported: ['modal', 'maximized', 'new_tab', 'new_window']` | An agent decides where to open the plugin without trial-and-error |
-| Adoption surface | ~50 attributes + 80+ patterns, ~1 week onboarding | 5 attributes + 7 events + 5 functions, ~1 hour onboarding | The long tail of apps gets coverage |
+| Adoption surface | ~50 attributes + 80+ patterns, ~1 week of *human* onboarding | 5 attributes + 7 events + small driver API. Adoption cost measured in **AI-coding-agent time** (see 1.5.2), not human-developer time | The long tail of apps gets coverage because an AI coding agent applies the contract per screen in minutes |
 
 **The single-line distinction**: ARIA is to screen readers what
 NAC is to AI agents. ARIA gives a blind user the audio map of a
@@ -116,6 +140,153 @@ Once NAC has multiple production deployments and ports to other
 languages, a subset MAY be proposed to the ARIA WG as an
 imperative companion specification. Until then, NAC ships
 independently under MIT and tracks its own version line.
+
+---
+
+## 1.5.1. Reference deployments and demo surfaces
+
+This document uses two example surfaces. They are not
+interchangeable; readers should know which one a given snippet
+maps to.
+
+### Public demo (no auth, cold-start friendly)
+
+URL: `https://yujin.app/nac-spec/example.php`
+
+A single page exposing a NAC-instrumented plugin
+`data-nac-plugin="example_demo"` with the following addressable
+elements (as of v1.4):
+
+- **Action verbs**: `play.autopilot`, `secret.open`,
+  `note.c`, `note.d`, `note.e`, `note.f`, `note.g`, `note.a`,
+  `note.b`, `note.c2` (a piano keyboard).
+- **Fields**: `field.name`, `field.mood`, `field.spread`.
+- **Tablist**: `tabs.demo` with tabs `tabs.demo.t1` /
+  `tabs.demo.t2` / `tabs.demo.t3`.
+- **Sections**: `page.section.intro`, `page.section.demos`.
+- **v1.3 widgets**: accordion, combobox, slider, sortable
+  table, drag-and-drop, dropzone, remote autocomplete.
+- **v1.4 widgets**: breadcrumb, carousel, timeline, reorder.
+
+Use this surface for any cold-start review, AI-driven
+exploration, or test-runner smoke. It requires no login and is
+intended to be safe for arbitrary `window.NAC.*` calls. A
+secondary system-map showcase lives at
+`https://yujin.app/nac-spec/example-navmap.php`.
+
+### Production showcase (admin-gated)
+
+URL: `https://yujin.app/crm` (Centro de Control, admin login
+required)
+
+The `patch_manager` plugin referenced throughout this document
+(including the headline element shown earlier as
+`data-nac-id="patch_manager.apply_all"`) lives here. It is the
+real deployment that drove NAC v1.0's design and remains the
+canonical reference for "what NAC looks like in a production
+multi-tenant CRM". Because it is admin-gated, cold AI reviews
+cannot exercise its DOM directly; they must read the spec
+narrative instead.
+
+### What this means for spec snippets
+
+When a spec example uses identifiers like
+`patch_manager.apply_all`, those are illustrative quotations
+from the production showcase, not assertions about the public
+demo. When a spec example uses identifiers like
+`example_demo.note.c`, those are exercisable on the public
+demo. Where ambiguity matters (see section 9.1 walkthrough)
+the spec calls out which surface a snippet refers to.
+
+---
+
+## 1.5.2. Adoption cost: the implementer is an AI coding agent
+
+This is the most important framing in the spec. Read it before
+estimating the cost of NAC adoption against any other UI
+contract.
+
+### The wrong question
+
+"How long does it take a human developer to learn NAC and apply
+it to my codebase?"
+
+Cold reviews of this spec consistently answer that question
+with estimates ranging from "two days" to "two engineer-weeks
+for a 30-screen SPA". Those estimates are correct under their
+own assumption (a human is implementing) and irrelevant.
+
+### The right question
+
+"How long does it take an AI coding agent to apply NAC to my
+codebase, given that the spec, manual, and authoring rules ship
+in formats explicitly designed for AI consumption
+(`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `AI_INSTRUCTIONS.md`)?"
+
+Answer: minutes per screen, in the wall-clock time of running
+the agent. The agent reads the manifest contract, the attribute
+templates, and the event templates from this repository, then
+applies them mechanically to every interactive element it
+finds. The work is high-volume, low-judgment, low-novelty -- a
+shape that AI coding agents execute reliably and at speed.
+
+### Why this matters
+
+NAC is a contract whose adoption cost is dominated by one
+mechanical operation: adding five attributes to every
+interactive element, registering one manifest per plugin,
+emitting seven events at the right lifecycle points. None of
+those steps require taste, architectural judgment, or
+business-domain knowledge. They are precisely the kind of work
+where an AI coding agent outperforms a human, both in speed
+and in consistency.
+
+The implication for adoption planning:
+
+- **Frontend teams should not budget engineer-weeks for NAC
+  adoption.** They should budget the time required to wire one
+  AI coding agent (Claude Code, Cursor, GitHub Copilot in agent
+  mode, Aider, etc.) into their CI / IDE, point it at this
+  repo's `AI_INSTRUCTIONS.md`, and let it run.
+- **The right comparison is not "NAC vs ARIA in onboarding
+  hours".** It is "NAC, applied by an AI coding agent, vs ARIA,
+  applied by a team of human developers who must each onboard
+  for a week". NAC ships with the agent-readable instructions
+  (`AI_INSTRUCTIONS.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`)
+  that close the loop; ARIA does not.
+- **The remaining cost is review, not implementation.** A human
+  reviewer reads the agent's diff, spot-checks the manifest,
+  runs the validator, and either merges or asks for revisions.
+  The cost shifts from "writing attributes" (gone) to "stating
+  the contract once and verifying the agent applied it
+  correctly".
+
+### What an AI coding agent needs from this repo
+
+In order: `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` at session
+start (vendor-specific entry points, all three identical in
+intent). Then `AI_INSTRUCTIONS.md` for the decision rules, the
+attribute templates, the event templates, and the manifest
+shape. Then `spec/NAC-v1.0.md` (this document) for the
+normative contract and `js/nac.js` for the reference runtime.
+Then `docs/MANUAL.md` for the authoring decisions humans want
+to spot-check, and `docs/API_REFERENCE.md` for the full
+`window.NAC.*` surface in one place.
+
+The agent does not need anything else. The repo is the agent's
+training data for one task: apply NAC.
+
+### A note on the "1 hour" claim in earlier text
+
+Earlier paragraphs of section 1.5 describe NAC's adoption cost
+as "about an hour", contrasted with ARIA's "about a week".
+Those numbers were written assuming a human developer.
+**Read both numbers as obsolete in 2026 and forward.** The
+realistic frame is: NAC adoption time is whatever wall-clock
+time an AI coding agent needs to traverse the codebase, plus
+human review time. For a 30-screen SPA that an agent can
+process in parallel, the wall-clock figure is dominated by CI
+budget, not by per-screen complexity.
 
 ---
 
@@ -379,7 +550,7 @@ interface NAC {
   describe(): NacSnapshot;
   list(role?: NacRole): NacElement[];
   find(nac_id: string): NacElement | null;
-  click(nac_id: string): Promise<NacResult>;
+  click(nac_id: string, opts?: { plugin?: string, plugin_instance_id?: string, timeout?: number }): Promise<NacResult>;
   fill(nac_id: string, value: any): Promise<NacResult>;
   select(nac_id: string, option: string | string[]): Promise<NacResult>;
   tab(plugin: string, tab_key: string): Promise<NacResult>;
@@ -389,13 +560,75 @@ interface NAC {
   snapshot_state(): NacStateSnapshot;
   manifest(plugin?: string): NacManifest | NacManifest[];
   set_mode(mode: 'modal'|'maximized'|'new_tab'|'new_window'): void;
+  /* v1.4.1 voice/agent ergonomic helpers */
+  click_by_verb(plugin: string | null, verb: string, opts?: any): Promise<NacResult>;
+  tab_by_label(plugin: string | null, label: string, opts?: any): Promise<NacResult>;
 }
 ```
+
+`click_by_verb` and `tab_by_label` are convenience wrappers
+introduced in v1.4.1 for voice and natural-language agents that
+hear a verb or a label rather than a `nac_id`. They look up the
+target in the manifest first (matching `actions[].verb` for
+`click_by_verb`, `tabs[].label` / `tabs[].label_i18n` for
+`tab_by_label`), fall back to a DOM scan, then delegate to
+`click()` / `tab()`. The underlying contracts (awaitable-write,
+timeout semantics, error throws) are unchanged. Pass `null` for
+`plugin` to use the active plugin per section P5.1.
 
 The API MUST resolve `nac_id` first inside the active plugin, then
 fall back to global lookup. Operations on missing IDs MUST throw a
 typed `NacError` containing `code: 'not_found' | 'disabled' |
 'invalid' | 'timeout'`.
+
+#### P5.1 -- Active-plugin resolution algorithm (normative, added v1.4.1)
+
+When a driver call (`click`, `fill`, `select`, `tab`, `find`,
+`read_feedback`) does not specify a target plugin via
+`opts.plugin`, the runtime MUST resolve the "active plugin"
+deterministically using this algorithm:
+
+1. Enumerate every element matching
+   `[data-nac-plugin]` in document order.
+2. If any of those elements carries
+   `data-nac-plugin-state="ready"`, the active plugin is the
+   **last (most recently mounted in DOM order) ready plugin**.
+3. Otherwise the active plugin is the **last (most recently
+   mounted in DOM order) plugin root** regardless of its state.
+4. If no `[data-nac-plugin]` elements exist, the active plugin
+   is `null` and `find` / `list` MUST search the whole
+   document.
+
+This algorithm is the contract that `_activePlugin()` in
+`js/nac.js` implements; it was implementation-defined before
+v1.4.1. AI peer review of 2026-05-06 (DeepSeek + Claude) flagged
+it as undocumented runtime behaviour. It is now part of the
+normative spec.
+
+Implications and caveats:
+
+- **Multi-mounted plugins**: if two roots carry the same
+  `data-nac-plugin` slug (e.g. two patch_manager modals
+  stacked), step 2 picks the last one in DOM order. Operators
+  that need to address the earlier instance MUST pass
+  `opts.plugin_instance_id` (declared via `data-nac-plugin-id`,
+  see section 4) or scope by calling `find()` against a
+  specific plugin root they hold a reference to.
+- **Plugins still booting**: a plugin with
+  `data-nac-plugin-state` set to `loading`, `opening`, or
+  unset will be considered active only if no `ready` plugin
+  exists. Operators that strictly require a ready plugin MUST
+  poll `manifest()` until the target plugin reports
+  `state: 'ready'` (see lifecycle in section 4).
+- **No plugin attribute**: elements outside any
+  `[data-nac-plugin]` boundary are addressable by a globally
+  unique `data-nac-id` only. Production codebases SHOULD
+  enclose every NAC-instrumented surface in a plugin root to
+  avoid the global-namespace risk.
+
+This rule pairs with section 7.2 (NAC vs ARIA authority) and
+section 7.4 (event scoping); together they make the
+multi-mount case fully specified.
 
 ### P6 -- i18n + accessibility
 
@@ -563,6 +796,238 @@ Operators interact with compliant systems following these guarantees:
 
 ---
 
+## 7.1. Awaitable-write contract (normative)
+
+> Added in v1.4.1 in response to the AI peer review of 2026-05-06.
+> The reference implementation prior to v1.4.1 violated this
+> contract; see CHANGELOG entry `v1.4.1 / 3.4-A` for the fix.
+
+The promise returned by `click()`, `fill()`, `select()`, `tab()`,
+and `set_mode()` MUST settle in exactly one of three terminal
+states. There is no other permitted outcome:
+
+1. **Resolve `{ ok: true, event: <succeeded-event-detail> }`** if
+   `nac:action:succeeded` (or the role-specific success event:
+   `nac:tab:changed` for `tab`, `nac:field:changed` for `fill`,
+   `nac:mode:requested` for `set_mode`) fires before the timeout.
+2. **Resolve `{ ok: false, event: <failed-event-detail> }`** if
+   `nac:action:failed` (or the role-specific failure event)
+   fires before the timeout.
+3. **Reject with `NacError('timeout', ...)`** if neither event
+   fires within `opts.timeout` (or `NAC.config.default_timeout_ms`,
+   default 5000 ms).
+
+What is NOT permitted:
+
+- Resolving `{ ok: true, event: null }` after a fixed short
+  duration (e.g. 200 ms) regardless of whether any event fired.
+  This was the v1.0..v1.4 reference-implementation behaviour and
+  is hereby retracted as a flake-factory bug, not a permitted
+  variant. Implementations carrying this pattern MUST be updated
+  to either resolve on the real event or reject with `'timeout'`.
+- Silently swallowing the failed-event leg and resolving as
+  success.
+- Returning `null` or `undefined` from a write call.
+
+This guarantees that an autonomous operator can rely on the
+shape of the resolved value to drive its next step without
+out-of-band probing. CI test runners that observe a `'timeout'`
+rejection know the action did not complete; runners that observe
+a resolved promise know exactly which event caused the
+resolution and can read its payload.
+
+### Plugins that intentionally emit no lifecycle event
+
+Some legitimate UI actions (a pure DOM toggle, a no-op
+preview-stamp button) intentionally complete without emitting
+`nac:action:succeeded`. NAC-3 compliance MUST treat that case
+exactly like any other. Two acceptable patterns:
+
+- **Recommended**: emit `nac:action:succeeded` even for trivial
+  outcomes. The cost is one event emission and the operator gets
+  a deterministic resolution.
+- **Permitted alternative**: declare the action with
+  `dispatch_mode: 'sync'` in the manifest. Operators that read
+  the manifest first will then call `click()` with
+  `opts.timeout: 0`, which MUST resolve immediately to
+  `{ ok: true, event: null }` without waiting. This is the only
+  case where `event: null` is a permitted resolution shape.
+
+### Implementation note (informative)
+
+The reference runtime in `js/nac.js` v1.4.1 implements this
+contract via a single `Promise` that races
+`nac:action:succeeded`, `nac:action:failed`, and a `setTimeout`
+that calls `reject(NacError('timeout', ...))`. There is no
+short-circuit success path. See `click()` definition for the
+canonical pattern.
+
+---
+
+## 7.2. NAC vs ARIA: authority rules for state disagreements (normative)
+
+> Added in v1.4.1 in response to the AI peer review of 2026-05-06.
+
+NAC and ARIA share a DOM. They MAY both annotate the same
+element. They CAN disagree -- e.g. `data-nac-state="loading"`
+coexisting with `aria-busy="false"`, or
+`data-nac-state="invalid"` coexisting with
+`aria-invalid="false"`. When they do, consumers need a rule.
+
+Authoritative side per consumer kind:
+
+| Consumer kind                          | Authoritative side | Rationale |
+|----------------------------------------|--------------------|-----------|
+| Assistive technology (screen readers)  | **ARIA**           | ARIA is the contract those tools are built against; NAC has no signal they consume |
+| NAC drivers (`window.NAC.*`, runners)  | **NAC**            | NAC drivers depend on `data-nac-state` for `find()`, `list()`, lifecycle, validators |
+| AI agents driving via NAC              | **NAC**            | Same as above; the contract the agent operates against IS NAC |
+| AI agents driving via accessibility tree (Computer Use, vision-grounded) | **ARIA** | Those agents read the accessibility tree, not `data-nac-*` |
+| Hybrid agents (read both layers)       | **NAC for state, ARIA for label** | NAC's state vocabulary is richer (`loading`, `error`, `pending`, `expanded`, ...); ARIA's labels are richer in i18n affordances |
+| Validators / linters                   | **Both**           | A divergence is a bug; report it |
+
+What this rule means for the author of a compliant plugin:
+
+- When a plugin transitions an element to a busy state, it MUST
+  update both `data-nac-state="loading"` AND `aria-busy="true"`
+  in the same render tick. Same for `invalid` /
+  `aria-invalid="true"`, `expanded` / `aria-expanded="true"`,
+  etc. The mapping table is in section 7.3.
+- A NAC-3 validator MUST flag any element where one side reads
+  busy/invalid/expanded and the other side does not, as a drift
+  warning. The validator is permitted (but not required) to
+  treat this as a hard fail.
+- Implementations that cannot update both sides atomically MUST
+  prioritise `data-nac-state` first and `aria-*` second, and
+  document the lag in their plugin's manifest under
+  `manifest_nac.aria_lag_ms`. Operators reading the manifest can
+  then plan around it.
+
+This rule is normative for NAC-3. It is informative for NAC-1
+and NAC-2.
+
+---
+
+## 7.3. NAC state to ARIA attribute mapping (normative)
+
+The canonical mapping table that section 7.2 references:
+
+| `data-nac-state`         | ARIA equivalent                                         |
+|--------------------------|---------------------------------------------------------|
+| `loading`                | `aria-busy="true"`                                      |
+| `idle` / `ready`         | `aria-busy="false"`                                     |
+| `invalid` / `error`      | `aria-invalid="true"`                                   |
+| `valid`                  | `aria-invalid="false"`                                  |
+| `expanded`               | `aria-expanded="true"`                                  |
+| `collapsed`              | `aria-expanded="false"`                                 |
+| `pending`                | `aria-busy="true"` + `aria-disabled="true"`             |
+| `disabled`               | `aria-disabled="true"` (and ideally `disabled` attr)    |
+| `hidden`                 | `aria-hidden="true"` (or remove from DOM)               |
+| `selected`               | `aria-selected="true"`                                  |
+| `checked`                | `aria-checked="true"`                                   |
+| `pressed`                | `aria-pressed="true"`                                   |
+| `current`                | `aria-current="page"` (or appropriate token)            |
+| `dragging`               | `aria-grabbed="true"` (deprecated in ARIA 1.1; informative only) |
+
+States not in this table (e.g. NAC's domain-specific
+`data-nac-state="ready_for_apply"` on a patch row) have no ARIA
+equivalent and SHOULD NOT be mirrored. The contract is: every
+state token that maps to ARIA MUST mirror; every state token
+that does not map to ARIA stays NAC-only.
+
+---
+
+## 7.4. Event scoping (normative, added v1.4.1)
+
+> Added in v1.4.1 in response to AI peer review of 2026-05-06
+> (Grok Fast contributed this finding; DeepSeek and Claude did
+> not raise it).
+
+All `nac:*` events fire on `document` with `bubbles: true`. This
+is intentional -- it lets a single subscriber observe every
+plugin in the page without iterating roots. The cost is that
+multi-instance pages need a scoping rule, which v1.4.1 makes
+explicit.
+
+### Required payload fields
+
+Every `nac:*` event detail MUST include both of:
+
+- `plugin: string` -- the plugin slug from
+  `data-nac-plugin="..."` of the originating root. Required.
+- `plugin_instance_id: string | null` -- the per-instance ID
+  from `data-nac-plugin-id="..."` if multiple instances of the
+  same plugin can be mounted simultaneously, otherwise `null`.
+
+The legacy field name `plugin_slug` (used inconsistently in
+some v1.0..v1.3 emitters) is deprecated and MUST be aliased to
+`plugin` from v1.4.1 onward. Runtimes MAY emit both fields for
+back-compat.
+
+### Subscriber filtering pattern (informative)
+
+```js
+document.addEventListener('nac:action:succeeded', function (e) {
+  if (e.detail.plugin !== 'patch_manager') return;
+  if (e.detail.plugin_instance_id !== myInstanceId) return;
+  // ... handle event for this specific instance
+});
+```
+
+Subscribers that omit the filter accept events from every
+plugin and every instance on the page. That is permitted but
+explicitly the subscriber's responsibility.
+
+### Plugin slug uniqueness
+
+Within a single mounted document, a plugin slug MAY appear on
+multiple roots (legitimate multi-instance UIs: stacked modals,
+multi-window CRM views, master-detail with two patch_manager
+panels). To address a specific instance, hosts MUST set
+`data-nac-plugin-id="<unique>"` on each root. Operators
+addressing a specific instance use:
+
+- For driver calls: `NAC.click('apply_all', { plugin_instance_id: 'modal-2' })`.
+- For event filtering: `e.detail.plugin_instance_id === 'modal-2'`.
+- For scoped find: `NAC.find('apply_all', { plugin_instance_id: 'modal-2' })`.
+
+If a host mounts multiple instances of the same plugin without
+distinguishing `data-nac-plugin-id`, the active-plugin
+algorithm in P5.1 picks one (the most recently mounted ready
+one). This is a permitted but lossy fallback; producers SHOULD
+NOT rely on it.
+
+### Per-plugin event buses (optional)
+
+Hosts MAY additionally dispatch `nac:*` events on the plugin
+root itself, in addition to `document`. Subscribers attached
+to the root receive only that plugin's events without needing
+to filter on payload. This is a SHOULD for hosts that mount
+many instances of the same plugin and want listener overhead
+to scale linearly with subscribed instances rather than
+quadratically.
+
+When a host opts into per-plugin buses, the same event MUST
+fire on both the plugin root and `document`. Subscribers that
+attach to the root see the event first (capture phase) but
+the document-level subscriber still sees it via bubbling. A
+runtime that disables document-level dispatch is non-compliant.
+
+### Shadow DOM and iframe boundaries
+
+`bubbles: true` does not cross shadow DOM closed boundaries.
+Plugins inside a closed shadow root MUST forward `nac:*` events
+to the host document via `composed: true` on the
+`CustomEvent` init dictionary. Reference runtimes MUST set
+`composed: true` from v1.4.1 onward.
+
+Iframe boundaries are not crossed by DOM events. Plugins inside
+an iframe SHOULD use `postMessage` to forward NAC events to the
+parent frame, then re-dispatch them on the parent's `document`.
+Or operate the iframe via its own `window.NAC.*` instance,
+which is the recommended pattern.
+
+---
+
 ## 8. Test generation contract
 
 Compliant systems enable automated test generation. A NAC-aware
@@ -642,6 +1107,12 @@ End of NAC v1.0 baseline normative content.
 ---
 
 ## 13. Widget extensions (v1.1, normative)
+
+> **Looking only for the driver-API additions in this version?**
+> See [`docs/API_REFERENCE.md`](../docs/API_REFERENCE.md) for a
+> tabular index of every `window.NAC.*` method introduced from
+> v1.0 through v1.4.1. The narrative below explains *why* each
+> primitive exists; the cheat sheet shows *how* to call it.
 
 This section EXTENDS sections 1-12 with vocabulary for widgets
 that v1.0 left under-specified. All v1.0 content above is
@@ -951,6 +1422,11 @@ End of NAC v1.1 normative document.
 
 ## 14. Discoverability and dynamic data extensions (v1.2, normative)
 
+> **Driver-API additions in this version**: see
+> [`docs/API_REFERENCE.md`](../docs/API_REFERENCE.md) sections
+> "v1.2 -- dynamic options", "v1.2 -- window chrome",
+> "v1.2 -- discovery", "v1.2 -- section landmarks".
+
 This section is normative. It is a strict superset of v1.1 (and
 therefore of v1.0). Every v1.0 plugin and every v1.1 plugin remains
 valid; every v1.0/v1.1 operator continues to work. The additions
@@ -1252,6 +1728,57 @@ data from a `mokuji` (navigation registry) table plus per-view
 manifests, is available in the public repository under
 `runner/system_map_reference.py`.
 
+#### 14.3.5. Layer declaration (normative, added v1.4.1)
+
+> Added in v1.4.1 in response to AI peer review of 2026-05-06.
+> Claude's reading flagged that the three-layer system_map has
+> no normative way to declare which layer a system implements,
+> forcing agents to probe by catching exceptions.
+
+A v1.2-or-later compliant runtime MUST expose:
+
+```typescript
+NAC.system_map_layers(): {
+  a: boolean,             // system_map() implemented and reachable
+  b: boolean,             // at least one manifest carries transitions[]
+  c: boolean,             // capabilities() implemented and reachable
+  preferred: 'a' | 'b' | 'c' | null,  // host's recommended entry point
+  generated_at?: string,  // ISO8601, optional
+  ttl_seconds?: number    // optional, applies to layer A cache
+}
+```
+
+This is a synchronous, side-effect-free read. Agents call it
+once at session start and decide their planning strategy
+without exception-driven probing.
+
+Examples (informative):
+
+```js
+const layers = NAC.system_map_layers();
+if (layers.a) {
+  const map = await NAC.system_map();
+  // proceed with full plan
+} else if (layers.b) {
+  // crawl from current view via NAC.describe().transitions
+} else if (layers.c) {
+  const caps = await NAC.capabilities();
+  // single-view planning only
+} else {
+  // pre-v1.2 system; degrade to v1.0 / v1.1 view-by-view
+}
+```
+
+A v1.2 system that returns `{ a: false, b: false, c: false }`
+is not compliant; if the host cannot expose any layer, the
+runtime MUST omit the function entirely (so
+`typeof NAC.system_map_layers === 'undefined'` signals
+pre-v1.2). A v1.2 system that returns `{ a: false, b: false,
+c: false, preferred: null }` is a runtime that knows it should
+expose discovery but the host has not registered any data --
+this is permitted but discouraged; it tells the agent "try
+again later" rather than "I don't speak v1.2 discovery".
+
 ### 14.4. Errors and conventions
 
 A new error namespace `NAC.errors` is normative for v1.2:
@@ -1344,6 +1871,15 @@ End of NAC v1.2 normative document.
 ---
 
 ## 15. Common UI primitives extension (v1.3, normative)
+
+> **Driver-API additions in this version**: see
+> [`docs/API_REFERENCE.md`](../docs/API_REFERENCE.md) sections
+> "v1.3 -- toast / banner / confirm" through "v1.3 -- richtext"
+> for all sixteen widget families. `NAC.confirm()` and
+> `NAC.list_pending_confirms()` are the answer to "how does an
+> agent detect a blocking modal?" -- this was missed by some
+> cold AI reviewers in 2026-05-06; the cheat sheet shortens
+> that path.
 
 This section is normative. It is a strict superset of v1.2.
 Every v1.0 / v1.1 / v1.2 plugin remains valid; every v1.0 /
@@ -1685,6 +2221,14 @@ The semver impact of v1.3 is **MINOR**.
 ---
 
 ## 16. Navigation and ordering primitives extension (v1.4, normative)
+
+> **Driver-API additions in this version**: see
+> [`docs/API_REFERENCE.md`](../docs/API_REFERENCE.md) sections
+> "v1.4 -- breadcrumb", "v1.4 -- carousel",
+> "v1.4 -- timeline", "v1.4 -- reorder". The v1.4.1 patch
+> additionally introduced `click_by_verb` and `tab_by_label`
+> for voice/agent ergonomics; see the same cheat sheet under
+> "v1.4.1 -- voice / agent ergonomics".
 
 This section is normative. It is a strict superset of v1.3.
 Every v1.0 / v1.1 / v1.2 / v1.3 plugin remains valid; every

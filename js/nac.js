@@ -1,8 +1,32 @@
 /* =====================================================================
-   NAC v1.0 -- Navegabilidad Automatica Compliance
-   Reference JavaScript implementation.
+   NAC v1.4.1 -- Native Accessibility Contract / Navegabilidad Automatica
+                 Compliance.
+   Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.4.1 (2026-05-06) -- patch release responding to AI peer
+   review of 2026-05-06 (DeepSeek + Claude + Grok Fast). Changes
+   from v1.4.0:
+   - 3.4-A: click() no longer phantom-resolves after 200 ms; now
+            races nac:action:succeeded / failed against a 5000 ms
+            timeout that rejects with NacError('timeout', ...).
+   - 3.4-B: validate() now reports structured errors[] covering
+            field type alignment, options resolver presence,
+            depends_on graph integrity, table column declarations,
+            breadcrumb path consistency, and ARIA-NAC state
+            mirroring drift. Legacy missing[] preserved.
+   - 3.4-C: click_by_verb(plugin, verb) and tab_by_label(plugin,
+            label) added for voice/agent ergonomics.
+   - 3.2-E: events emit composed: true and carry a
+            plugin_instance_id field; per-plugin buses optional
+            via data-nac-plugin-bus="enabled".
+   - 14.3.5: system_map_layers() returns synchronous
+             { a, b, c, preferred } so agents stop probing by
+             exception.
+   - register() accepts both register(manifest) and
+     register(slug, manifest) for back-compat with mixed
+     calling conventions.
 
    This file installs `window.NAC` -- the operator API defined by
    spec/NAC-v1.0.md sections 5 and 7. It is plugin-host agnostic:
@@ -49,7 +73,23 @@
   const _manifests = Object.create(null);
   const _instances = Object.create(null);
 
-  function register(manifest) {
+  /* register(manifest)            -- canonical, plugin_slug inside manifest
+     register(slug, manifest)      -- v1.4.1: accepted for back-compat with
+                                      integrators that match the typical
+                                      "id-then-payload" RPC shape. If both
+                                      slug and manifest.plugin_slug are
+                                      present, manifest.plugin_slug wins so
+                                      the manifest stays canonical. If only
+                                      the slug arg is present, it is copied
+                                      into manifest.plugin_slug. */
+  function register(arg1, arg2) {
+    let manifest;
+    if (typeof arg1 === 'string' && arg2 && typeof arg2 === 'object') {
+      manifest = arg2;
+      if (!manifest.plugin_slug) manifest.plugin_slug = arg1;
+    } else {
+      manifest = arg1;
+    }
     if (!manifest || typeof manifest !== 'object') {
       throw NacError('invalid', 'manifest object required');
     }
@@ -264,24 +304,54 @@
   /* ---------- Public write API ------------------------------------ */
 
   async function click(nac_id, opts) {
+    /* v1.4.1: removed the 200ms phantom-success leg.
+       Previously this function resolved { ok: true, event: null } after
+       200ms whether or not the action emitted nac:action:succeeded, which
+       silently violated the awaitable-write contract from spec section 7.2
+       and caused phantom successes for any action that took >200ms to
+       respond. Now click() races the two real lifecycle events against a
+       configurable timeout and rejects with NacError('timeout', ...) if
+       neither fires. Default timeout 5000ms; override via opts.timeout. */
     const el = _findElement(nac_id, opts);
     if (!el) throw NacError('not_found', 'No element with nac_id=' + nac_id);
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') {
       throw NacError('disabled', 'Element ' + nac_id + ' is disabled');
     }
-    const succeed = wait_for('nac:action:succeeded', opts && opts.timeout || 5000)
-      .then(function (r) { return { ok: true, event: r }; })
-      .catch(function () { return null; });
-    const fail = wait_for('nac:action:failed', opts && opts.timeout || 5000)
-      .then(function (r) { return { ok: false, event: r }; })
-      .catch(function () { return null; });
+    const timeout_ms = (opts && opts.timeout) || 5000;
+    const result = new Promise(function (resolve, reject) {
+      let settled = false;
+      function onSucceeded(e) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve({ ok: true, event: { event: 'nac:action:succeeded',
+                                     detail: e.detail || null } });
+      }
+      function onFailed(e) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve({ ok: false, event: { event: 'nac:action:failed',
+                                      detail: e.detail || null } });
+      }
+      function cleanup() {
+        document.removeEventListener('nac:action:succeeded', onSucceeded);
+        document.removeEventListener('nac:action:failed', onFailed);
+        clearTimeout(t);
+      }
+      const t = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(NacError('timeout',
+          'click(' + nac_id + ') did not emit nac:action:succeeded or '
+          + 'nac:action:failed within ' + timeout_ms + 'ms'));
+      }, timeout_ms);
+      document.addEventListener('nac:action:succeeded', onSucceeded);
+      document.addEventListener('nac:action:failed', onFailed);
+    });
     el.click();
-    const races = await Promise.race([
-      succeed.then(function (r) { return r ? r : null; }),
-      fail.then(function (r)    { return r ? r : null; }),
-      new Promise(function (resolve) { setTimeout(function () { resolve({ ok: true, event: null }); }, 200); }),
-    ]);
-    return races || { ok: true, event: null };
+    return result;
   }
 
   async function fill(nac_id, value, opts) {
@@ -350,6 +420,112 @@
     return { ok: true };
   }
 
+  /* ---------- v1.4.1: voice/agent ergonomic helpers --------------- */
+  /* Both helpers added 2026-05-06 in response to AI peer review
+     action item 3.4-C. A voice agent that hears "apply all" or
+     "switch to the failed tab" should not need to call manifest()
+     first to map the spoken phrase to a nac_id. These helpers do
+     the lookup automatically. They are convenience wrappers over
+     click() and tab(); the underlying contracts (awaitable-write,
+     timeouts, throws) are unchanged. */
+
+  async function click_by_verb(plugin, verb, opts) {
+    if (!verb) throw NacError('invalid', 'click_by_verb requires a verb');
+    /* Resolve plugin: explicit arg, or active plugin if null. */
+    const targetPlugin = plugin || _activePlugin();
+    /* Search the manifest first for an action with matching verb. */
+    let matched = null;
+    if (targetPlugin && _manifests[targetPlugin]) {
+      const actions = _manifests[targetPlugin].actions || [];
+      for (let i = 0; i < actions.length; i++) {
+        if (actions[i] && actions[i].verb === verb) {
+          matched = actions[i];
+          break;
+        }
+      }
+    }
+    if (!matched) {
+      /* Fallback: scan DOM within plugin scope for [data-nac-action]. */
+      const root = targetPlugin
+        ? document.querySelector('[data-nac-plugin="' + targetPlugin + '"]')
+        : document;
+      if (root) {
+        const el = root.querySelector(
+          '[data-nac-action="' + verb + '"]');
+        if (el && el.getAttribute('data-nac-id')) {
+          matched = { nac_id: el.getAttribute('data-nac-id'), verb: verb };
+        }
+      }
+    }
+    if (!matched || !matched.nac_id) {
+      throw NacError('not_found',
+        'No action with verb="' + verb + '" found in plugin "'
+        + (targetPlugin || '<active>') + '"');
+    }
+    return await click(matched.nac_id,
+      Object.assign({}, opts || {},
+        targetPlugin ? { plugin: targetPlugin } : {}));
+  }
+
+  async function tab_by_label(plugin, label, opts) {
+    if (!label) throw NacError('invalid', 'tab_by_label requires a label');
+    const targetPlugin = plugin || _activePlugin();
+    if (!targetPlugin) throw NacError('not_found',
+      'tab_by_label requires a plugin (no active plugin)');
+    /* Search manifest first for a tab whose label matches (case-insensitive,
+       checks label, label_i18n keyed by current locale, or i18n.<lang>.label). */
+    const m = _manifests[targetPlugin];
+    let matched = null;
+    if (m && Array.isArray(m.tabs)) {
+      const lc = label.toLowerCase().trim();
+      for (let i = 0; i < m.tabs.length; i++) {
+        const t = m.tabs[i];
+        if (!t) continue;
+        const candidates = [];
+        if (t.label) candidates.push(t.label);
+        if (t.label_i18n && typeof t.label_i18n === 'object') {
+          for (const k in t.label_i18n) {
+            if (typeof t.label_i18n[k] === 'string') {
+              candidates.push(t.label_i18n[k]);
+            }
+          }
+        }
+        if (t.nac_id) candidates.push(t.nac_id);
+        for (let j = 0; j < candidates.length; j++) {
+          if (String(candidates[j]).toLowerCase().trim() === lc) {
+            matched = t;
+            break;
+          }
+        }
+        if (matched) break;
+      }
+    }
+    /* Fallback: scan DOM tabs within plugin and match aria-label / textContent. */
+    if (!matched) {
+      const root = document.querySelector(
+        '[data-nac-plugin="' + targetPlugin + '"]');
+      if (root) {
+        const tabs = Array.prototype.slice.call(
+          root.querySelectorAll('[data-nac-role="tab"]'));
+        const lc = label.toLowerCase().trim();
+        for (let i = 0; i < tabs.length; i++) {
+          const txt = (tabs[i].getAttribute('aria-label')
+                       || tabs[i].textContent || '').toLowerCase().trim();
+          if (txt === lc || txt.indexOf(lc) >= 0) {
+            matched = { nac_id: tabs[i].getAttribute('data-nac-id') };
+            break;
+          }
+        }
+      }
+    }
+    if (!matched || !matched.nac_id) {
+      throw NacError('not_found',
+        'No tab matching label="' + label + '" in plugin "'
+        + targetPlugin + '"');
+    }
+    return await tab(targetPlugin, matched.nac_id);
+  }
+
   /* ---------- Visualization mode ---------------------------------- */
 
   function set_mode(mode) {
@@ -382,32 +558,186 @@
 
   /* ---------- Manifest -> DOM validator --------------------------- */
 
+  /* v1.4.1 (added 2026-05-06):
+     Strengthened in response to AI peer review action item 3.4-B.
+     Pre-v1.4.1 the validator only checked ID presence, which made
+     P7's "drift is a CI blocker" promise vacuous. v1.4.1 adds
+     checks for: field type alignment (manifest.type vs
+     data-nac-field-type), options resolver presence, depends_on
+     graph integrity, table column declarations, breadcrumb path
+     consistency, ARIA-NAC state mirroring (per spec 7.3 mapping
+     table). All findings are returned as a structured errors
+     array with severity. The legacy `missing` array is preserved
+     for back-compat so existing CI scripts keep working. */
   function validate(plugin_slug) {
     const m = _manifests[plugin_slug];
     if (!m) return { ok: false, code: 'no_manifest' };
     const root = document.querySelector('[data-nac-plugin="' + plugin_slug + '"]');
     if (!root) return { ok: false, code: 'plugin_not_mounted' };
     const found = {};
+    const elemByNacId = {};
     Array.prototype.forEach.call(
       root.querySelectorAll('[data-nac-id]'),
-      function (el) { found[el.getAttribute('data-nac-id')] = true; }
+      function (el) {
+        const id = el.getAttribute('data-nac-id');
+        found[id] = true;
+        elemByNacId[id] = el;
+      }
     );
     const missing = [];
-    function check(arr) {
+    const errors = [];
+    function pushErr(severity, code, nac_id, msg, extra) {
+      const e = { severity: severity, code: code, nac_id: nac_id || null, message: msg };
+      if (extra) for (const k in extra) e[k] = extra[k];
+      errors.push(e);
+    }
+    /* 1. Presence (legacy check). */
+    function checkPresence(arr, kind) {
       (arr || []).forEach(function (e) {
-        if (!found[e.nac_id]) missing.push(e.nac_id);
+        if (!e || !e.nac_id) return;
+        if (!found[e.nac_id]) {
+          missing.push(e.nac_id);
+          pushErr('error', 'missing_in_dom', e.nac_id,
+            kind + ' "' + e.nac_id + '" declared in manifest but not present in DOM');
+        }
       });
     }
-    check(m.fields); check(m.actions); check(m.tabs);
-    check(m.kpis);   check(m.charts);
-    if (m.rows && m.rows.cells) {
-      /* row cells appear inside repeating row markup; presence
-         optional if the table is empty. Validator only flags missing
-         when at least one row exists. */
+    checkPresence(m.fields,  'field');
+    checkPresence(m.actions, 'action');
+    checkPresence(m.tabs,    'tab');
+    checkPresence(m.kpis,    'kpi');
+    checkPresence(m.charts,  'chart');
+
+    /* 2. Field type alignment: manifest.type must match
+       data-nac-field-type on the DOM element (when present). */
+    (m.fields || []).forEach(function (f) {
+      if (!f || !f.nac_id || !found[f.nac_id]) return;
+      const el = elemByNacId[f.nac_id];
+      if (!f.type) {
+        pushErr('warn', 'field_type_undeclared', f.nac_id,
+          'field has no manifest.type; use one of text/number/date/select/...');
+        return;
+      }
+      const domType = el.getAttribute('data-nac-field-type');
+      if (domType && domType !== f.type) {
+        pushErr('error', 'field_type_mismatch', f.nac_id,
+          'manifest declares type=' + f.type
+          + ' but DOM has data-nac-field-type=' + domType,
+          { manifest_type: f.type, dom_type: domType });
+      }
+    });
+
+    /* 3. Options resolver presence: if a field has type=select or
+       multi and the manifest does not embed static options, a
+       resolver MUST be registered via set_options_resolver. */
+    (m.fields || []).forEach(function (f) {
+      if (!f || !f.nac_id) return;
+      if (f.type !== 'select' && f.type !== 'multi') return;
+      const hasStatic = Array.isArray(f.options) && f.options.length > 0;
+      const hasResolver = !!_optionResolvers[
+        _resolverKey(plugin_slug, f.nac_id)];
+      const hasSource = !!f.options_source;
+      if (!hasStatic && !hasResolver && !hasSource) {
+        pushErr('error', 'options_unresolved', f.nac_id,
+          'select/multi field has no static options, no resolver, no options_source');
+      }
+    });
+
+    /* 4. depends_on graph integrity: every dependency target must
+       exist in the same manifest (or be globally addressable). */
+    (m.fields || []).forEach(function (f) {
+      if (!f || !Array.isArray(f.depends_on)) return;
+      f.depends_on.forEach(function (dep) {
+        const depId = (typeof dep === 'string') ? dep : (dep && dep.field);
+        if (!depId) return;
+        const sameManifest = (m.fields || []).some(function (x) {
+          return x && x.nac_id === depId;
+        });
+        if (!sameManifest) {
+          pushErr('warn', 'depends_on_orphan', f.nac_id,
+            'depends_on references "' + depId + '" which is not in this manifest');
+        }
+      });
+    });
+
+    /* 5. Table column declarations (v1.1 rows.cells): if rows
+       exist in DOM, every declared cell column must be findable
+       in at least one row. */
+    if (m.rows && Array.isArray(m.rows.cells) && m.rows.cells.length) {
+      const sampleRow = root.querySelector('[data-nac-role="row"]');
+      if (sampleRow) {
+        m.rows.cells.forEach(function (col) {
+          if (!col || !col.nac_id) return;
+          const cell = sampleRow.querySelector(
+            '[data-nac-id$="' + col.nac_id + '"], '
+            + '[data-nac-cell="' + col.nac_id + '"]');
+          if (!cell) {
+            pushErr('error', 'row_cell_missing', col.nac_id,
+              'manifest declares row cell "' + col.nac_id
+              + '" but no row element has it');
+          }
+        });
+      }
     }
+
+    /* 6. Breadcrumb path consistency (v1.4): every declared
+       breadcrumb step must have a matching breadcrumb-item in DOM. */
+    (m.breadcrumbs || []).forEach(function (b) {
+      if (!b || !Array.isArray(b.items)) return;
+      b.items.forEach(function (item) {
+        if (!item || !item.nac_id) return;
+        const el = root.querySelector(
+          '[data-nac-role="breadcrumb-item"][data-nac-id="' + item.nac_id + '"]');
+        if (!el) {
+          pushErr('error', 'breadcrumb_item_missing', item.nac_id,
+            'breadcrumb item "' + item.nac_id
+            + '" declared in manifest but not present in DOM');
+        }
+      });
+    });
+
+    /* 7. ARIA-NAC state mirroring (spec section 7.3 mapping table).
+       Reports a warning per element where data-nac-state maps to an
+       ARIA attribute and the two disagree. */
+    const _ariaMap = {
+      loading:   { aria: 'aria-busy',     value: 'true'  },
+      idle:      { aria: 'aria-busy',     value: 'false' },
+      ready:     { aria: 'aria-busy',     value: 'false' },
+      invalid:   { aria: 'aria-invalid',  value: 'true'  },
+      error:     { aria: 'aria-invalid',  value: 'true'  },
+      valid:     { aria: 'aria-invalid',  value: 'false' },
+      expanded:  { aria: 'aria-expanded', value: 'true'  },
+      collapsed: { aria: 'aria-expanded', value: 'false' },
+      disabled:  { aria: 'aria-disabled', value: 'true'  },
+      selected:  { aria: 'aria-selected', value: 'true'  },
+      checked:   { aria: 'aria-checked',  value: 'true'  },
+      pressed:   { aria: 'aria-pressed',  value: 'true'  },
+    };
+    Array.prototype.forEach.call(
+      root.querySelectorAll('[data-nac-state]'),
+      function (el) {
+        const st = el.getAttribute('data-nac-state');
+        const mapping = _ariaMap[st];
+        if (!mapping) return;
+        const ariaVal = el.getAttribute(mapping.aria);
+        if (ariaVal !== null && ariaVal !== mapping.value) {
+          const id = el.getAttribute('data-nac-id') || null;
+          pushErr('warn', 'aria_nac_state_mismatch', id,
+            'data-nac-state="' + st + '" expects '
+            + mapping.aria + '="' + mapping.value
+            + '" but element has ' + mapping.aria + '="' + ariaVal + '"',
+            { state: st, aria_attr: mapping.aria,
+              expected: mapping.value, actual: ariaVal });
+        }
+      });
+
+    const errCount = errors.filter(function (e) {
+      return e.severity === 'error';
+    }).length;
     return {
-      ok:        missing.length === 0,
-      missing:   missing,
+      ok:        errCount === 0,
+      missing:   missing,        /* legacy back-compat */
+      errors:    errors,         /* v1.4.1 structured findings */
       manifest:  m,
       timestamp: Date.now(),
     };
@@ -643,6 +973,33 @@
     };
   }
 
+  /* v1.4.1 (added 2026-05-06, spec section 14.3.5):
+     synchronous declaration of which discovery layers the host
+     supports, so agents do not need to probe by exception. */
+  function system_map_layers() {
+    let hasB = false;
+    const slugs = Object.keys(_manifests);
+    for (let i = 0; i < slugs.length; i++) {
+      const m = _manifests[slugs[i]];
+      if (m && Array.isArray(m.transitions) && m.transitions.length) {
+        hasB = true;
+        break;
+      }
+    }
+    const a = !!_systemMapProvider;
+    const c = !!_capabilitiesProvider || slugs.length > 0;
+    let preferred = null;
+    if (a)      preferred = 'a';
+    else if (hasB) preferred = 'b';
+    else if (c)    preferred = 'c';
+    return {
+      a: a,
+      b: hasB,
+      c: c,
+      preferred: preferred,
+    };
+  }
+
   /* ---------- v1.2: section navigation --------------------------- */
 
   function _findSection(sectionId) {
@@ -736,10 +1093,48 @@
 
   /* ---------- v1.3: helpers shared across primitives ------------- */
 
+  /* v1.4.1 (added 2026-05-06):
+     - composed: true so events cross shadow DOM closed boundaries
+       (spec section 7.4).
+     - alias plugin_slug -> plugin if a caller set the legacy field
+       (spec section 7.4 deprecation rule).
+     - attach plugin_instance_id from data-nac-plugin-id if a
+       producer opted into the multi-instance pattern. */
+  function _normalizeDetail(detail) {
+    detail = detail || {};
+    if (detail.plugin_slug && !detail.plugin) {
+      detail.plugin = detail.plugin_slug;
+    }
+    if (detail.plugin && detail.plugin_instance_id === undefined) {
+      const root = document.querySelector(
+        '[data-nac-plugin="' + detail.plugin + '"]');
+      detail.plugin_instance_id = root
+        ? (root.getAttribute('data-nac-plugin-id') || null)
+        : null;
+    }
+    return detail;
+  }
   function _emit(name, detail) {
+    detail = _normalizeDetail(detail);
     document.dispatchEvent(new CustomEvent(name, {
-      detail: detail || {}, bubbles: true,
+      detail: detail, bubbles: true, composed: true,
     }));
+    /* Per-plugin bus dispatch (optional, spec sec 7.4): if a plugin
+       root opted in via data-nac-plugin-bus="enabled", also fire on
+       the root so per-instance subscribers see the event without
+       payload filtering. */
+    if (detail.plugin) {
+      const root = document.querySelector(
+        '[data-nac-plugin="' + detail.plugin + '"]'
+        + (detail.plugin_instance_id
+            ? '[data-nac-plugin-id="' + detail.plugin_instance_id + '"]'
+            : ''));
+      if (root && root.getAttribute('data-nac-plugin-bus') === 'enabled') {
+        root.dispatchEvent(new CustomEvent(name, {
+          detail: detail, bubbles: false, composed: true,
+        }));
+      }
+    }
   }
   function _byId(id) {
     return document.querySelector('[data-nac-id="' + id + '"]');
@@ -1474,7 +1869,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.4.0',
+    version:      '1.4.1',
     spec_version: '1.4',
     /* registry */
     register:        register,
@@ -1492,6 +1887,9 @@
     select:          select,
     tab:             tab,
     set_mode:        set_mode,
+    /* v1.4.1 -- voice/agent ergonomic helpers */
+    click_by_verb:   click_by_verb,
+    tab_by_label:    tab_by_label,
     /* utility */
     wait_for:        wait_for,
     screenshot:      screenshot,
@@ -1511,6 +1909,8 @@
     capabilities:                capabilities,
     set_system_map_provider:     set_system_map_provider,
     set_capabilities_provider:   set_capabilities_provider,
+    /* v1.4.1 -- discovery layer declaration */
+    system_map_layers:           system_map_layers,
     /* v1.2 -- section landmarks */
     list_sections:               list_sections,
     go_to_section:               go_to_section,

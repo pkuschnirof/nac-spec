@@ -47,6 +47,20 @@ Read [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) for the full
 treatment, including why these two principles produce every
 shape decision in the spec.
 
+### Quick links
+
+- [`spec/NAC-v1.0.md`](spec/NAC-v1.0.md) -- normative contract.
+- [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) -- one-page
+  cheat sheet of every `window.NAC.*` method, grouped by version.
+- [`docs/MANUAL.md`](docs/MANUAL.md) -- authoring decisions
+  (what each attribute means, when to use which role).
+- [`AI_INSTRUCTIONS.md`](AI_INSTRUCTIONS.md) -- decision rules
+  for an AI coding agent applying NAC to a project.
+- [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) /
+  [`GEMINI.md`](GEMINI.md) -- vendor-specific entry points
+  (identical content; pick the one matching your toolchain).
+- [`CHANGELOG.md`](CHANGELOG.md) -- per-version diff log.
+
 ---
 
 ## Why NAC
@@ -314,8 +328,14 @@ operation of a UI:
 
 7. **High adoption cost.** ARIA defines ~50 attributes and 80+
    patterns in the WAI-ARIA Authoring Practices guide. Onboarding
-   a developer takes about a week. NAC is 5 attributes + 7 events
-   + 5 driver functions. Onboarding takes about an hour.
+   a *human* developer takes about a week. NAC is 5 attributes
+   + 7 events + a small driver API; the relevant adoption metric
+   is no longer human-developer time. NAC is designed to be
+   applied by an AI coding agent that reads `AI_INSTRUCTIONS.md`
+   + `CLAUDE.md` + `AGENTS.md` + `GEMINI.md` (all shipped in this
+   repo) and instruments a screen in minutes. The implementer is
+   the agent. The human role is review, not authoring. See spec
+   section 1.5.2 for the authoritative framing.
 
 ### Different audiences, different requirements
 
@@ -345,7 +365,9 @@ Three reasons:
    AI-driving contract today, not in 2028.
 3. **Adoption cost.** Adding to ARIA's surface deepens the
    onboarding cliff. NAC is deliberately a smaller, parallel
-   layer that a team can adopt in an afternoon.
+   layer that an AI coding agent applies to a codebase in a
+   single CI run. The human path through ARIA still exists for
+   teams that want it; NAC's path is agent-first by design.
 
 Once NAC has multiple production deployments and ports, a subset
 may be proposed to the ARIA WG. Until then, NAC ships

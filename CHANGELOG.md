@@ -22,6 +22,152 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.4.1] - 2026-05-06
+
+Patch release responding to the AI peer review of 2026-05-06.
+DeepSeek (free, browsing on), Claude (claude.ai free,
+3-of-6 documents fetched), and Grok Fast (free) reviewed the
+spec + reference implementation independently from cold and
+produced 11 action items consolidated in
+`docs/AI_REVIEWS_OF_NAC_SPEC.md` section 3. v1.4.1 closes all
+of them. The spec base remains v1.4 -- no new role, event, or
+attribute vocabulary was added; v1.4.1 only tightens existing
+contracts and makes implicit rules explicit.
+
+### Spec changes (normative)
+
+- **1.5.1 Reference deployments and demo surfaces** (new). The
+  public demo at `yujin.app/nac-spec/example.php` is a piano +
+  fields + tabs + accordion + dropzone showcase. The
+  `patch_manager` example identifiers used throughout this
+  document live behind admin auth at yujin.app/crm and are
+  illustrative quotations, not assertions about the public
+  demo. Cold AI reviewers (DeepSeek, Grok Fast) fabricated
+  against the headline example; Claude flagged the gap
+  honestly. Section 1.5.1 names both surfaces and clarifies
+  which snippets target which.
+- **1.5.2 Adoption cost: the implementer is an AI coding
+  agent** (new). The "1 hour onboarding" claim in section 1.5
+  was correct under the assumption "an AI coding agent is the
+  implementer". All three reviewers read it as
+  "human-developer onboarding time" and produced estimates of
+  2-3 days, days-to-weeks, and 1-2 engineer-weeks. v1.4.1
+  reframes the claim explicitly: NAC ships agent-readable
+  instructions (`AI_INSTRUCTIONS.md`, `CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md`) and is designed to be applied by
+  an agent in minutes per screen. The human role is review,
+  not authoring.
+- **7.1 Awaitable-write contract** (new normative section).
+  Writes MUST resolve only on the success/fail event, or
+  reject with `NacError('timeout', ...)`. The pre-v1.4.1
+  reference implementation's 200 ms phantom-success path is
+  retracted as a flake-factory bug, not a permitted variant.
+- **7.2 NAC vs ARIA authority rules** (new normative table).
+  Defines who wins when `data-nac-state` and `aria-*`
+  disagree on the same element, per consumer kind.
+- **7.3 NAC state to ARIA attribute mapping** (new normative
+  table). Canonical mapping for every NAC state token that
+  has an ARIA equivalent.
+- **7.4 Event scoping** (new normative section). All `nac:*`
+  events MUST emit `composed: true` and a payload field
+  `plugin_instance_id`. Per-plugin event buses are optional
+  via `data-nac-plugin-bus="enabled"`. Closes the multi-mount
+  identity gap that Grok Fast flagged.
+- **P5.1 Active-plugin resolution algorithm** (new normative
+  subsection). The `_activePlugin()` heuristic that
+  `js/nac.js` always implemented (most-recently-mounted
+  state=ready plugin in DOM order, with documented fallback)
+  is now part of the spec contract.
+- **14.3.5 Layer declaration** (new). Adds
+  `NAC.system_map_layers(): { a, b, c, preferred }` so agents
+  do not probe by exception.
+
+### Documentation
+
+- `docs/API_REFERENCE.md` (new). One-page cheat sheet of every
+  `window.NAC.*` method introduced in v1.0..v1.4.1, grouped by
+  version, with signature, error throws, and the spec section
+  that formalises each method. DeepSeek's review missed
+  `NAC.tab()` and `NAC.list_pending_confirms()` because the
+  canonical TypeScript interface block in P5 is dense; the
+  cheat sheet closes that gap.
+- README quick-links section added pointing at API_REFERENCE,
+  MANUAL, AI_INSTRUCTIONS, CLAUDE/AGENTS/GEMINI entry points.
+- Section pointers added to the top of v1.1 / v1.2 / v1.3 /
+  v1.4 narrative chapters, each routing readers to the
+  relevant API_REFERENCE rows. The narrative still explains
+  *why* each primitive exists; the cheat sheet shows *how* to
+  call it.
+
+### Reference implementation (`js/nac.js`)
+
+- **`click()`** rewritten. Single deterministic Promise that
+  races `nac:action:succeeded` (resolve `{ ok: true, ... }`)
+  against `nac:action:failed` (resolve `{ ok: false, ... }`)
+  against a configurable timeout (`opts.timeout` or
+  `NAC.config.default_timeout_ms`, default 5000 ms) that
+  rejects with `NacError('timeout', ...)`. The 200 ms
+  short-circuit `resolve({ ok: true, event: null })` from
+  v1.0..v1.4.0 is gone.
+- **`validate()`** strengthened. Returns
+  `{ ok, missing, errors, manifest, timestamp }`. The new
+  `errors` array reports six new finding categories:
+  `missing_in_dom`, `field_type_mismatch`,
+  `field_type_undeclared`, `options_unresolved`,
+  `depends_on_orphan`, `row_cell_missing`,
+  `breadcrumb_item_missing`, `aria_nac_state_mismatch`. The
+  legacy `missing` array is preserved for back-compat.
+- **`click_by_verb(plugin, verb, opts)`** added. Convenience
+  wrapper that resolves verb -> nac_id via the manifest
+  (then DOM scan) before delegating to `click()`. Designed
+  for voice agents that hear "apply all" rather than
+  `patch_manager.apply_all`.
+- **`tab_by_label(plugin, label, opts)`** added. Same shape
+  as `click_by_verb` but for tabs; matches against
+  `tabs[].label`, `tabs[].label_i18n`, and DOM
+  `aria-label` / textContent.
+- **`system_map_layers()`** added. Synchronous declaration
+  of which discovery layers (A precomputed map, B per-view
+  transitions, C capabilities) the host implements.
+- **`_emit()`** sets `composed: true` and normalises detail
+  to include `plugin` (aliased from legacy `plugin_slug`)
+  plus `plugin_instance_id`. Optional per-plugin-root bus
+  dispatch when `data-nac-plugin-bus="enabled"`.
+- **`register()`** now accepts both `register(manifest)` (the
+  canonical form documented in MANUAL.md and
+  AI_INSTRUCTIONS.md) and `register(slug, manifest)` (the
+  shape some integrators copied from third-party RPC
+  conventions). Both forms produce identical state.
+
+### Demo fixes (`yujin.app/nac-spec/`)
+
+- `js/example.js` lines 32 and 59 used the two-argument
+  `register('slug', obj)` form, which threw
+  `NacError('invalid', 'manifest object required')` before
+  v1.4.1 and broke every interactive element on the public
+  demo. Both call sites switched to the canonical
+  `register(obj)` form.
+- `assets/favicon.svg` placed at the path the demo pages
+  requested (was 404).
+- `example.php` asset version bumped from `v5` to `v6` for
+  cache invalidation.
+
+### Reviewer credit
+
+Action items addressed in this release were surfaced by:
+- DeepSeek (chat.deepseek.com, free): 3.4-A, 3.4-B
+  (validator), 3.3-A (cheat sheet motivated by missed
+  methods).
+- Claude (claude.ai, free): 3.4-A (corroborated), 3.2-B,
+  3.2-D (ARIA overlap), 3.4-C, 3.2-A (versioning), 3.2-C
+  (system_map layers), 3.3-C (demo mismatch).
+- Grok Fast (grok.com, free): 3.2-E (event scoping), 3.2-A
+  (corroborated softly).
+
+Full reviews preserved verbatim in
+`docs/AI_REVIEWS_OF_NAC_SPEC.md`. The synthesis section of
+that file was the source-of-truth for v1.4.1 scope.
+
 ## [1.4.0] - 2026-05-06
 
 Strict superset of v1.3. Every v1.0 / v1.1 / v1.2 / v1.3 plugin
