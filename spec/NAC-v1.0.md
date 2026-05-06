@@ -7,13 +7,17 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.5 (spec) / 1.5.1 (reference runtime). v1.5.1 is a
-patch release that adds normative section P7.1 (cross-plugin
-uniqueness + `NAC.validate_global()` cross-plugin audit) and
-P7.2 (recommended nac_id grammar). v1.5.0 added the canonical
-NAC + LLM agentic loop pattern (informative sections 9.1 and
-9.2) and the reference demo upgrade. v1.5.x is a strict
-superset of v1.4.2; every v1.0..v1.4.2 plugin remains valid. v1.4.2 normative additions on top of v1.4.1: P5.0 return
+**Version**: 1.5 (spec) / 1.5.4 (reference runtime). v1.5.4 is
+a demo-only patch release that ships exhaustive 10-locale i18n
+on every visible string of the reference demo at
+`yujin.app/nac-spec/example.php`. v1.5.1 added normative
+section P7.1 (cross-plugin uniqueness + `NAC.validate_global()`
+cross-plugin audit) and P7.2 (recommended nac_id grammar).
+v1.5.0 added the canonical NAC + LLM agentic loop pattern
+(informative sections 9.1 and 9.2). v1.5.x is a strict
+superset of v1.4.2; every v1.0..v1.4.2 plugin remains valid.
+The attribute + event + driver-API contract is byte-identical
+across the v1.5 patch line. v1.4.2 normative additions on top of v1.4.1: P5.0 return
 shapes, 6.1 NAC-3 event-family scoping, 7.3.1 NAC-drives-
 ARIA-mirrors direction, 7.5 confirm-dialog contract, plus
 tightened plugin-id rule (sec 7.4) and click_by_verb tie-break

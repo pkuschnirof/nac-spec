@@ -10,12 +10,20 @@ short description, error throws, and the spec section that
 formalises it. AI coding agents implementing NAC can use this
 table as the canonical lookup.
 
-Current runtime version: **`NAC.version === '1.5.1'`** (spec
+Current runtime version: **`NAC.version === '1.5.4'`** (spec
 `1.5`). The runtime exposes `NAC.version` and
 `NAC.spec_version` as strings; check them at boot if you need
 feature gating.
 
 Version history (most recent first):
+- **1.5.4** (2026-05-06) -- demo-only patch. Exhaustive
+  10-locale i18n sweep on the reference demo: ~75 SECTION_I18N
+  keys across `es en pt fr ja zh hi ar de it`, covering every
+  card heading + sub, the secret modal, all wizard prompts (18
+  steps), all autopilot bot lines, every runtime
+  acknowledgement (table sort, filter, pagination, drag-drop).
+  Templated messages via `tFmt(key, vars)`. Zero hardcoded JS
+  strings remain. Runtime contract unchanged.
 - **1.5.1** (2026-05-06) -- patch release. Spec adds P7.1
   cross-plugin uniqueness + `NAC.validate_global()` and P7.2
   recommended nac_id grammar. Runtime adds register-time

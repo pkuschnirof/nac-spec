@@ -316,6 +316,10 @@ entire ask.
 - `docs/IMPACT_RPA.md` -- the parallel argument for RPA
   factories.
 - `docs/MANUAL.md` -- how to author a NAC-compliant view.
-- `spec/NAC-v1.0.md` -- the normative document, including v1.1
-  widget extensions (tabs, accordion, combobox, slider, table,
-  drag-drop, file upload, tooltip, popover, notifications).
+- `spec/NAC-v1.0.md` -- the normative document, current spec
+  version v1.5, including the v1.1 widget extensions (tabs,
+  accordion, combobox, slider, table, drag-drop, file upload,
+  tooltip, popover, notifications), v1.2 discovery + dynamic
+  options + window chrome, v1.3 sixteen common UI primitives,
+  v1.4 navigation + ordering primitives, v1.5 NAC + LLM
+  agentic loop pattern + cross-plugin uniqueness audit.

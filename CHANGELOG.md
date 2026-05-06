@@ -22,6 +22,64 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.5.4] - 2026-05-06
+
+Demo-only patch release. Reference runtime contract is unchanged
+from v1.5.1; this release ships:
+
+### Reference demo (`yujin.app/nac-spec/`)
+
+- **Exhaustive 10-locale i18n sweep** on every visible string
+  in the demo. The Yujin standard locale set
+  (`es en pt fr ja zh hi ar de it`) covers the topbar tagline,
+  every card heading + sub-title, the lead paragraph, every
+  side-panel header, the secret modal title + body + close
+  button, every form label + select option, every wizard
+  prompt (18 steps + intro + next-step prefix + idle blurb),
+  every autopilot bot line (intro + 9 step acknowledgements +
+  closing v1.2 paragraph), and every runtime acknowledgement
+  (tab activations, accordion expansions, slider volume,
+  table sort, table filter, pagination, drag-drop). Total:
+  ~75 SECTION_I18N keys, each across 10 locales.
+- **Templated localised messages** via a tiny `tFmt(key, vars)`
+  helper that substitutes `{value}`, `{dir}`, `{q}` placeholders
+  at render time so messages like "Volume at 70%" /
+  "Volumen en 70%" / "ボリューム 70%" / "音量 70%" stay
+  grammatical across all locales.
+- **WIZARD_STEPS** entries now carry a `prompt_key` instead of
+  a literal Spanish prompt. The wizard's render / start / skip
+  / tryAdvance paths resolve the key via `t()` at display time
+  so a mid-tour locale switch updates remaining steps without
+  a reload.
+- **Autopilot bot lines** routed through `t('auto.*')`. The
+  hands-free demo plays in any of the 10 locales depending on
+  the dropdown selection.
+- **Runtime feedback** (sortable table acks, drag-drop
+  confirmations, pagination, file upload simulation) routed
+  through `t()` / `tFmt()` -- zero hardcoded Spanish strings
+  remain in `js/example.js`.
+
+### Backend
+
+- The agentic chat backend's system prompt continues to honour
+  rule 7: "the user may write in any of the 10 locales; match
+  user intent against `label_i18n` in ANY locale; reply in the
+  user's locale". The 10-locale `label_i18n` maps shipped on
+  every action / field / tab in v1.5.1 are what make this work
+  end-to-end -- a user typing "弹一个 Do" lands NAC.click
+  ('note.c') because the manifest carries `label_i18n.zh`
+  alongside `label_i18n.es`.
+
+Runtime version constant bumped to `1.5.4` for traceability.
+Plugins do NOT need any change. The runtime contract
+(attributes + events + driver API) is unchanged from v1.5.1.
+
+This release is the technical realisation of NAC's first
+principle ("the system disappears"). For non-Spanish visitors,
+the demo no longer leaks Spanish strings into the chat replies,
+the wizard prompts, or the autopilot narration. The system
+disappears for them too.
+
 ## [1.5.1] - 2026-05-06
 
 Patch release. Two surface areas:

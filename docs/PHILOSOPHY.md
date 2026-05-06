@@ -163,9 +163,11 @@ The two principles directly produce the spec:
   what the user can *do*, not what the backend can *expose*.
 
 Every attribute, every event, every API function in the spec
-maps to one of these two principles. If a future v1.1 / v1.2
-extension cannot be justified under at least one of them, it
-does not belong in NAC.
+maps to one of these two principles. If a v1.1 / v1.2 / v1.3 /
+v1.4 / v1.5 extension (or any future version) cannot be
+justified under at least one of them, it does not belong in
+NAC. The five superset releases shipped to date were each
+audited against this rule before merging.
 
 ## What this rules out
 

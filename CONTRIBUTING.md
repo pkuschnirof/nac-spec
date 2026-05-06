@@ -107,7 +107,7 @@ will list the port from the README so users can find it.
 Add this snippet to the project that consumes NAC-3:
 
 ```markdown
-[![NAC v1.0 Level 3](https://github.com/pkuschnirof/nac-spec/raw/main/docs/badge/nac-3.svg)](https://github.com/pkuschnirof/nac-spec)
+[![NAC Level 3](https://github.com/pkuschnirof/nac-spec/raw/main/docs/badge/nac-3.svg)](https://github.com/pkuschnirof/nac-spec)
 ```
 
 Use `nac-2.svg` if you only meet pillars P1..P4 (silver), `nac-1.svg`

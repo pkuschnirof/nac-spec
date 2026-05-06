@@ -1,9 +1,15 @@
 /* =====================================================================
-   NAC v1.5.1 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.5.4 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.5.4 (2026-05-06) -- demo-only patch. Ships exhaustive
+   10-locale i18n on every visible string of the reference demo
+   at yujin.app/nac-spec/example.php. The runtime contract here
+   is byte-identical to v1.5.1 -- only the version constant
+   bumped for traceability.
 
    v1.5.1 (2026-05-06) -- patch release. Two additions on top of
    v1.5.0:
@@ -2262,7 +2268,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.5.1',
+    version:      '1.5.4',
     spec_version: '1.5',
     /* registry */
     register:        register,

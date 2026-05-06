@@ -6,12 +6,22 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.4](https://img.shields.io/badge/NAC-v1.4-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.5](https://img.shields.io/badge/NAC-v1.5-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v1.4 (2026-05-06; strict superset of v1.3, v1.2, v1.1, v1.0).
+**Spec version:** v1.5 (2026-05-06).
+**Reference runtime:** v1.5.4 (`NAC.version === '1.5.4'`).
+**Strict superset of:** v1.4, v1.3, v1.2, v1.1, v1.0.
+**What v1.5 adds (informative):** the canonical NAC + LLM
+agentic loop pattern (spec sec 9.1, 9.2). The runtime contract
+of attributes + events + driver API is byte-identical to v1.4.2;
+v1.5.x is a spec + reference-demo release. v1.5.1 then added
+cross-plugin uniqueness audit (`NAC.validate_global()`, spec
+P7.1). v1.5.4 closes the demo's exhaustive 10-locale i18n
+sweep so the system disappears for non-English users too. Full
+diff in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -71,10 +81,12 @@ on the user's behalf, RPA bots need costly per-app training, and E2E
 test coverage rarely exceeds 50% because writing specs manually does
 not scale with feature velocity.
 
-NAC reverses the polarity: a UI that complies with NAC v1.0
-publishes its own contract -- semantic IDs, roles, states, events,
-and a programmatic API -- so any external operator can introspect,
-operate and verify it without privileged access.
+NAC reverses the polarity: a UI that complies with NAC publishes
+its own contract -- semantic IDs, roles, states, events, and a
+programmatic API -- so any external operator can introspect,
+operate and verify it without privileged access. The current
+release line is v1.5; every spec version since v1.0 has been a
+strict superset (no breaking changes).
 
 Compliant systems are testable end-to-end at near-100% coverage with
 auto-generated specs plus AI-guided exploration. Non-compliant
@@ -596,14 +608,25 @@ python nac_runner.py --target http://localhost:3000 --plugin contact_form
 ## Citation
 
 ```
-NAC v1.0 -- Navegabilidad Automatica Compliance.
-Pablo Adrian Kuschniroff and Sumi. 2026. MIT License.
+NAC -- Native Accessibility Contract.
+Spec v1.5 / runtime v1.5.4. 2026. MIT License.
+Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
+https://github.com/pkuschnirof/nac-spec
 ```
 
 ## Status
 
-NAC v1.0 is **stable**. The first production deployment ships with
-the Yujin CRM (yujin.app) Control Center plugins, May 2026.
+NAC v1.5 is **stable**. The first production deployment ships
+with the Yujin CRM (yujin.app) Control Center plugins; the
+public reference demo at https://yujin.app/nac-spec/example.php
+exercises every primitive in the spec (v1.0 piano + modal +
+form, v1.1 tabs + accordion + combobox + slider + table +
+drag-drop, v1.2 remote autocomplete + window chrome + system
+map + section navigation, v1.3 toast + banner + confirm +
+stepper + tree + tag-input + drawer + calendar + chart + map +
+richtext, v1.4 breadcrumb + carousel + timeline + reorder, v1.5
+agentic chat loop with Claude Sonnet primary + DeepSeek free
+fallback). May 2026.
 
 ## Contributing
 

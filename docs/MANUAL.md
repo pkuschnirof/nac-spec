@@ -1,8 +1,14 @@
-# NAC v1.0 -- Practical Manual
+# NAC -- Practical Manual
 
 A hands-on guide to making a UI navigable by AI, voice and RPA.
 Read [spec/NAC-v1.0.md](../spec/NAC-v1.0.md) first for the formal
 contract; this manual focuses on day-to-day patterns.
+
+> **Version**: this manual tracks NAC spec v1.5 (runtime v1.5.4).
+> Every version since v1.0 is a strict superset, so the v1.0
+> patterns shown here keep working unchanged. New primitives
+> introduced in v1.1..v1.5 are documented in their own sections;
+> follow the spec links for the normative contract.
 
 > **Looking for a specific `window.NAC.*` method?**
 > See [`API_REFERENCE.md`](API_REFERENCE.md) -- one-page cheat
@@ -855,6 +861,8 @@ verify:
 MIT. See [LICENSE](../LICENSE).
 
 ```
-NAC v1.0 -- Navegabilidad Automatica Compliance.
-Pablo Adrian Kuschniroff and Sumi. 2026. MIT License.
+NAC -- Native Accessibility Contract.
+Spec v1.5 / runtime v1.5.4. 2026. MIT License.
+Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
+https://github.com/pkuschnirof/nac-spec
 ```

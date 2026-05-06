@@ -300,5 +300,7 @@ call. The RPA win is a side effect.
 - `docs/IMPACT_TESTING.md` -- the parallel argument for QA
   automation.
 - `docs/MANUAL.md` -- how to author a NAC-compliant view.
-- `spec/NAC-v1.0.md` -- the normative document, including v1.1
-  widget extensions.
+- `spec/NAC-v1.0.md` -- the normative document, including the
+  v1.1 widget extensions, v1.2 discovery + window chrome,
+  v1.3 sixteen common UI primitives, v1.4 navigation +
+  ordering primitives, and v1.5 NAC + LLM agentic loop.
