@@ -22,6 +22,96 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.5.0] - 2026-05-06
+
+MINOR release. The runtime contract (attributes + events +
+driver API) is unchanged from v1.4.2; v1.5.0 documents the
+canonical NAC + LLM agentic loop and ships a reference
+implementation on the public demo. Strict superset of v1.4.2;
+every v1.0..v1.4.2 plugin remains valid.
+
+### Spec additions (informative)
+
+- **Section 9.1 NAC + LLM agentic loop**. Four-step canonical
+  pattern: `NAC.describe()` snapshot, backend POST that holds
+  the API key, structured-output system prompt, sequential
+  dispatch via NAC primitives. Covers failure modes
+  (provider down, tree too large, model returns non-JSON,
+  unknown nac_id) and recommends provider chaining
+  (primary + fallback).
+- **Section 9.2 Canonical system prompt**. Pseudo-code that
+  any implementer can adapt to their target model. Constrains
+  the LLM to the seven action kinds (`click`,
+  `click_by_verb`, `fill`, `select`, `tab`, `tab_by_label`,
+  `say`) and a strict JSON output shape.
+
+The runtime in `js/nac.js` is byte-identical to v1.4.2
+behavioural-wise; only the version constant bumped to `1.5.0`
+and the header CHANGELOG block updated. The pattern
+documented in 9.1 lives entirely on the demo + backend
+sides; vendors who copy the demo can swap their own backend
+without touching the runtime.
+
+### Reference demo + backend (`yujin.app/nac-spec/`)
+
+- `js/example.js` chat upgraded from a hardcoded local matcher
+  to an **agentic dispatcher**:
+  - Snapshots the page via `NAC.describe()` + `NAC.manifest()`.
+  - POSTs the snapshot + the user prompt to
+    `https://yujin.app/crm/api/v1/yujin/nac-demo`.
+  - Renders the model's `message` field as a chat reply.
+  - Dispatches the model's `actions[]` sequentially through
+    `NAC.click` / `NAC.fill` / `NAC.tab` etc, with a 250ms
+    pause between actions so the human sees each focus pulse
+    from v1.4.2.
+  - Falls through to the legacy local matcher when the
+    backend is unreachable, returns a non-2xx, or times out
+    after 25s. The demo always works offline; agentic mode
+    is the upgrade path.
+  - A small "modo agente" / "modo offline" badge above the
+    chat bar shows which path responded.
+- `crm_desa/api/v1/yujin.php` adds **`yjNacDemo()`** behind
+  `POST /api/v1/yujin/nac-demo`. Public (no API key), CORS-
+  gated to the same origins as `/yujin/chat`, rate-limited
+  20/min/session + 60/min/IP + 400/day/IP. The handler:
+  1. Validates session_id, prompt (1..2000 chars), lang,
+     history (max 10 turns), nac_tree (object).
+  2. Runs the YujinSafety prompt-injection scan on the user
+     turn.
+  3. Compacts the tree (max 200 elements/plugin, 10 plugins,
+     60 KB cap).
+  4. Composes a structured-output system prompt embedding
+     the tree + the seven NAC action kinds.
+  5. Calls **Claude Sonnet** primary via existing
+     `ClaudeClient::call()` (uses the org rotation pool +
+     BYOK awareness already in production).
+  6. Falls back to **DeepSeek free** via existing
+     `DeepSeekClient::call()` if Claude returns non-OK.
+  7. Sanitises model output through `YujinSafety::
+     sanitizeOutput()`, defensively extracts JSON from any
+     markdown fences the model may have slipped, validates
+     each action against the seven allowed kinds, drops
+     unknown kinds rather than 5xx-ing.
+  8. Returns `{ message, actions[], model, fallback_used,
+     tokens_in, tokens_out }`.
+  - API keys never appear in the response. The `model`
+    field is the only identifier the client sees.
+
+### Notes for implementers vendoring the demo
+
+- The frontend reads `window.NAC_DEMO_ENDPOINT` first if
+  defined, otherwise defaults to `/crm/api/v1/yujin/nac-demo`
+  (relative to `location.origin`). Vendors point this at
+  their own backend.
+- The backend pattern ports cleanly to other languages: the
+  composition is "compact tree + system prompt + LLM call +
+  JSON parse + action validation". The reference PHP
+  implementation is ~250 lines; equivalent Python or Node
+  ports would be similar.
+- The system prompt is informative, not normative. Any prompt
+  that produces the same output shape is compliant. See spec
+  section 9.2 for pseudo-code.
+
 ## [1.4.2] - 2026-05-06
 
 Patch release responding to Microsoft Copilot's review of

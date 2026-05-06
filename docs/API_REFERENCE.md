@@ -10,12 +10,19 @@ short description, error throws, and the spec section that
 formalises it. AI coding agents implementing NAC can use this
 table as the canonical lookup.
 
-Current runtime version: **`NAC.version === '1.4.2'`** (spec
-`1.4`). The runtime exposes `NAC.version` and
+Current runtime version: **`NAC.version === '1.5.0'`** (spec
+`1.5`). The runtime exposes `NAC.version` and
 `NAC.spec_version` as strings; check them at boot if you need
 feature gating.
 
 Version history (most recent first):
+- **1.5.0** (2026-05-06) -- MINOR release. Canonical NAC + LLM
+  agentic loop documented in spec sec 9.1 and 9.2. Reference
+  demo at `yujin.app/nac-spec/example.php` upgraded from a
+  hardcoded keyword matcher to an agentic dispatcher backed by
+  Claude Sonnet primary + DeepSeek fallback. New public
+  endpoint `POST /crm/api/v1/yujin/nac-demo`. Runtime
+  contract unchanged.
 - **1.4.2** (2026-05-06) -- Copilot-review patch: P5 return
   shapes formalised, NAC-3 event-family scoping (sec 6.1),
   NAC-drives-ARIA-mirrors direction (sec 7.3.1), confirm-dialog

@@ -1,9 +1,18 @@
 /* =====================================================================
-   NAC v1.4.2 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.5.0 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.5.0 (2026-05-06) -- MINOR release. Adds the canonical NAC + LLM
+   agentic loop pattern as informative spec sections 9.1 and 9.2.
+   The reference public demo at yujin.app/nac-spec/example.php now
+   ships an agentic chat backed by Claude Sonnet (primary) +
+   DeepSeek free (fallback) via the new public endpoint
+   /api/v1/yujin/nac-demo. API keys live server-side and never
+   reach the browser. The runtime contract in this file is unchanged
+   from v1.4.2; v1.5.0 is a SPEC + DEMO release.
 
    v1.4.2 (2026-05-06) -- patch release responding to Microsoft
    Copilot's review of v1.4.1. Strict superset of v1.4.1; every
@@ -2075,8 +2084,8 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.4.2',
-    spec_version: '1.4',
+    version:      '1.5.0',
+    spec_version: '1.5',
     /* registry */
     register:        register,
     unregister:      unregister,

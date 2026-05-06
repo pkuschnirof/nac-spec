@@ -7,18 +7,18 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.4 (spec) / 1.4.2 (reference runtime). v1.4.2 is a
-patch-level release responding to Microsoft Copilot's review of
-v1.4.1 (2026-05-06), which itself responded to the v1.4.0 peer
-review by DeepSeek + Claude + Grok Fast. The spec base remains
-v1.4 because no new role / event / attribute vocabulary was
-added -- only contracts were tightened and implicit rules made
-explicit. v1.4.2 normative additions on top of v1.4.1: P5.0
-return shapes, 6.1 NAC-3 event-family scoping, 7.3.1 NAC-drives-
+**Version**: 1.5 (spec) / 1.5.0 (reference runtime). v1.5.0 is a
+MINOR release that adds the canonical NAC + LLM agentic loop
+pattern (informative sections 9.1 and 9.2). The runtime contract
+is unchanged from v1.4.2; v1.5.0 is a spec + reference-demo
+release that documents the pattern many integrators will adopt.
+Strict superset of v1.4.2; every v1.0..v1.4.2 plugin remains
+valid. v1.4.2 normative additions on top of v1.4.1: P5.0 return
+shapes, 6.1 NAC-3 event-family scoping, 7.3.1 NAC-drives-
 ARIA-mirrors direction, 7.5 confirm-dialog contract, plus
 tightened plugin-id rule (sec 7.4) and click_by_verb tie-break
-+ tab_by_label matching rules (sec P5). Every v1.0..v1.4.1
-plugin remains valid. See CHANGELOG.md for the full diff.
++ tab_by_label matching rules (sec P5). See CHANGELOG.md for
+the full diff.
 **Date**: 2026-05-06.
 **Authors**: Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com> (lead), Sumi (collaboration).
 **License**: MIT.
@@ -1458,6 +1458,202 @@ consumes the manifest and returns a structured `NacOp` is compliant.
 
 A reference voice-to-NAC adapter is provided in
 `examples/voice_to_nac.md`.
+
+---
+
+## 9.1. NAC + LLM agentic loop (informative, added v1.5.0)
+
+> Added in v1.5.0. The reference public demo at
+> `yujin.app/nac-spec/example.php` implements this pattern.
+> Vendoring the demo gives you the same shape against your own
+> backend.
+
+The canonical pattern for an LLM-driven UI operator on a
+NAC-compliant page has four steps. Implementations MAY vary;
+the contract below is the recommended shape.
+
+### Step 1 -- Snapshot the page
+
+Caller (frontend, in-page agent, test runner) calls
+`NAC.describe()` and optionally `NAC.manifest(<plugin>)` for each
+plugin, then assembles a compact tree:
+
+```js
+function snapshotTree() {
+  const snap = NAC.describe();
+  return {
+    active:  snap.active,
+    plugins: (snap.plugins || []).map(p => ({
+      plugin:   p.plugin,
+      state:    p.state,
+      elements: p.elements,            // P5.0 NacElement[]
+      manifest: NAC.manifest(p.plugin),// optional, full contract
+    })),
+  };
+}
+```
+
+The tree is the source of truth for the LLM. Keep it under
+~60 KB JSON to fit common context budgets (Claude Sonnet 200 K
+tokens, DeepSeek 64 K, GPT-4o-mini 128 K -- 60 KB is well
+within all three).
+
+### Step 2 -- Send to a backend that holds the API key
+
+The frontend MUST NOT call an LLM provider directly: it would
+expose the API key in the network tab of any visitor. Pattern:
+
+```
+POST https://your-backend/nac-demo
+Body: {
+  session_id: <stable per browser tab>,
+  prompt:     <user request>,
+  lang:       <2-letter ISO>,
+  history:    [{role, content}, ...],   // optional, last 4-10 turns
+  nac_tree:   <step-1 output>,
+}
+```
+
+The backend composes a system prompt that constrains the
+model to the NAC verb vocabulary and a strict JSON output
+shape. See section 9.2 for the canonical prompt.
+
+### Step 3 -- Backend calls the LLM with a structured-output system prompt
+
+The system prompt:
+
+1. Enumerates the available action kinds: `click`,
+   `click_by_verb`, `fill`, `select`, `tab`, `tab_by_label`,
+   `say`.
+2. Forces the response to a single JSON object
+   `{ message, actions[] }`.
+3. Embeds the NAC tree as the source of valid `nac_id`s.
+4. Caps the action list (recommended: 6 per turn) and
+   forbids inventing IDs that are not in the tree.
+
+The reference implementation in
+`crm_desa/api/v1/yujin.php::yjNacDemoSystemPrompt()` is one
+canonical realisation. The prompt is informative, not
+normative -- any prompt that produces the same output shape
+is compliant.
+
+The backend SHOULD chain providers: a primary (e.g. Claude
+Sonnet) plus a fallback (e.g. DeepSeek). When the primary
+returns a non-2xx or a parse error, retry against the
+fallback before surfacing the failure to the caller.
+
+### Step 4 -- Frontend dispatches each action
+
+The backend response shape:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "message": "Toco Mi y abro el modal secreto.",
+    "actions": [
+      { "kind": "click", "nac_id": "note.e" },
+      { "kind": "click", "nac_id": "secret.open" }
+    ],
+    "model": "claude-sonnet-4-6",
+    "fallback_used": false
+  }
+}
+```
+
+The frontend dispatches each action through the standard
+NAC primitives:
+
+```js
+async function dispatch(a) {
+  switch (a.kind) {
+    case 'click':         return NAC.click(a.nac_id);
+    case 'click_by_verb': return NAC.click_by_verb(a.plugin, a.verb);
+    case 'fill':          return NAC.fill(a.nac_id, a.value);
+    case 'select':        return NAC.select(a.nac_id, a.value);
+    case 'tab':           return NAC.tab(a.plugin, a.tab_key);
+    case 'tab_by_label':  return NAC.tab_by_label(a.plugin, a.label);
+    case 'say':           /* render text, no DOM action */ return;
+  }
+}
+```
+
+Each `NAC.*` call benefits from v1.4.2 focus follow + visual
+pulse, so the human reviewer SEES every step the agent takes.
+
+### Compliance level
+
+This pattern is informative. A NAC-compliant page does NOT
+need to expose an LLM-driven chat. The reference public demo
+implements it because the AI peer review of 2026-05-06 (see
+`docs/AI_REVIEWS_OF_NAC_SPEC.md`) flagged that a
+hardcoded-keyword chat on the demo page is the antithesis of
+what NAC promises -- which is exactly that the agent reads
+the manifest and decides.
+
+### Failure modes the loop must handle
+
+- **API key absent**: backend returns 502; caller shows a
+  graceful message and falls back to a local intent parser
+  (the reference demo keeps a tokenised matcher behind a
+  `try/catch` exactly for this case).
+- **Tree too large**: backend rejects 413 with the byte
+  count; caller trims the tree (drop hidden plugins, drop
+  rows beyond the visible viewport, drop fields with
+  `data-nac-state="hidden"`) and retries.
+- **Model returns non-JSON**: backend logs the sample and
+  returns a benign `{ actions: [] }` with a parse_warning
+  flag; the caller renders the model's text via a `say`
+  fallback rather than 5xx-ing the user.
+- **Action references an unknown nac_id**: the runtime's
+  `NAC.click()` etc throw `NacError('not_found')`; the
+  caller catches per-action and continues the chain rather
+  than aborting.
+
+The reference backend at
+`crm_desa/api/v1/yujin.php::yjNacDemo()` covers all four
+failure modes.
+
+---
+
+## 9.2. Canonical system prompt (informative)
+
+Pseudo-code rather than verbatim text so implementers can
+adapt to their target model:
+
+```
+You are a NAC operator agent for an interactive page.
+
+AVAILABLE ACTION KINDS:
+  click, click_by_verb, fill, select, tab, tab_by_label, say
+
+OUTPUT SHAPE (one JSON object, no markdown, no prose around it):
+{
+  "message": "<short reply in user's language>",
+  "actions": [ { "kind": ..., ... }, ... ]
+}
+
+RULES:
+  1. Only emit nac_ids that appear in the NAC tree below.
+  2. Maximum 6 actions per turn; order matters.
+  3. message <= 30 words, in <user lang>.
+  4. For ambiguity: ONE action plus a {kind:'say'} clarifier
+     instead of guessing.
+  5. Never include destructive actions you were not asked for.
+
+NAC TREE OF THE CURRENT PAGE:
+<tree as JSON>
+```
+
+The `<user lang>` placeholder maps from the frontend's
+`lang` field. The `<tree as JSON>` placeholder is the output
+of step 1 above, JSON-stringified and ASCII-safe.
+
+The reference backend implements this prompt with two
+robustness measures: a defensive JSON extractor that strips
+markdown fences if the model emits one, and a strict
+allow-list of action kinds (unknown kinds are dropped, not
+errored, so the frontend keeps moving).
 
 ---
 
