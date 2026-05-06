@@ -1,0 +1,23 @@
+{
+  "name": "nacify",
+  "version": "0.1.0",
+  "description": "NAC migrator -- annotate any web project with data-nac-* in one PR.",
+  "license": "MIT",
+  "author": "Pablo Kuschnirof + Sumi",
+  "bin": {
+    "nacify": "./bin/nacify.js"
+  },
+  "main": "./src/index.js",
+  "scripts": {
+    "test": "node test/run_tests.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ]
+}
