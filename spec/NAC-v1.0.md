@@ -628,10 +628,321 @@ https://github.com/<TBD-after-publish>/nac-spec
 
 ## 12. Glossary of acronyms
 
-- **NAC**: Navegabilidad Automatica Compliance.
+- **NAC**: Native Accessibility Contract (formerly Navegabilidad
+  Automatica Compliance, the Spanish phrasing the spec was
+  drafted under; both expansions refer to the same contract).
 - **RPA**: Robotic Process Automation.
 - **WCAG**: Web Content Accessibility Guidelines.
 - **ARIA**: Accessible Rich Internet Applications.
+- **MCP**: Model Context Protocol (Anthropic, 2024-2026).
 - **i18n**: internationalization.
 
-End of NAC v1.0 normative document.
+End of NAC v1.0 baseline normative content.
+
+---
+
+## 13. Widget extensions (v1.1, normative)
+
+This section EXTENDS sections 1-12 with vocabulary for widgets
+that v1.0 left under-specified. All v1.0 content above is
+unchanged. A NAC-1.0 plugin is a valid NAC-1.1 plugin without
+modification; v1.1 is a strict superset.
+
+The extensions cover nine widget families that a real product
+ships routinely and that an autonomous operator must drive
+identically to a human: tabs (formalised), accordions, sliders,
+comboboxes (autocomplete), datepickers, sortable / filterable /
+paginated tables, drag-and-drop, file uploads, tooltips and
+popovers.
+
+### 13.1. New roles
+
+The role vocabulary in P2 (section 3) is extended with:
+
+| Role                  | Purpose                                          |
+|-----------------------|--------------------------------------------------|
+| `tablist`             | Container holding `tab` members. Was implicit in v1.0; now formal |
+| `tabpanel`            | Panel revealed when its associated tab is active |
+| `accordion-section`   | Collapsible section with header + body          |
+| `slider`              | Continuous numeric input with min/max bounds     |
+| `dropzone`            | File drop target                                 |
+| `draggable`           | Item that can be picked up and moved             |
+| `drop-target`         | Container that accepts a `draggable`             |
+| `tooltip-trigger`     | Element that, when hovered or focused, surfaces a tooltip |
+| `tooltip-content`     | The tooltip body                                 |
+| `popover-trigger`     | Element that, when activated, surfaces a popover |
+| `popover-content`     | The popover body                                 |
+| `sort-control`        | Column header that toggles sort direction        |
+| `filter-control`      | Input or chip that constrains a list/table      |
+| `pagination-control`  | Page selector for a list/table                  |
+| `notification`        | Toast / banner / inline alert addressed to the operator |
+
+A plugin MAY use any subset of these; an operator MUST be able
+to discover the inventory through `manifest_nac` (section 13.5).
+
+### 13.2. New field types
+
+The field-type vocabulary in P2 (section 3) is extended with:
+
+| `data-nac-field-type` | Semantics                                        |
+|-----------------------|--------------------------------------------------|
+| `combobox`            | Single-value text field with autocomplete suggestions |
+| `multi-select`        | Multi-value picker with chips (clarifies v1.0 `multi`) |
+| `range`               | Continuous numeric (paired with `role="slider"`) |
+| `time`                | Time-of-day, separated from `date`               |
+| `date-range`          | Pair of dates (start + end)                      |
+| `color`               | Hex / rgb color picker                            |
+| `email`               | Subtype hint of `text` for email validation     |
+| `tel`                 | Subtype hint of `text` for phone numbers         |
+| `url`                 | Subtype hint of `text` for URLs                   |
+
+The pre-existing v1.0 types remain valid. Operators that do not
+recognise a v1.1 type MUST treat it as `text` and emit
+`nac:field:changed` with the raw value.
+
+### 13.3. New events
+
+The event vocabulary in P4 (section 3) is extended with:
+
+#### Tab lifecycle (formalised)
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:tab:switching`      | Precedes `nac:tab:changed` so consumers can run transition logic |
+| `nac:tab:changed`        | Already in v1.0; unchanged                   |
+
+#### Accordion section
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:section:expanding`  | Section starts opening                       |
+| `nac:section:expanded`   | Section fully open                            |
+| `nac:section:collapsing` | Section starts closing                        |
+| `nac:section:collapsed`  | Section fully closed                          |
+
+#### Slider
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:slider:value_changed` | Value changed by user or programmatic. Implementations SHOULD debounce continuous drags to ~16 ms or fire only on final release |
+
+#### Datepicker (built on top of `nac:plugin:*`)
+
+A datepicker MUST emit `nac:plugin:opening | opened | closing |
+closed` for the picker overlay using the field's nac_id as the
+plugin slug, plus the field-changed event:
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:datepicker:date_picked` | A date or date-range was committed. Detail carries `value` as ISO 8601 |
+
+#### Drag and drop
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:drag:started`       | A `draggable` is picked up                    |
+| `nac:drag:over`          | The dragged item enters a `drop-target`. Detail carries `from_nac_id` and `over_nac_id` |
+| `nac:drag:dropped`       | The dragged item is released over a valid `drop-target`. Detail carries `from_nac_id`, `target_nac_id`, and `value` |
+| `nac:drag:cancelled`     | Drag aborted (Esc, drop on invalid target)    |
+
+#### Dropzone / file upload
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:dropzone:drag_over` | File hovers over the dropzone                 |
+| `nac:dropzone:dropped`   | File released on the dropzone                 |
+| `nac:file:added`         | File queued for processing                    |
+| `nac:file:upload_progress` | Progress tick. Detail carries `bytes_sent`, `bytes_total`, `pct` |
+| `nac:file:upload_completed` | Upload finished successfully. Detail carries `file_id` (server-assigned) |
+| `nac:file:upload_failed` | Upload failed. Detail carries `error`        |
+
+#### Table operations
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:table:sort_changed` | Sort column or direction changed. Detail carries `column_nac_id`, `direction: 'asc' \| 'desc' \| 'none'` |
+| `nac:table:filter_changed` | A filter applied or cleared. Detail carries `filter_nac_id`, `value`, `cleared: bool` |
+| `nac:table:page_changed` | Page number changed. Detail carries `page_n`, `page_size`, `total_pages` |
+
+#### Tooltips and popovers
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:tooltip:shown`      | Tooltip became visible                        |
+| `nac:tooltip:hidden`     | Tooltip dismissed                             |
+| `nac:popover:shown`      | Popover opened (treat as transient plugin sub-region) |
+| `nac:popover:hidden`     | Popover closed                                |
+
+#### Notifications
+
+| Event                    | When                                          |
+|--------------------------|-----------------------------------------------|
+| `nac:notification:posted` | A notification appeared. Detail carries `severity: 'info' \| 'success' \| 'warning' \| 'error'`, `text`, `notification_nac_id` |
+| `nac:notification:dismissed` | The user or the operator dismissed a notification |
+
+### 13.4. New driver API functions
+
+The `window.NAC` interface in P5 (section 3) is extended with:
+
+```typescript
+interface NAC {
+  // v1.0 functions unchanged.
+
+  // Accordion
+  expand(section_nac_id: string): Promise<NacResult>;
+  collapse(section_nac_id: string): Promise<NacResult>;
+
+  // Datepicker -- shorthand. Equivalent to NAC.fill with an
+  // ISO 8601 string, but emits nac:datepicker:date_picked
+  // explicitly so consumers can wait for it.
+  pick_date(field_nac_id: string,
+            iso_date: string | { from: string; to: string }
+            ): Promise<NacResult>;
+
+  // Slider -- shorthand for NAC.fill on a numeric range field.
+  set_slider(field_nac_id: string, value: number): Promise<NacResult>;
+
+  // Sortable / filterable / paginated tables
+  sort(table_nac_id: string,
+       column_nac_id: string,
+       direction: 'asc' | 'desc' | 'none'): Promise<NacResult>;
+  filter(table_nac_id: string,
+         filter_nac_id: string,
+         value: any | null /* null clears */): Promise<NacResult>;
+  go_to_page(table_nac_id: string, page_n: number): Promise<NacResult>;
+
+  // Drag and drop
+  drag_drop(source_nac_id: string,
+            target_nac_id: string): Promise<NacResult>;
+
+  // File upload
+  upload_file(dropzone_nac_id: string,
+              file: File | Blob | { name: string; data: ArrayBuffer }
+              ): Promise<NacResult>;
+
+  // Tooltips / popovers (programmatic surfacing)
+  show_tooltip(trigger_nac_id: string): Promise<NacResult>;
+  hide_tooltip(trigger_nac_id: string): Promise<NacResult>;
+  show_popover(trigger_nac_id: string): Promise<NacResult>;
+  hide_popover(trigger_nac_id: string): Promise<NacResult>;
+}
+```
+
+Implementations MAY route some of the new functions through
+`fill` or `click` internally; the spec only mandates that the
+named function is callable and that the corresponding event from
+section 13.3 is emitted as a side effect. Operators MAY use
+either path.
+
+### 13.5. Manifest extensions
+
+The `manifest_nac` shape in P7 (section 3) is extended with
+optional inventories that let an operator discover capabilities
+without DOM scraping:
+
+```typescript
+interface NacManifest {
+  // v1.0 fields unchanged: plugin_slug, version, nac_version,
+  // i18n_namespace, modes_supported, kpis, actions, fields,
+  // tabs, rows.
+
+  // v1.1 additions, all optional:
+  accordion_sections?: Array<{
+    nac_id: string;
+    label_i18n: string;
+    default_state?: 'expanded' | 'collapsed';
+  }>;
+
+  sliders?: Array<{
+    nac_id: string;
+    min: number;
+    max: number;
+    step?: number;
+    unit?: string;            // e.g. "%", "px", "MB"
+    label_i18n: string;
+  }>;
+
+  tables?: Array<{
+    nac_id: string;
+    label_i18n: string;
+    columns: Array<{
+      nac_id: string;
+      label_i18n: string;
+      sortable: boolean;
+      filterable: boolean;
+      filter_type?: 'text' | 'select' | 'date-range' | 'number-range';
+    }>;
+    pagination?: { page_size: number; default_page: number };
+  }>;
+
+  drag_zones?: Array<{
+    nac_id: string;
+    label_i18n: string;
+    accepts: string[];        // nac_id prefixes of valid sources
+  }>;
+
+  dropzones?: Array<{
+    nac_id: string;
+    label_i18n: string;
+    accept_mime?: string[];   // e.g. ["image/*", "application/pdf"]
+    max_size_bytes?: number;
+    multi?: boolean;
+  }>;
+
+  notifications_channel?: {
+    nac_id: string;          // the region where notifications surface
+    severities: Array<'info' | 'success' | 'warning' | 'error'>;
+  };
+}
+```
+
+A NAC-1.0 manifest without these fields is valid as NAC-1.1.
+
+### 13.6. State extensions
+
+The state vocabulary in P3 (section 3) is extended with:
+
+| `data-nac-state` value | Applies to                          |
+|------------------------|-------------------------------------|
+| `expanded`             | accordion-section, popover, tooltip |
+| `collapsed`            | accordion-section                   |
+| `dragging`             | draggable while picked up           |
+| `drop-target-over`     | drop-target while drag is over it   |
+| `uploading`            | dropzone, file row during upload    |
+| `sorting`              | sort-control while reorder pending  |
+| `filtering`            | filter-control while query pending  |
+
+Pre-existing v1.0 states (`idle`, `active`, etc.) remain valid
+and apply across the new roles.
+
+### 13.7. Compliance level for v1.1
+
+A plugin claiming **NAC-3 v1.1** MUST:
+
+1. Satisfy NAC-3 baseline (P1..P7 of v1.0).
+2. For every widget it ships from the families above (tabs,
+   accordions, sliders, etc), declare the appropriate role from
+   13.1, emit the appropriate events from 13.3, and include the
+   appropriate manifest entries from 13.5.
+3. Implement the corresponding driver functions from 13.4 if
+   the widget is operated programmatically (e.g. a sortable
+   table MUST support `NAC.sort()`).
+
+A plugin MAY claim **NAC-3 v1.0** (baseline only) and ship some
+v1.1 widgets without their formal roles -- it remains valid v1.0
+but is not v1.1-compliant.
+
+### 13.8. Backwards compatibility commitment
+
+Every v1.1 addition is **additive**. A v1.0 operator parses a
+v1.1 plugin without crashing: unknown roles are treated as
+`region`, unknown field-types are treated as `text`, unknown
+events are ignored. A v1.1 operator drives a v1.0 plugin
+without retrofit: the v1.1 driver functions degrade to existing
+v1.0 functions when the v1.1 manifest entries are absent.
+
+The semver impact of v1.1 is **MINOR**. Any future change that
+removes or repurposes a v1.0 attribute, event, or function will
+require **MAJOR** (v2.0).
+
+End of NAC v1.1 normative document.

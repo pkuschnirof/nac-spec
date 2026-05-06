@@ -6,12 +6,12 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.0](https://img.shields.io/badge/NAC-v1.0-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.1](https://img.shields.io/badge/NAC-v1.1-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Kuschnirof, Sumi.
 **License:** MIT.
-**Spec version:** v1.0 (2026-05-05).
+**Spec version:** v1.1 (2026-05-06; strict superset of v1.0).
 
 ---
 
