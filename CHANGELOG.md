@@ -20,6 +20,16 @@ Versioning conventions for the spec:
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.3.0] - 2026-05-06
+
+Strict superset of v1.2. Every v1.0 / v1.1 / v1.2 plugin
+remains valid; every v1.0 / v1.1 / v1.2 operator continues
+to work. Adds vocabulary for sixteen UI primitive families
+that were observable on most production web apps but had no
+formal NAC role.
+
 ### Added
 
 - **Spec section 14.7** -- "Section navigation (page-level
@@ -29,12 +39,100 @@ Versioning conventions for the spec:
   `NAC.list_sections()` and `NAC.go_to_section(id)`. New event
   `nac:section:reached`. Reference impl wires an
   IntersectionObserver per section so visibility flips emit
-  `nac:state:changed` automatically. Lets a voice or chat
-  operator say "go to the pricing section" and the page does
-  the right thing -- expand, switch tab if needed, scroll,
-  settle.
-- **Reference impl `js/nac.js`** bumped to 1.2.1: section
-  driver functions + observer.
+  `nac:state:changed` automatically.
+- **Spec section 15** -- "Common UI primitives extension
+  (v1.3, normative)". Strict superset of sections 1-14
+  covering 16 widget families:
+  - **A. Toast / banner / alert** -- `role=toast | banner |
+    confirm-dialog`, events `nac:toast:fired | dismissed`,
+    `nac:banner:displayed | dismissed`. Driver: `NAC.toast`,
+    `list_toasts`, `dismiss_toast`, `list_banners`,
+    `dismiss_banner`.
+  - **B. Toggle / switch** -- new `field_type="toggle"`,
+    instant-action boolean distinct from `checkbox`.
+  - **C. Stepper** -- `role=stepper / step`, events
+    `nac:step:advanced | back | completed | error`. Driver:
+    `step_next | step_back | step_to | step_state`.
+  - **D. Tree** -- `role=tree / treenode`, events
+    `nac:tree:expanded | collapsed | selected`. Driver:
+    `tree_expand | tree_collapse | tree_select | tree_path`.
+  - **E. Calendar with events** -- `role=calendar /
+    calendar-event`, events `nac:calendar:event_clicked |
+    moved`, `view_changed`, `date_selected`. Driver:
+    `calendar_view | calendar_go_to | calendar_select_event |
+    calendar_list_events`.
+  - **F. Rich text editor** -- new `field_type="richtext"` +
+    formatting verbs. Events `nac:richtext:format_applied |
+    link_inserted | mention_picked`. Driver:
+    `richtext_format | richtext_insert_link |
+    richtext_insert_mention`.
+  - **G. Tag input** -- new `field_type="tag-input"`,
+    free-input + suggestions. Events `nac:tags:added |
+    removed`. Driver: `add_tag | remove_tag | list_tags`.
+  - **H. Rating** -- new `field_type="rating"` (`min`, `max`,
+    `step`, `icon` in manifest). Driven via `NAC.fill`.
+  - **I. Confirmation dialog** -- `role=confirm-dialog`,
+    events `nac:confirm:requested | confirmed | cancelled`.
+    Driver: `NAC.confirm(prompt, opts) -> Promise<boolean>`,
+    `list_pending_confirms`.
+  - **J. Drawer / bottom-sheet** -- `role=drawer |
+    bottom-sheet`, events `nac:drawer:opened | closed |
+    peek`. Driver: `open_drawer | close_drawer | peek_drawer`.
+  - **K. Pagination standalone** -- generalises v1.1's
+    `pagination-control` role beyond tables.
+  - **L. Chart** -- `role=chart / chart-series / chart-point /
+    chart-legend`, manifest array `charts[]`. Events
+    `nac:chart:point_clicked | hovered | series_toggled |
+    filtered`. Driver: `chart_data | chart_toggle_series |
+    chart_filter`.
+  - **M. Map** -- `role=map / map-marker / map-layer`,
+    manifest array `maps[]`. Events `nac:map:marker_clicked |
+    zoom_changed | moved | layer_toggled`. Driver:
+    `map_focus | map_select_marker | map_toggle_layer |
+    list_markers`.
+  - **N. Avatar + presence** -- `role=avatar /
+    presence-indicator`, states `online | away | busy |
+    offline`. Event `nac:presence:changed`.
+  - **O. Floating action button** -- `role=fab` (specialised
+    primary action, often above bottom-sheet).
+  - **P. Empty state + skeleton** -- `role=empty-state /
+    skeleton`, kinds `no-results | first-time |
+    no-permission | error`. Events `nac:empty:displayed |
+    cta_clicked`; skeleton uses `nac:state:changed` loading
+    -> done.
+- **33 new lifecycle events** across the 16 families.
+- **35 new driver API functions** on `window.NAC`.
+- **3 new manifest extensions**: `charts[]`, `maps[]`, plus
+  the rating / tag-input / richtext field-level options.
+- **NAC-3 v1.2 compliance level** kept as is; new
+  **NAC-3 v1.3** level defined for plugins shipping any of
+  the v1.3 widgets.
+- **Reference impl `js/nac.js`** bumped from 1.2.1 to 1.3.0.
+  ~600 LOC added covering the 16 families. Still zero deps.
+  Still ASCII-pure. node --check passes.
+
+### Demo
+
+- **`yujin.app/nac-spec/example-v13.php`** (new, standalone)
+  -- 16 cards, one per primitive family. Every interaction
+  driveable through `window.NAC`. The page registers
+  manifests for each family, wires a system_map provider so
+  it shows up in `NAC.system_map()`, and a banner that
+  declares `nac:banner:displayed` on boot. CSS in
+  `css/example-v13.css`. JS in `js/example-v13.js`.
+
+### Migration
+
+- A v1.0 / v1.1 / v1.2 plugin is valid v1.3 without
+  modification.
+- A v1.0..v1.2 operator parses a v1.3 plugin without crashing
+  (unknown roles -> `region`, unknown field-types -> `text`,
+  unknown verbs -> opaque actions, unknown events ignored,
+  unknown manifest arrays silently skipped).
+- A v1.3 operator drives a v1.0..v1.2 plugin without retrofit
+  -- absence of any new role / event / driver function
+  downgrades to the equivalent v1.2 path.
+- semver impact: **MINOR**. No breaking change.
 
 ### Demo
 
@@ -356,7 +454,8 @@ families that v1.0 left under-specified.
   2026-05-05 (Patch Manager mvp60 SCORE 22/22, Plan tile NAC-3
   certified).
 
-[Unreleased]: https://github.com/pkuschnirof/nac-spec/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/pkuschnirof/nac-spec/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/pkuschnirof/nac-spec/compare/v1.0.0...v1.0.1

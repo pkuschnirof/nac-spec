@@ -6,12 +6,12 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.2](https://img.shields.io/badge/NAC-v1.2-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.3](https://img.shields.io/badge/NAC-v1.3-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Kuschnirof, Sumi.
 **License:** MIT.
-**Spec version:** v1.2 (2026-05-06; strict superset of v1.1, which is a strict superset of v1.0).
+**Spec version:** v1.3 (2026-05-06; strict superset of v1.2, v1.1, v1.0).
 
 ---
 
@@ -83,6 +83,55 @@ systems are not.
 - **Future-proof**: the same UI that a human uses today is what an
   agent will use tomorrow. No bespoke API to expose; the UI itself
   is the API.
+
+## What v1.3 adds (May 2026)
+
+Sixteen primitive families that v1.0..v1.2 left under-specified
+but every production app uses:
+
+- **Toast / banner / alert** -- `NAC.toast(text, opts)` plus
+  events `nac:toast:fired | dismissed` and a manifest-driven
+  list of pending banners.
+- **Toggle / switch** -- new `field_type="toggle"`, distinct
+  from checkbox.
+- **Stepper** -- `step_next / step_back / step_to`, events
+  `nac:step:advanced | back | completed | error`.
+- **Tree** -- hierarchical view with `tree_expand /
+  tree_collapse / tree_select / tree_path`.
+- **Calendar with events** -- `calendar_view |
+  calendar_go_to | calendar_select_event |
+  calendar_list_events`.
+- **Rich text editor** -- `field_type="richtext"` plus
+  `richtext_format / richtext_insert_link /
+  richtext_insert_mention`.
+- **Tag input** -- `field_type="tag-input"`, plus
+  `add_tag / remove_tag / list_tags`.
+- **Rating** -- `field_type="rating"` (`min` / `max` / `step` /
+  `icon`).
+- **Confirmation dialog** -- `NAC.confirm(prompt, opts) ->
+  Promise<boolean>` plus the modal it builds.
+- **Drawer / bottom-sheet** -- `open_drawer | close_drawer |
+  peek_drawer`.
+- **Pagination standalone** -- generalises v1.1's
+  `pagination-control` to any list, not only tables.
+- **Chart** -- `role=chart / chart-series / chart-point`,
+  manifest array `charts[]`, `chart_toggle_series` +
+  `chart_filter`.
+- **Map** -- `role=map / map-marker / map-layer`, manifest
+  array `maps[]`, `map_focus | map_select_marker |
+  map_toggle_layer`.
+- **Avatar + presence indicator** -- `role=avatar /
+  presence-indicator` with states `online | away | busy |
+  offline`.
+- **Floating action button** -- `role=fab`.
+- **Empty state + skeleton** -- distinguish "loading" from
+  "nothing here yet". `role=empty-state / skeleton` with
+  kinds `no-results | first-time | no-permission | error`.
+
+Live demo: [`yujin.app/nac-spec/example-v13.php`](https://yujin.app/nac-spec/example-v13.php).
+Spec section 15 in [`spec/NAC-v1.0.md`](spec/NAC-v1.0.md).
+Every v1.0 / v1.1 / v1.2 plugin remains valid v1.3 without
+modification. semver impact **MINOR**.
 
 ## What v1.2 adds (May 2026)
 

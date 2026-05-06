@@ -734,12 +734,474 @@
     }
   }
 
+  /* ---------- v1.3: helpers shared across primitives ------------- */
+
+  function _emit(name, detail) {
+    document.dispatchEvent(new CustomEvent(name, {
+      detail: detail || {}, bubbles: true,
+    }));
+  }
+  function _byId(id) {
+    return document.querySelector('[data-nac-id="' + id + '"]');
+  }
+
+  /* ---------- v1.3: toast / banner / confirm --------------------- */
+
+  let _toastSeq = 0;
+  function toast(text, opts) {
+    const o = opts || {};
+    const id = o.id || ('nac.toast.' + (++_toastSeq));
+    const ttl = Number(o.ttl_ms || 4000);
+    const sev = o.severity || 'info';
+    const wrap = (function () {
+      let r = document.querySelector('[data-nac-role="toast-region"]');
+      if (!r) {
+        r = document.createElement('div');
+        r.setAttribute('data-nac-role', 'toast-region');
+        r.setAttribute('aria-live', 'polite');
+        r.style.cssText = 'position:fixed;top:16px;right:16px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none;';
+        document.body.appendChild(r);
+      }
+      return r;
+    })();
+    const el = document.createElement('div');
+    el.setAttribute('data-nac-id', id);
+    el.setAttribute('data-nac-role', 'toast');
+    el.setAttribute('data-nac-state', 'visible');
+    el.setAttribute('data-nac-severity', sev);
+    el.style.cssText = 'background:#2b2118;color:#fffaf0;padding:10px 14px;border-radius:6px;font-family:system-ui,sans-serif;font-size:13px;max-width:340px;box-shadow:0 4px 12px rgba(0,0,0,0.18);pointer-events:auto;';
+    el.textContent = text;
+    wrap.appendChild(el);
+    _emit('nac:toast:fired', { id: id, severity: sev, text: text, ttl_ms: ttl });
+    if (ttl > 0) {
+      setTimeout(function () {
+        if (el.parentNode) {
+          el.setAttribute('data-nac-state', 'dismissed');
+          el.parentNode.removeChild(el);
+          _emit('nac:toast:dismissed', { id: id, dismissed_by: 'timeout' });
+        }
+      }, ttl);
+    }
+    return id;
+  }
+  function list_toasts() {
+    const out = [];
+    document.querySelectorAll('[data-nac-role="toast"][data-nac-state="visible"]')
+      .forEach(function (el) {
+        out.push({
+          id: el.getAttribute('data-nac-id'),
+          text: el.textContent,
+          severity: el.getAttribute('data-nac-severity') || 'info',
+        });
+      });
+    return out;
+  }
+  function dismiss_toast(id) {
+    const el = _byId(id);
+    if (el && el.parentNode) {
+      el.setAttribute('data-nac-state', 'dismissed');
+      el.parentNode.removeChild(el);
+      _emit('nac:toast:dismissed', { id: id, dismissed_by: 'programmatic' });
+    }
+  }
+
+  function list_banners() {
+    const out = [];
+    document.querySelectorAll('[data-nac-role="banner"][data-nac-state="visible"]')
+      .forEach(function (el) {
+        out.push({
+          id: el.getAttribute('data-nac-id'),
+          text: (el.textContent || '').trim(),
+          severity: el.getAttribute('data-nac-severity') || 'info',
+        });
+      });
+    return out;
+  }
+  function dismiss_banner(id) {
+    const el = _byId(id);
+    if (!el) return;
+    el.setAttribute('data-nac-state', 'dismissed');
+    el.style.display = 'none';
+    _emit('nac:banner:dismissed', { id: id });
+  }
+
+  /* ---------- v1.3: confirm dialog ------------------------------- */
+
+  function confirm_dialog(prompt, opts) {
+    const o = opts || {};
+    const id = 'nac.confirm.' + Date.now();
+    const danger = !!o.danger;
+    return new Promise(function (resolve) {
+      const overlay = document.createElement('div');
+      overlay.setAttribute('data-nac-id', id);
+      overlay.setAttribute('data-nac-role', 'confirm-dialog');
+      overlay.setAttribute('data-nac-state', 'pending');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      const card = document.createElement('div');
+      card.style.cssText = 'background:#fff;border-radius:8px;padding:20px;max-width:440px;font-family:system-ui,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,0.3);';
+      card.innerHTML =
+        '<div style="font-size:14px;color:#2b2118;margin-bottom:16px;line-height:1.5;">' +
+          String(prompt).replace(/[<>&]/g, function (c) {
+            return ({ '<':'&lt;','>':'&gt;','&':'&amp;' })[c];
+          }) +
+        '</div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+          '<button data-nac-id="' + id + '.cancel"  data-nac-role="action" data-nac-action="cancel" ' +
+                  'style="padding:6px 14px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font:inherit;">' +
+                  (o.cancel_label || 'Cancel') + '</button>' +
+          '<button data-nac-id="' + id + '.confirm" data-nac-role="action" data-nac-action="confirm" ' +
+                  'style="padding:6px 14px;border:0;border-radius:4px;background:' + (danger ? '#b91c1c' : '#ec407a') + ';color:#fff;cursor:pointer;font:inherit;">' +
+                  (o.confirm_label || 'Confirm') + '</button>' +
+        '</div>';
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      _emit('nac:confirm:requested', { id: id, prompt: prompt, danger: danger });
+
+      function done(answer) {
+        overlay.setAttribute('data-nac-state', answer ? 'confirmed' : 'cancelled');
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        _emit(answer ? 'nac:confirm:confirmed' : 'nac:confirm:cancelled', { id: id });
+        resolve(!!answer);
+      }
+      card.querySelector('[data-nac-id="' + id + '.confirm"]').addEventListener('click', function () { done(true); });
+      card.querySelector('[data-nac-id="' + id + '.cancel"]').addEventListener('click', function () { done(false); });
+    });
+  }
+  function list_pending_confirms() {
+    const out = [];
+    document.querySelectorAll('[data-nac-role="confirm-dialog"][data-nac-state="pending"]')
+      .forEach(function (el) {
+        out.push({ id: el.getAttribute('data-nac-id') });
+      });
+    return out;
+  }
+
+  /* ---------- v1.3: stepper -------------------------------------- */
+
+  function _stepperRoot(stepper_id) {
+    return document.querySelector(
+      '[data-nac-role="stepper"][data-nac-id="' + stepper_id + '"]');
+  }
+  function _stepperSteps(stepper_id) {
+    const root = _stepperRoot(stepper_id);
+    if (!root) return [];
+    return Array.prototype.slice.call(
+      root.querySelectorAll('[data-nac-role="step"]'));
+  }
+  function step_state(stepper_id) {
+    const steps = _stepperSteps(stepper_id);
+    let current = -1;
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i].getAttribute('data-nac-state') === 'current') { current = i; break; }
+    }
+    if (current < 0) {
+      for (let i = 0; i < steps.length; i++) {
+        if (steps[i].getAttribute('data-nac-state') !== 'done') { current = i; break; }
+      }
+    }
+    if (current < 0) current = steps.length - 1;
+    return { current: current, total: steps.length };
+  }
+  function step_to(stepper_id, n) {
+    const steps = _stepperSteps(stepper_id);
+    if (!steps.length) throw NacError('stepper_not_found', stepper_id);
+    n = Math.max(0, Math.min(steps.length - 1, Number(n)));
+    const prior = step_state(stepper_id).current;
+    steps.forEach(function (s, i) {
+      if (i < n)      s.setAttribute('data-nac-state', 'done');
+      else if (i === n) s.setAttribute('data-nac-state', 'current');
+      else            s.setAttribute('data-nac-state', 'pending');
+    });
+    if (n > prior) _emit('nac:step:advanced', { stepper_id: stepper_id, from: prior, to: n, total: steps.length });
+    else if (n < prior) _emit('nac:step:back', { stepper_id: stepper_id, from: prior, to: n });
+    if (n === steps.length - 1) {
+      _emit('nac:step:completed', { stepper_id: stepper_id, total: steps.length });
+    }
+    return { current: n, total: steps.length };
+  }
+  function step_next(stepper_id) {
+    const s = step_state(stepper_id);
+    return step_to(stepper_id, Math.min(s.total - 1, s.current + 1));
+  }
+  function step_back(stepper_id) {
+    const s = step_state(stepper_id);
+    return step_to(stepper_id, Math.max(0, s.current - 1));
+  }
+
+  /* ---------- v1.3: tree ----------------------------------------- */
+
+  function _treeNode(node_id) {
+    return document.querySelector(
+      '[data-nac-role="treenode"][data-nac-id="' + node_id + '"]');
+  }
+  function tree_expand(node_id) {
+    const n = _treeNode(node_id);
+    if (!n) throw NacError('treenode_not_found', node_id);
+    if (n.getAttribute('data-nac-state') === 'leaf') return;
+    n.setAttribute('data-nac-state', 'expanded');
+    Array.prototype.slice.call(n.children).forEach(function (c) {
+      if (c.getAttribute && c.getAttribute('data-nac-role') === 'tree-children') {
+        c.removeAttribute('hidden');
+      }
+    });
+    const level = parseInt(n.getAttribute('data-nac-level') || '0', 10);
+    _emit('nac:tree:expanded', { node_id: node_id, level: level });
+  }
+  function tree_collapse(node_id) {
+    const n = _treeNode(node_id);
+    if (!n) throw NacError('treenode_not_found', node_id);
+    if (n.getAttribute('data-nac-state') === 'leaf') return;
+    n.setAttribute('data-nac-state', 'collapsed');
+    Array.prototype.slice.call(n.children).forEach(function (c) {
+      if (c.getAttribute && c.getAttribute('data-nac-role') === 'tree-children') {
+        c.setAttribute('hidden', 'hidden');
+      }
+    });
+    const level = parseInt(n.getAttribute('data-nac-level') || '0', 10);
+    _emit('nac:tree:collapsed', { node_id: node_id, level: level });
+  }
+  function tree_select(node_id) {
+    const n = _treeNode(node_id);
+    if (!n) throw NacError('treenode_not_found', node_id);
+    const tree = n.closest('[data-nac-role="tree"]');
+    if (tree) {
+      tree.querySelectorAll('[data-nac-role="treenode"][data-nac-state="selected"]').forEach(function (other) {
+        if (other !== n) other.setAttribute('data-nac-state', other.hasAttribute('data-nac-was-expanded') ? 'expanded' : 'collapsed');
+      });
+    }
+    n.setAttribute('data-nac-state', 'selected');
+    _emit('nac:tree:selected', { node_id: node_id, path: tree_path(node_id) });
+  }
+  function tree_path(node_id) {
+    const n = _treeNode(node_id);
+    if (!n) return [];
+    const out = [];
+    let cur = n;
+    while (cur) {
+      if (cur.getAttribute && cur.getAttribute('data-nac-role') === 'treenode') {
+        out.unshift(cur.getAttribute('data-nac-id'));
+      }
+      if (cur.getAttribute && cur.getAttribute('data-nac-role') === 'tree') break;
+      cur = cur.parentElement;
+    }
+    return out;
+  }
+
+  /* ---------- v1.3: tag-input ------------------------------------ */
+
+  function _tagFieldRoot(field_id) {
+    const el = document.querySelector(
+      '[data-nac-role="field"][data-nac-field-type="tag-input"][data-nac-id="' + field_id + '"]');
+    return el;
+  }
+  function add_tag(field_id, value) {
+    const root = _tagFieldRoot(field_id);
+    if (!root) throw NacError('field_not_found', field_id);
+    const cur = list_tags(field_id);
+    if (cur.indexOf(value) >= 0) return;
+    cur.push(value);
+    root.setAttribute('data-nac-value', cur.join('|'));
+    _emit('nac:tags:added', { field_id: field_id, value: value, source: 'programmatic' });
+  }
+  function remove_tag(field_id, value) {
+    const root = _tagFieldRoot(field_id);
+    if (!root) throw NacError('field_not_found', field_id);
+    const cur = list_tags(field_id).filter(function (v) { return v !== value; });
+    root.setAttribute('data-nac-value', cur.join('|'));
+    _emit('nac:tags:removed', { field_id: field_id, value: value });
+  }
+  function list_tags(field_id) {
+    const root = _tagFieldRoot(field_id);
+    if (!root) return [];
+    const v = root.getAttribute('data-nac-value') || '';
+    return v ? v.split('|') : [];
+  }
+
+  /* ---------- v1.3: drawer / bottom-sheet ------------------------ */
+
+  function _drawer(id) {
+    return document.querySelector(
+      '[data-nac-role="drawer"][data-nac-id="' + id + '"], ' +
+      '[data-nac-role="bottom-sheet"][data-nac-id="' + id + '"]');
+  }
+  function open_drawer(id, position) {
+    const d = _drawer(id);
+    if (!d) throw NacError('drawer_not_found', id);
+    if (position) d.setAttribute('data-nac-position', position);
+    d.setAttribute('data-nac-state', 'open');
+    _emit('nac:drawer:opened', { id: id, position: d.getAttribute('data-nac-position') || 'right' });
+  }
+  function close_drawer(id) {
+    const d = _drawer(id);
+    if (!d) throw NacError('drawer_not_found', id);
+    d.setAttribute('data-nac-state', 'closed');
+    _emit('nac:drawer:closed', { id: id, dismissed_by: 'programmatic' });
+  }
+  function peek_drawer(id, height_pct) {
+    const d = _drawer(id);
+    if (!d) throw NacError('drawer_not_found', id);
+    d.setAttribute('data-nac-state', 'peek');
+    d.setAttribute('data-nac-peek-pct', String(height_pct || 25));
+    _emit('nac:drawer:peek', { id: id, height_pct: Number(height_pct || 25) });
+  }
+
+  /* ---------- v1.3: calendar ------------------------------------- */
+
+  function calendar_view(cal_id, view) {
+    const c = document.querySelector(
+      '[data-nac-role="calendar"][data-nac-id="' + cal_id + '"]');
+    if (!c) throw NacError('calendar_not_found', cal_id);
+    c.setAttribute('data-nac-view', view);
+    _emit('nac:calendar:view_changed', { calendar_id: cal_id, view: view });
+  }
+  function calendar_go_to(cal_id, date) {
+    const c = document.querySelector(
+      '[data-nac-role="calendar"][data-nac-id="' + cal_id + '"]');
+    if (!c) throw NacError('calendar_not_found', cal_id);
+    c.setAttribute('data-nac-date', date);
+    _emit('nac:calendar:date_selected', { calendar_id: cal_id, date: date });
+  }
+  function calendar_select_event(event_id) {
+    const ev = _byId(event_id);
+    if (!ev) throw NacError('calendar_event_not_found', event_id);
+    ev.setAttribute('data-nac-state', 'selected');
+    _emit('nac:calendar:event_clicked', {
+      event_id: event_id,
+      start: ev.getAttribute('data-nac-start') || null,
+      end:   ev.getAttribute('data-nac-end')   || null,
+    });
+  }
+  function calendar_list_events(cal_id /*, from, to */) {
+    const c = document.querySelector(
+      '[data-nac-role="calendar"][data-nac-id="' + cal_id + '"]');
+    if (!c) return [];
+    const out = [];
+    c.querySelectorAll('[data-nac-role="calendar-event"]').forEach(function (e) {
+      out.push({
+        id: e.getAttribute('data-nac-id'),
+        start: e.getAttribute('data-nac-start') || null,
+        end:   e.getAttribute('data-nac-end')   || null,
+        label: (e.getAttribute('data-nac-label') || e.textContent || '').trim(),
+        state: e.getAttribute('data-nac-state') || 'confirmed',
+      });
+    });
+    return out;
+  }
+
+  /* ---------- v1.3: chart ---------------------------------------- */
+
+  function chart_data(chart_id) {
+    const c = document.querySelector(
+      '[data-nac-role="chart"][data-nac-id="' + chart_id + '"]');
+    if (!c) throw NacError('chart_not_found', chart_id);
+    const series = [];
+    c.querySelectorAll('[data-nac-role="chart-series"]').forEach(function (s) {
+      const points = [];
+      s.querySelectorAll('[data-nac-role="chart-point"]').forEach(function (p) {
+        points.push({
+          x: p.getAttribute('data-nac-x'),
+          y: Number(p.getAttribute('data-nac-y')),
+          label: p.getAttribute('data-nac-label') || '',
+          id: p.getAttribute('data-nac-id'),
+        });
+      });
+      series.push({
+        id: s.getAttribute('data-nac-id'),
+        label: s.getAttribute('data-nac-label') || '',
+        visible: s.getAttribute('data-nac-state') !== 'hidden',
+        points: points,
+      });
+    });
+    return { chart_id: chart_id, series: series };
+  }
+  function chart_toggle_series(chart_id, series_id, on) {
+    const s = document.querySelector(
+      '[data-nac-role="chart-series"][data-nac-id="' + series_id + '"]');
+    if (!s) throw NacError('chart_series_not_found', series_id);
+    const target = (typeof on === 'boolean') ? on : (s.getAttribute('data-nac-state') === 'hidden');
+    s.setAttribute('data-nac-state', target ? 'visible' : 'hidden');
+    _emit('nac:chart:series_toggled', { chart_id: chart_id, series: series_id, visible: target });
+  }
+  function chart_filter(chart_id, criteria) {
+    _emit('nac:chart:filtered', { chart_id: chart_id, criteria: criteria });
+  }
+
+  /* ---------- v1.3: map ------------------------------------------ */
+
+  function map_focus(map_id, lat, lng, zoom) {
+    const m = document.querySelector(
+      '[data-nac-role="map"][data-nac-id="' + map_id + '"]');
+    if (!m) throw NacError('map_not_found', map_id);
+    m.setAttribute('data-nac-lat',  String(lat));
+    m.setAttribute('data-nac-lng',  String(lng));
+    if (zoom != null) m.setAttribute('data-nac-zoom', String(zoom));
+    _emit('nac:map:moved', { map_id: map_id, lat: Number(lat), lng: Number(lng) });
+    if (zoom != null) {
+      _emit('nac:map:zoom_changed', { map_id: map_id, zoom: Number(zoom) });
+    }
+  }
+  function map_select_marker(marker_id) {
+    const mk = document.querySelector(
+      '[data-nac-role="map-marker"][data-nac-id="' + marker_id + '"]');
+    if (!mk) throw NacError('map_marker_not_found', marker_id);
+    mk.setAttribute('data-nac-state', 'selected');
+    const map_id = (mk.closest('[data-nac-role="map"]') || {}).getAttribute
+      ? mk.closest('[data-nac-role="map"]').getAttribute('data-nac-id')
+      : null;
+    _emit('nac:map:marker_clicked', {
+      map_id: map_id,
+      marker_id: marker_id,
+      lat: Number(mk.getAttribute('data-nac-lat') || 0),
+      lng: Number(mk.getAttribute('data-nac-lng') || 0),
+      label: mk.getAttribute('data-nac-label') || '',
+    });
+  }
+  function map_toggle_layer(map_id, layer_id, on) {
+    const ly = document.querySelector(
+      '[data-nac-role="map-layer"][data-nac-id="' + layer_id + '"]');
+    if (!ly) throw NacError('map_layer_not_found', layer_id);
+    const target = (typeof on === 'boolean') ? on : (ly.getAttribute('data-nac-state') === 'hidden');
+    ly.setAttribute('data-nac-state', target ? 'visible' : 'hidden');
+    _emit('nac:map:layer_toggled', { map_id: map_id, layer_id: layer_id, visible: target });
+  }
+  function list_markers(map_id) {
+    const m = document.querySelector(
+      '[data-nac-role="map"][data-nac-id="' + map_id + '"]');
+    if (!m) return [];
+    const out = [];
+    m.querySelectorAll('[data-nac-role="map-marker"]').forEach(function (mk) {
+      out.push({
+        id: mk.getAttribute('data-nac-id'),
+        lat: Number(mk.getAttribute('data-nac-lat') || 0),
+        lng: Number(mk.getAttribute('data-nac-lng') || 0),
+        label: mk.getAttribute('data-nac-label') || '',
+        state: mk.getAttribute('data-nac-state') || 'idle',
+      });
+    });
+    return out;
+  }
+
+  /* ---------- v1.3: richtext ------------------------------------- */
+
+  function richtext_format(field_id, format, value) {
+    _emit('nac:richtext:format_applied',
+      { field_id: field_id, format: format, value: value || null });
+  }
+  function richtext_insert_link(field_id, text, url) {
+    _emit('nac:richtext:link_inserted',
+      { field_id: field_id, text: text, url: url });
+  }
+  function richtext_insert_mention(field_id, user_id, label) {
+    _emit('nac:richtext:mention_picked',
+      { field_id: field_id, user_id: user_id, label: label });
+  }
+
   /* ---------- Install -------------------------------------------- */
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.2.1',
-    spec_version: '1.2',
+    version:      '1.3.0',
+    spec_version: '1.3',
     /* registry */
     register:        register,
     unregister:      unregister,
@@ -778,6 +1240,50 @@
     /* v1.2 -- section landmarks */
     list_sections:               list_sections,
     go_to_section:               go_to_section,
+    /* v1.3 -- toast / banner / confirm */
+    toast:                       toast,
+    list_toasts:                 list_toasts,
+    dismiss_toast:               dismiss_toast,
+    list_banners:                list_banners,
+    dismiss_banner:              dismiss_banner,
+    confirm:                     confirm_dialog,
+    list_pending_confirms:       list_pending_confirms,
+    /* v1.3 -- stepper */
+    step_next:                   step_next,
+    step_back:                   step_back,
+    step_to:                     step_to,
+    step_state:                  step_state,
+    /* v1.3 -- tree */
+    tree_expand:                 tree_expand,
+    tree_collapse:               tree_collapse,
+    tree_select:                 tree_select,
+    tree_path:                   tree_path,
+    /* v1.3 -- tag-input */
+    add_tag:                     add_tag,
+    remove_tag:                  remove_tag,
+    list_tags:                   list_tags,
+    /* v1.3 -- drawer / bottom-sheet */
+    open_drawer:                 open_drawer,
+    close_drawer:                close_drawer,
+    peek_drawer:                 peek_drawer,
+    /* v1.3 -- calendar */
+    calendar_view:               calendar_view,
+    calendar_go_to:              calendar_go_to,
+    calendar_select_event:       calendar_select_event,
+    calendar_list_events:        calendar_list_events,
+    /* v1.3 -- chart */
+    chart_data:                  chart_data,
+    chart_toggle_series:         chart_toggle_series,
+    chart_filter:                chart_filter,
+    /* v1.3 -- map */
+    map_focus:                   map_focus,
+    map_select_marker:           map_select_marker,
+    map_toggle_layer:            map_toggle_layer,
+    list_markers:                list_markers,
+    /* v1.3 -- richtext */
+    richtext_format:             richtext_format,
+    richtext_insert_link:        richtext_insert_link,
+    richtext_insert_mention:     richtext_insert_mention,
     /* v1.2 -- error codes */
     errors: {
       RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',

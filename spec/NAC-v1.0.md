@@ -7,7 +7,7 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.2 (extends v1.1 which extends v1.0; sections 1-13 unchanged).
+**Version**: 1.3 (extends v1.2 which extends v1.1 which extends v1.0; sections 1-14 unchanged).
 **Date**: 2026-05-06.
 **Authors**: Pablo Kuschnirof (lead), Sumi (collaboration).
 **License**: MIT.
@@ -1340,3 +1340,346 @@ plugin; one section may host multiple plugins. The roles do not
 overlap.
 
 End of NAC v1.2 normative document.
+
+---
+
+## 15. Common UI primitives extension (v1.3, normative)
+
+This section is normative. It is a strict superset of v1.2.
+Every v1.0 / v1.1 / v1.2 plugin remains valid; every v1.0 /
+v1.1 / v1.2 operator continues to work. The additions in this
+section name sixteen UI primitives that were observable in
+practice on most production web apps but had no formal
+vocabulary in v1.0..v1.2 -- a v1.2 operator could drive them
+through `click` / `fill` / generic events, but could not
+*recognise* them as the kind of widget they were.
+
+The list, in roughly the order they appear in a typical app:
+
+A. Toast / banner / alert (transient or persistent feedback).
+B. Toggle / switch (instant-action boolean, distinct from
+   checkbox).
+C. Stepper (multi-step form progress).
+D. Tree (hierarchical view with expand / select).
+E. Calendar with events (full-calendar with date + events).
+F. Rich text editor (WYSIWYG / markdown editor).
+G. Tag input (free-input + suggestions, e.g. Gmail "to:").
+H. Rating (1..N stars, hearts, thumbs).
+I. Confirmation dialog (interrupting yes/no prompt).
+J. Drawer / sheet / bottom sheet.
+K. Pagination as a standalone widget (i.e. on a card grid,
+   not only inside a v1.1 table).
+L. Charts (line / bar / pie / area / funnel) with clickable
+   data points.
+M. Map / geo widget with markers and layers.
+N. Avatar + presence indicator.
+O. Floating action button (FAB).
+P. Empty state (and companion skeleton loader).
+
+Every addition follows the existing five-attribute pattern --
+`data-nac-id`, `data-nac-role`, `data-nac-state`,
+`data-nac-action`, `data-nac-field-type` -- with new role,
+state and verb values. New events are namespaced under
+`nac:<family>:<verb>`; new driver functions are added to
+`window.NAC`. No existing primitive is repurposed.
+
+### 15.1. New roles (16 normative additions)
+
+```
+toast              transient feedback message (auto-dismiss)
+banner             persistent feedback message (manual dismiss)
+confirm-dialog     interrupting yes/no dialog
+toggle             not used as a separate role; see field_type below
+stepper            container of step entries
+step               one step inside a stepper
+tree               root of a hierarchical view
+treenode           one node inside a tree (may itself contain treenodes)
+calendar           container of a calendar view
+calendar-event     one event inside a calendar
+chart              container of a chart
+chart-series       one series inside a chart
+chart-point        one data point inside a chart-series
+chart-legend       legend control of a chart
+map                container of a geographic map
+map-marker         one marker inside a map
+map-layer          one toggleable layer inside a map
+avatar             user avatar image / initials
+presence-indicator user online/away/busy/offline status badge
+drawer             slide-out side or bottom panel (non-blocking)
+bottom-sheet       drawer with position=bottom (mobile)
+fab                primary action button, usually floating
+empty-state        explicit "nothing here yet" region
+skeleton           loading placeholder, replaced by content on load
+tag-input          not used as separate role; see field_type below
+richtext           not used as separate role; see field_type below
+```
+
+Plus three new `data-nac-field-type` values for fields that are
+visually distinct from existing types but use the same `field`
+role: `toggle`, `tag-input`, `richtext`, `rating`.
+
+### 15.2. New states
+
+```
+toast              visible | dismissed | persistent
+banner             visible | dismissed
+confirm-dialog     pending | confirmed | cancelled
+stepper            in_progress | completed
+step               current | done | pending | disabled | error
+treenode           expanded | collapsed | leaf | selected
+calendar-event     confirmed | tentative | cancelled | selected
+drawer             open | peek | closed
+bottom-sheet       open | peek | closed
+empty-state        visible | hidden
+skeleton           loading | done
+```
+
+### 15.3. New verbs (`data-nac-action`)
+
+```
+toggle             flip a switch
+step_next          stepper move forward
+step_back          stepper move backward
+step_to            jump to specific step
+expand_node        tree: expand a treenode
+collapse_node      tree: collapse a treenode
+select_node        tree: select a treenode
+add_tag            tag-input: add a tag
+remove_tag         tag-input: remove a tag
+rate               rating: set value
+confirm            confirm-dialog: yes
+cancel             confirm-dialog: no  (already exists)
+open_drawer        drawer / bottom-sheet open
+close_drawer       drawer / bottom-sheet close
+peek_drawer        bottom-sheet partial open
+focus_marker       map: pan + zoom to a marker
+toggle_layer       map: layer on/off
+view_change        calendar: switch month/week/day
+go_to_date         calendar: navigate to date
+move_event         calendar: drag-move event
+chart_filter       chart: apply filter / drill
+toggle_series      chart: hide/show one series
+format_apply       richtext: apply bold/italic/etc
+```
+
+### 15.4. New events (33 total)
+
+All on `document`, `bubbles: true`.
+
+```
+toast / banner
+  nac:toast:fired              { id, severity, text, ttl_ms }
+  nac:toast:dismissed          { id, dismissed_by }    // user|timeout|programmatic
+  nac:banner:displayed         { id, severity }
+  nac:banner:dismissed         { id }
+
+confirm-dialog
+  nac:confirm:requested        { id, prompt, danger }
+  nac:confirm:confirmed        { id }
+  nac:confirm:cancelled        { id }
+
+stepper
+  nac:step:advanced            { stepper_id, from, to, total }
+  nac:step:back                { stepper_id, from, to }
+  nac:step:completed           { stepper_id, total }
+  nac:step:error               { stepper_id, step_idx, errors }
+
+tree
+  nac:tree:expanded            { node_id, level }
+  nac:tree:collapsed           { node_id, level }
+  nac:tree:selected            { node_id, path }
+
+tag-input
+  nac:tags:added               { field_id, value, source } // typed|picked
+  nac:tags:removed             { field_id, value }
+
+rating
+  (uses existing nac:field:changed)
+
+drawer / bottom-sheet
+  nac:drawer:opened            { id, position }
+  nac:drawer:closed            { id, dismissed_by }
+  nac:drawer:peek              { id, height_pct }
+
+calendar
+  nac:calendar:event_clicked   { event_id, start, end }
+  nac:calendar:event_moved     { event_id, new_start, new_end }
+  nac:calendar:date_selected   { date }
+  nac:calendar:view_changed    { view }
+
+chart
+  nac:chart:point_clicked      { chart_id, series, x, y, label }
+  nac:chart:point_hovered      { chart_id, series, x, y, label }
+  nac:chart:series_toggled     { chart_id, series, visible }
+  nac:chart:filtered           { chart_id, criteria }
+
+map
+  nac:map:marker_clicked       { map_id, marker_id, lat, lng, label }
+  nac:map:zoom_changed         { map_id, zoom }
+  nac:map:moved                { map_id, lat, lng }
+  nac:map:layer_toggled        { map_id, layer_id, visible }
+
+avatar / presence
+  nac:presence:changed         { user_id, old_state, new_state }
+
+empty-state / skeleton
+  nac:empty:displayed          { region_id, kind }      // no-results|first-time|no-permission|error
+  nac:empty:cta_clicked        { region_id, action_id }
+  (skeleton uses nac:state:changed loading -> done)
+
+richtext
+  nac:richtext:format_applied  { field_id, format, value? }
+  nac:richtext:link_inserted   { field_id, url, text }
+  nac:richtext:mention_picked  { field_id, user_id, label }
+```
+
+### 15.5. New driver API functions
+
+```
+toast / banner
+  NAC.toast(text, opts?) -> id           // fire programmatically
+  NAC.list_toasts() -> Toast[]           // visible + persistent
+  NAC.dismiss_toast(id)
+  NAC.list_banners() -> Banner[]
+  NAC.dismiss_banner(id)
+
+confirm
+  NAC.confirm(prompt, opts?) -> Promise<boolean>
+  NAC.list_pending_confirms() -> ConfirmDialog[]
+
+stepper
+  NAC.step_next(stepper_id)
+  NAC.step_back(stepper_id)
+  NAC.step_to(stepper_id, n)
+  NAC.step_state(stepper_id) -> { current, total, errors? }
+
+tree
+  NAC.tree_expand(node_id)
+  NAC.tree_collapse(node_id)
+  NAC.tree_select(node_id)
+  NAC.tree_path(node_id) -> string[]
+  NAC.tree_walk(tree_id) -> Iterator over { node_id, depth, label, state }
+
+tag-input
+  NAC.add_tag(field_id, value)
+  NAC.remove_tag(field_id, value)
+  NAC.list_tags(field_id) -> string[]
+
+drawer
+  NAC.open_drawer(id, position?)
+  NAC.close_drawer(id)
+  NAC.peek_drawer(id, height_pct?)
+
+calendar
+  NAC.calendar_view(cal_id, view)        // 'month'|'week'|'day'
+  NAC.calendar_go_to(cal_id, date)       // ISO 8601
+  NAC.calendar_select_event(event_id)
+  NAC.calendar_list_events(cal_id, from?, to?) -> CalendarEvent[]
+
+chart
+  NAC.chart_data(chart_id) -> { series, axes, points }
+  NAC.chart_toggle_series(chart_id, series, on?)
+  NAC.chart_filter(chart_id, criteria)
+
+map
+  NAC.map_focus(map_id, lat, lng, zoom?)
+  NAC.map_select_marker(marker_id)
+  NAC.map_toggle_layer(map_id, layer_id, on?)
+  NAC.list_markers(map_id) -> Marker[]
+
+richtext
+  NAC.richtext_format(field_id, format, value?)
+  NAC.richtext_insert_link(field_id, text, url)
+  NAC.richtext_insert_mention(field_id, user_id, label)
+  // NAC.fill(field_id, html_or_markdown) already covers basic write
+```
+
+### 15.6. Manifest extensions
+
+A `fields[]` entry of `field_type: 'rating'` MAY declare:
+
+```json
+{ "min": 1, "max": 5, "step": 1, "icon": "star" }
+```
+
+A `fields[]` entry of `field_type: 'tag-input'` MAY declare:
+
+```json
+{
+  "options_source": "remote",       // see 14.1
+  "search_supported": true,
+  "allow_free_input": true,
+  "max_tags": 10
+}
+```
+
+A `fields[]` entry of `field_type: 'richtext'` MAY declare:
+
+```json
+{
+  "supported_formats": ["bold","italic","link","mention","list","heading","code"],
+  "mention_users_source_field": "users.search"
+}
+```
+
+A new top-level manifest array `charts[]`:
+
+```json
+{
+  "id": "dash.sales_chart",
+  "label": "Monthly sales",
+  "kind": "line",                   // line|bar|pie|area|funnel|scatter
+  "series": [{ "id": "sales", "label": "Sales" }],
+  "axes":   [{ "id": "x", "kind": "time" }, { "id": "y", "kind": "money" }],
+  "supports_drill": true,
+  "supports_filter": true
+}
+```
+
+A new top-level manifest array `maps[]`:
+
+```json
+{
+  "id": "dash.map",
+  "label": "Customer locations",
+  "provider": "google",             // google|mapbox|leaflet|other
+  "default_center": { "lat": -34.6, "lng": -58.4 },
+  "default_zoom": 11,
+  "layers":  [{ "id": "stores", "label": "Stores" }],
+  "markers_source": "/api/markers"  // optional fetch endpoint
+}
+```
+
+### 15.7. NAC-3 v1.3 compliance level
+
+A plugin claiming **NAC-3 v1.3** MUST:
+
+1. Satisfy NAC-3 v1.2 (and therefore v1.1 and v1.0).
+2. For every widget it ships from the families listed in
+   15.1, declare the appropriate role from 15.1, emit the
+   appropriate events from 15.4 and (when applicable) include
+   the appropriate manifest entries from 15.6.
+3. Implement the corresponding driver functions from 15.5
+   when the widget is operated programmatically (e.g. a tree
+   MUST support `NAC.tree_expand` / `_collapse`; a stepper
+   MUST support `NAC.step_next` / `_back`).
+
+### 15.8. Backwards compatibility commitment
+
+Every v1.3 addition is additive. A v1.0 / v1.1 / v1.2 operator
+parses a v1.3 plugin without crashing: unknown roles are
+treated as `region`, unknown field-types are treated as
+`text`, unknown verbs are treated as opaque actions, unknown
+events are ignored, unknown manifest arrays (`charts[]`,
+`maps[]`) are silently skipped.
+
+A v1.3 operator drives a v1.0..v1.2 plugin without retrofit:
+absence of the new roles / events / driver functions
+downgrades the operator to the equivalent v1.2 path
+(e.g. `NAC.tree_expand` falls back to clicking the
+node-toggle button when the page does not register
+`treenode` roles).
+
+The semver impact of v1.3 is **MINOR**.
+
+End of NAC v1.3 normative document.
