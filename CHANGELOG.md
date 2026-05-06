@@ -69,6 +69,26 @@ Versioning conventions for the spec:
 - **CHANGELOG** notes Self-test panel + AI agent tour as
   Demo additions.
 
+### Demo (continued)
+
+- **18-step wizard.** `yujin.app/nac-spec/example.php`
+  (cache buster v5): the guided tour now covers v1.0
+  primitives (piano + modal + form, steps 1-8), v1.1 widgets
+  (tabs / accordion / combobox / slider / table, steps 9-13)
+  and v1.2 widgets (remote autocomplete + chrome minimize +
+  system map + section navigation, steps 14-17). Step 18 is
+  the terminal. Each step is validated via the matching NAC
+  event: `nac:tab:changed`, `nac:section:expanded`,
+  `nac:slider:value_changed`, `nac:plugin:minimized`,
+  `nac:section:reached`, etc. The wizard listens to twelve
+  event types (was four).
+- **Autopilot extended** to drive all 17 actionable wizard
+  steps end-to-end: piano notes -> modal -> form fill ->
+  switch tab -> expand accordion -> pick country ->
+  raise slider -> sort table -> remote autocomplete ->
+  minimize -> fetch system map -> go to chat section. Closes
+  with a one-line summary in the assistant chat.
+
 ## [1.2.0] - 2026-05-06
 
 Strict superset of v1.1. Every v1.0/v1.1 plugin remains valid;
