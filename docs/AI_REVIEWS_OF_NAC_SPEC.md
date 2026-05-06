@@ -472,16 +472,143 @@ findings:
 These are annotations, not edits to Claude's review. The review
 itself stays verbatim above.
 
-### 2.4 Grok (grok.x.ai / grok.com free) -- pending
+### 2.4 Grok (grok.com free, Fast tier)
 
-```
-Model: ___________________
-Date:  ___________________
-Browsing: on / off
-Prompt language: en / es
+Model: Grok Fast (free tier; the "Reasoning" / "Think" tier was
+  not used because the user reported it required a paid plan in
+  their region/account state)
+Date:  2026-05-06
+Browsing: on (implicit; Grok did not surface a fetching trail in
+  the visible output, but the review references material that
+  comes from the spec body)
+Prompt language: en (sanitized version)
 
-(paste full output here)
+Tier note: Grok ships two free tiers in the consumer UI, "Fast"
+and "Reasoning" / "Think". Reasoning was unavailable for this
+session (paywall hit). Fast is the cheaper / quicker variant
+and tends to be less thorough on long-document tasks. Capture
+this in cross-AI comparisons: Grok Fast is not equivalent to the
+other two reviews above (DeepSeek with web-search reasoning,
+Claude with tool use) and the difference shows in the output.
+
+````
+T1. SUMMARY
+NAC (Native Accessibility Contract) proposes a lightweight, declarative contract for web (and potentially native) UIs: a small set of data-nac-* HTML attributes, a JSON manifest per "plugin" (self-contained UI surface), a fixed set of semantic verbs/roles/states, and a thin window.NAC JavaScript runtime. This enables test runners, AI agents, voice assistants, and RPA bots to discover, read, and operate elements via stable semantic IDs and verbs instead of brittle CSS selectors or DOM inspection.
+
+Intended audience: frontend teams wanting high E2E test coverage and AI/voice operability without heavy per-screen scripting; automation/AI practitioners needing reliable UI driving. It ships a ~1700-line spec (v1.0 core + extensions to v1.4), reference JS runtime (~1500 LOC, zero deps), authoring manual, and demo. Compliance levels (NAC-1/2/3) scale from basic marking to full manifest + events.
+
+T2. ARCHITECTURAL REVIEW
+Strongest design decision: P1 Stable identity combined with the plugin-namespaced data-nac-id + manifest (sections 3/P1, 4, ~lines 270-288 in spec). This creates a human-readable, refactor-resistant addressing scheme that survives re-renders and locale changes, directly addressing the core pain of selector fragility. The manifest-as-contract (with kpis/actions/fields/tabs) enables pre-rendering discovery and planning, which is powerful for agents.
+
+Weakest: Heavy reliance on global document event dispatching for the nac:* family (lifecycle, action, plugin, field events) without built-in scoping or namespacing beyond plugin_slug in payloads. In complex SPAs with multiple independent plugins or shadow DOM, this risks event collision or noisy global listeners; the reference impl's _activePlugin() heuristic (most recent ready plugin) is pragmatic but brittle.
+
+One adoption trouble spot: Section 6 (compliance levels) and the evolving vocabulary (v1.0 -> v1.4 additions in sections 14-16: toasts, trees, carousels, breadcrumbs, etc.). A production codebase adopting at NAC-3 must maintain the full manifest, emit precise events on every primitive, and handle versioned extensions. Teams will underestimate the ongoing tax of keeping manifests in sync with dynamic UI (e.g., generated tables, conditional fields) and wiring 30+ event types. The spec notes backwards compatibility, but real maintenance across releases could fatigue teams.
+
+T3. PROGRAMMING WALKTHROUGH
+Using only window.NAC.* on the demo page:
+
+```javascript
+// a) Read KPI cards (labels + values)
+const snap = NAC.describe();  // or NAC.list('kpi') for filtered
+const kpis = snap.plugins.flatMap(p => p.elements)
+  .filter(e => e.role === 'kpi' || e.nac_id.startsWith('kpi.'));
+console.log(kpis.map(k => ({label: k.label, value: k.value})));
+
+// b) Trigger "apply_all" if exists
+const applyResult = await NAC.click('apply_all');  // auto-waits for succeeded/failed
+if (!applyResult.ok) console.error(applyResult.event);
+
+// c) Switch tab
+await NAC.tab('patch_manager', 'tab.failed');  // or equivalent nac_id
+
+// d) Detect blocking confirmation dialog
+const pending = NAC.list('confirm-dialog');  // or check snapshot_state / describe for role=confirm-dialog
+const blocking = pending.some(d => d.visible && d.state !== 'dismissed');
 ```
+
+Ambiguities: Spec is clear on most (NAC.click, NAC.tab, NAC.describe/list), but "KPI cards" mapping relies on convention (role=kpi or naming) -- not rigidly defined in core v1.0 for all static readouts (P6 observability helps via label/value). Confirmation detection has no single canonical NAC.isBlocked(); one scans via list/describe or listens for nac:confirm:requested (v1.3). NAC.read_feedback() covers errors but not always modals. Reference impl behavior (e.g., _findElement scoping) is reliable but not exhaustively documented for edge cases like nested plugins.
+
+T4. RELATIONSHIP TO ARIA
+The argument in section 1.5 is convincing: ARIA targets human assistive tech (primarily screen readers, declarative audio map); NAC targets autonomous programmatic operators (imperative driver API, verbs, manifest, events). Audiences and affordances differ -- ARIA is not designed for NAC.click() or structured event subscriptions. Complementary layering on the same elements works cleanly, as shown in examples.
+
+Minor overlaps exist (e.g., states vs. aria-busy, roles), but semantics diverge enough (NAC data-nac-action="apply" vs. ARIA role="button") to avoid deep confusion if teams follow the manual's guidance. I would adopt NAC alongside ARIA in a real project for teams needing strong automation/AI support; ARIA alone suffices for basic a11y compliance, but NAC adds the operable contract that modern agent tooling desperately needs. Neither fully replaces the other.
+
+T5. ADOPTION ANALYSIS
+Minimum work for NAC-3: (1) Add ~3-5 data-nac-* attributes per interactive element + plugin root; (2) Register a JSON manifest once per plugin (fields/actions/kpis/tabs); (3) Emit ~5-10 key nac:* events on mount/action/field lifecycle; (4) Include the nac.js runtime. For a medium app, this is days to weeks initially if using a design system.
+
+Most underestimated: Ongoing manifest synchronization and event wiring as UI evolves (dynamic forms, A/B tests, new primitives in v1.3/1.4). Teams often ship static markup but forget runtime updates or conditional elements, leading to stale contracts. Validation/runtime errors from mismatched manifests compound this.
+
+Abandonment triggers: High churn in complex/dynamic UIs where manifest maintenance exceeds perceived test/AI gains; lack of framework integrations (React/Vue/Svelte helpers missing in core); or when selectors + existing tools already "work well enough" for their scale. Without strong internal champions or measurable ROI (e.g., test coverage jump), mid-rollout fatigue is likely.
+
+T6. SCORES AND CLOSING LINE
+Clarity of spec: 8/10 (well-structured, principled, but dense with extensions). Usefulness for test/assistant tooling: 9/10 (semantic + events + API solve real pains). Ease of adoption for typical web team: 6/10 (lightweight start, but discipline tax). Ambition vs. feasibility: 8/10 (pragmatic evolution, strong compat).
+
+I would recommend NAC for internal enterprise tools or products targeting AI/voice copilots and high test automation, where the stable contract yields clear long-term ROI over selector fragility.
+````
+
+#### Reviewer accuracy notes (added by maintainer, not by Grok)
+
+Grok Fast is the lightest of the three reviews so far. It hits
+the high notes correctly (P1 stable identity as strongest; P7
+manifest as second pillar; semver/extensions as adoption risk)
+but skips the deep-spec verification that Claude performed. Two
+findings that DeepSeek and Claude caught are absent here:
+
+1. **Did NOT catch the line 282 phantom-success bug.** Grok
+   wrote `await NAC.click('apply_all'); // auto-waits for
+   succeeded/failed`. This is the spec contract (section 7.2),
+   not what the reference implementation does. The 200ms
+   fallback in js/nac.js line 282 silently resolves to
+   `{ ok: true, event: null }` regardless of whether any event
+   fired -- exactly the gap DeepSeek and Claude both caught.
+   Grok did not read the implementation closely enough to
+   notice the contract violation. Two-of-three reviewers caught
+   the bug; corroboration on action item 3.4-A still holds.
+2. **Did NOT flag the demo-vs-spec mismatch.** Grok confidently
+   wrote `await NAC.click('apply_all')` and
+   `NAC.tab('patch_manager', 'tab.failed')` against the public
+   demo. The public demo (yujin.app/nac-spec/example.php) does
+   NOT contain a patch_manager plugin or an apply_all action
+   -- those identifiers come from the spec's narrative
+   examples, which point to the admin-gated yujin.app/crm
+   showcase. Claude flagged this honestly; DeepSeek and Grok
+   did not. Action item 3.3-C still holds.
+
+But Grok contributed one new finding that neither of the other
+reviewers raised, and it is verifiable:
+
+3. **Global event dispatch with no per-plugin scoping.** Grok
+   pointed out that all `nac:*` events fire on `document` with
+   `bubbles: true`, with the only scoping signal being
+   `plugin_slug` inside the payload. Verified in js/nac.js:
+   every `_emit*()` helper calls `document.dispatchEvent(new
+   CustomEvent('nac:...', { detail, bubbles: true }))` (lines
+   61, 305, 360, 451, 546, and several more). Listeners on
+   `document` therefore see events from every NAC plugin in
+   the page; consumers must filter on `event.detail.plugin`
+   manually. In SPAs that mount multiple plugin instances
+   (multi-window CRM views, modal stacks, shadow-DOM-encased
+   web components), this requires every listener to be
+   payload-aware, and there is no spec-level guarantee that
+   plugin slugs are unique across mounted instances of the
+   same plugin (e.g. two open patch_manager modals). This is
+   a legitimate gap and produces a new action item, 3.2-E
+   below.
+
+Score commentary: Grok scored higher than the other two
+reviewers (8/9/6/8 vs Claude's 6/7/5/6 and DeepSeek's 7/9/5/8).
+Plausible explanations: (a) Grok Fast tier is lighter on rigor
+than Reasoning, so penalties for deep bugs were not applied
+because the bugs were not noticed; (b) Grok's RLHF profile may
+drift more positive on novel-but-coherent specs; (c) the
+sanitized prompt removed the explicit anti-sycophancy clause,
+and Grok Fast appears more sensitive to that absence than
+Claude or DeepSeek were. Cross-AI score comparison should be
+read with the model-tier asymmetry in mind, not as a clean
+ranking.
+
+These are annotations, not edits to Grok's review. The review
+itself stays verbatim above.
 
 ### 2.5 ChatGPT (free tier) -- pending
 
@@ -535,53 +662,89 @@ Prompt language: en / es
 
 ## 3. Synthesis (running, updated as reviews arrive)
 
-> Currently N=2 (DeepSeek + Claude). This section is preliminary
-> and will be revised as more reviews land. Patterns called
-> out below are corroborated by both reviewers unless otherwise
-> noted.
+> Currently N=3 (DeepSeek + Claude + Grok Fast). This section is
+> preliminary and will be revised as more reviews land. Patterns
+> called out below are tagged with the reviewers that raised them
+> so partial corroboration is visible.
 
 ### 3.1 Patterns across reviewers
 
-**Common praises (cited by 2 reviewers):**
-- The seven-pillar framing (P1..P7) is coherent and the
-  manifest-as-introspection-surface (P7) is the strongest single
-  design decision. Both reviewers cite this.
+**Common praises (cited by 2+ reviewers):**
+- The "manifest as the contract" principle is the spec's core
+  win. DeepSeek and Claude both call P7 the strongest design
+  decision; Grok shifts focus to P1 stable identity but credits
+  the manifest as the operative second-pillar that makes
+  "pre-rendering discovery and planning" possible. Net: 3/3
+  reviewers credit the manifest+ID combination as the core
+  asset.
 - The "act as a human, do not bypass the UI gate" principle
   (section 1.6) is described as "load-bearing" by Claude and is
-  implicit in DeepSeek's praise of the design philosophy.
+  implicit in DeepSeek's praise of the design philosophy. Grok
+  does not name it explicitly.
 
-**Common critiques (cited by 2 reviewers):**
-- **The 200ms phantom-success in `NAC.click()`** (js/nac.js
-  line 282) -- both reviewers identify this as a flake factory
-  for CI test runners. Spec section 7.2 says writes resolve
-  "only after the corresponding event fires"; the implementation
-  resolves `{ ok: true, event: null }` after 200ms regardless.
-  Action item 3.4-A.
-- **ARIA / NAC attribute overlap costs.** Both reviewers note
-  that `data-nac-state` overlaps `aria-busy` / `aria-invalid` /
-  `aria-expanded`, and that pillar P6 forces teams to maintain
-  both. DeepSeek is mild about it; Claude makes it specific
-  with named overlaps.
-- **Manifest-vs-DOM drift in dynamic SPAs.** P7 declares drift
-  a "CI blocker" but the reference `validate()` only checks
+**Common critiques (cited by 2+ reviewers):**
+- **The 200ms phantom-success in `NAC.click()`** (js/nac.js line
+  282) -- DeepSeek and Claude both identify this as a flake
+  factory for CI test runners. Spec section 7.2 says writes
+  resolve "only after the corresponding event fires"; the
+  implementation resolves `{ ok: true, event: null }` after
+  200ms regardless. Grok Fast did NOT catch this -- it actually
+  asserted the wrong thing ("auto-waits for succeeded/failed")
+  and did not read the implementation. Two-of-three corroboration
+  on a verifiable bug; action item 3.4-A still holds.
+- **Manifest-vs-DOM drift in dynamic SPAs.** P7 declares drift a
+  "CI blocker" but the reference `validate()` only checks
   presence, not field types, options graphs, or v1.4 breadcrumb
-  paths. Both reviewers expect this to bite teams in production.
+  paths. DeepSeek and Claude both expect this to bite. Grok
+  raises a related but distinct concern: ongoing manifest
+  *synchronization* tax (dynamic forms, A/B tests, conditional
+  fields), which is a runtime drift problem, not a validator
+  scope problem. Two-of-three on the validator gap; three-of-
+  three that drift in some form is the rollout's main risk.
   Action item 3.4-B.
+- **Versioning sprawl.** Claude makes the strong version of this
+  argument: file titled NAC v1.0 contains v1.1..v1.4 inline,
+  ~54 roles by v1.4, ~70 driver functions, "MINOR per semver"
+  is a stretch. Grok Fast makes the soft version: "evolving
+  vocabulary v1.0 -> v1.4 ... teams will underestimate the
+  ongoing tax of keeping manifests in sync ... and wiring 30+
+  event types ... real maintenance across releases could fatigue
+  teams". DeepSeek does not raise versioning. Two-of-three on
+  the same underlying concern with different sharpness; action
+  item 3.2-A still holds.
 - **Adoption is not 1 hour.** Section 1.5 promises "5 attributes
-  + 7 events + 5 functions, ~1 hour onboarding". DeepSeek
-  estimates 2-3 days for a medium app; Claude estimates 1-2
-  engineer-weeks for a 30-screen SPA. Both consider the
-  marketing promise unrealistic.
+  + 7 events + 5 functions, ~1 hour onboarding". Three
+  estimates from three reviewers, all longer than the promise:
+  DeepSeek 2-3 days for a medium app; Grok "days to weeks
+  initially if using a design system"; Claude 1-2 engineer-weeks
+  for a 30-screen SPA. The spread is consistent: nobody believes
+  the 1-hour figure once they read the spec.
+
+**ARIA overlap (Claude specific, others mild):**
+- Claude names concrete overlaps: `data-nac-state="loading"` vs
+  `aria-busy`, `data-nac-state="invalid"` vs `aria-invalid`,
+  `data-nac-state="expanded|collapsed"` vs `aria-expanded`,
+  `data-nac-role="tab|tablist|tabpanel"` reproduces ARIA roles.
+  Grok acknowledges "minor overlaps exist (e.g., states vs
+  aria-busy, roles)" without naming the full set. DeepSeek
+  describes the overlap as cognitive-load cost without
+  enumerating. Three-of-three reviewers find some overlap; only
+  Claude makes it specific. Carries action item 3.2-D
+  (authoritative-side rule when NAC and ARIA disagree on the
+  same element).
 
 **Lone-voice critiques worth taking seriously (cited by one
 reviewer, specific and falsifiable):**
-- **Versioning sprawl** (Claude only). The file is titled
-  `NAC-v1.0.md` but contains v1.1, v1.2, v1.3, v1.4 inline,
-  all marked normative. By v1.4 there are ~54 roles (initial
-  12) and ~70 driver functions (initial 16). Claude argues this
-  is not properly "MINOR per semver" and that the
-  ~1-hour-onboarding pitch in section 1.5 does not survive
-  contact with sections 13-16. Action item 3.2-A.
+- **Global event dispatch with no per-plugin scoping** (Grok
+  only). Every `nac:*` event fires on `document` with
+  `bubbles: true`; the only scoping signal is `plugin` /
+  `plugin_slug` inside the payload. Verified in js/nac.js
+  (lines 61, 305, 360, 451, 546+). In SPAs that mount multiple
+  plugin instances (multi-window CRM views, modal stacks,
+  shadow-DOM-encased web components), every listener must
+  filter on payload, and the spec does not guarantee that
+  plugin slugs are unique across mounted instances. Action
+  item 3.2-E.
 - **`NAC.click` takes nac_id, not verb** (Claude only). Voice
   agents that hear "apply all" cannot call `NAC.click('apply')`;
   they must look up the manifest first. The runtime falls back
@@ -636,7 +799,25 @@ reviewer, specific and falsifiable):**
       OR they MUST raise a typed timeout. The current "resolves
       `{ ok: true, event: null }` after 200ms" pattern in the
       reference implementation contradicts this and should be
-      treated as a bug, not a permitted variant.
+      treated as a bug, not a permitted variant. Also add a rule
+      for ARIA-NAC disagreement: when `data-nac-state="loading"`
+      coexists with `aria-busy="false"` (or any analogous
+      mismatch), the spec MUST declare which side is
+      authoritative for which kind of consumer (assistive tech
+      vs. test runner vs. agent). Today, divergence is silent.
+- [ ] **3.2-E**: Document event scoping. Either (a) declare
+      `event.detail.plugin` (currently named `plugin` /
+      `plugin_slug` inconsistently across emitters) the
+      canonical filter and require listeners to apply it, plus
+      require plugin slugs to be unique within a mounted page;
+      OR (b) allow per-plugin event buses (e.g.
+      `plugin_root.dispatchEvent(...)` with a documented
+      bubbling-stop convention) so listeners can scope locally.
+      Today every `nac:*` event fires on `document` with
+      `bubbles: true` and there is no spec-level guarantee that
+      a multi-mounted plugin is uniquely addressable. Grok
+      raised this; verified in js/nac.js lines 61, 305, 360,
+      451, 546 and others.
 
 ### 3.3 Documentation changes prompted
 
