@@ -10,12 +10,19 @@ short description, error throws, and the spec section that
 formalises it. AI coding agents implementing NAC can use this
 table as the canonical lookup.
 
-Current runtime version: **`NAC.version === '1.5.0'`** (spec
+Current runtime version: **`NAC.version === '1.5.1'`** (spec
 `1.5`). The runtime exposes `NAC.version` and
 `NAC.spec_version` as strings; check them at boot if you need
 feature gating.
 
 Version history (most recent first):
+- **1.5.1** (2026-05-06) -- patch release. Spec adds P7.1
+  cross-plugin uniqueness + `NAC.validate_global()` and P7.2
+  recommended nac_id grammar. Runtime adds register-time
+  duplicate warning + `validate_global()` exposed in the
+  global NAC API. Demo gets full 10-locale i18n on UI chrome
+  + manifest `label_i18n` maps; TTS / speech recognizer
+  follow detected locale.
 - **1.5.0** (2026-05-06) -- MINOR release. Canonical NAC + LLM
   agentic loop documented in spec sec 9.1 and 9.2. Reference
   demo at `yujin.app/nac-spec/example.php` upgraded from a
@@ -70,6 +77,7 @@ Version history (most recent first):
 | `wait_for` | `wait_for(eventName, timeout_ms?): Promise<NacEvent>` | Promise resolves when event fires; rejects on timeout | 7.1 |
 | `screenshot` | `screenshot(): Promise<string>` | Best-effort SVG/PNG of active plugin | P5 |
 | `validate` | `validate(plugin_slug): { ok, missing, errors, manifest, timestamp }` | Manifest-vs-DOM drift check; v1.4.1 includes structured `errors[]` | 3.4-B |
+| `validate_global` | `validate_global(): NacGlobalReport` | **v1.5.1** -- cross-plugin audit: duplicates, DOM orphans, unmounted manifest entries, convention violations | P7.1 |
 
 `click` opts shape (v1.4.1): `{ plugin?: string, plugin_instance_id?: string, timeout?: number }`. See section 7.1 for the awaitable-write contract -- writes resolve only on the success/fail event, or reject with `NacError('timeout', ...)`.
 

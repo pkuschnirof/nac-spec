@@ -1,9 +1,24 @@
 /* =====================================================================
-   NAC v1.5.0 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.5.1 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.5.1 (2026-05-06) -- patch release. Two additions on top of
+   v1.5.0:
+   - register() now logs a console.warn when a new manifest
+     declares a nac_id that already exists in another registered
+     plugin. Best-practice nudge at dev-time; runtime never throws.
+   - NAC.validate_global() new function returns structured cross-
+     plugin findings: duplicates, DOM orphans (data-nac-id present
+     but not in any manifest), unmounted manifest entries, and
+     convention violations (nac_id missing the plugin-slug prefix).
+     CI gates that want NAC-3 drift to be a hard fail call this
+     after the per-plugin validate(slug) loop. Spec section P7.1.
+   Plus the demo got 10-locale label_i18n maps and UI chrome
+   translations in the same release; the runtime contract there is
+   unchanged.
 
    v1.5.0 (2026-05-06) -- MINOR release. Adds the canonical NAC + LLM
    agentic loop pattern as informative spec sections 9.1 and 9.2.
@@ -124,11 +139,69 @@
     if (!slug) throw NacError('invalid', 'manifest.plugin_slug required');
     if (!manifest.version) manifest.version = '1.0.0';
     if (!manifest.nac_version) manifest.nac_version = '1.0';
+
+    /* v1.5.1 cross-plugin duplicate-id detection.
+       Spec section P7 expects nac_ids to be plugin-namespaced
+       ('plugin.element' convention). When two manifests register
+       the same nac_id, find()/click() resolution becomes
+       order-dependent and brittle. We log a console.warn at
+       register-time so authors notice during dev. The runtime
+       does NOT throw -- this is a best-practice nudge, not a
+       hard rule. validate_global() formalises the same check as
+       a structured finding consumable by CI. */
+    try {
+      const newIds = _collectManifestIds(manifest);
+      for (const otherSlug in _manifests) {
+        if (otherSlug === slug) continue;
+        const otherIds = _collectManifestIds(_manifests[otherSlug]);
+        const dupes = newIds.filter(function (id) {
+          return otherIds.indexOf(id) >= 0;
+        });
+        if (dupes.length) {
+          /* Use console.warn (not error -- a duplicate is bad
+             practice but not a fatal). Authors who want to fail
+             CI on this gate it via validate_global(). */
+          (typeof console !== 'undefined' && console.warn) &&
+          console.warn('[NAC] duplicate nac_ids between plugin "'
+            + slug + '" and "' + otherSlug + '":', dupes);
+        }
+      }
+    } catch (e) { /* never block register() on the lint */ }
+
     _manifests[slug] = manifest;
     document.dispatchEvent(new CustomEvent('nac:registered', {
       detail: { plugin: slug, version: manifest.version },
     }));
     return true;
+  }
+
+  /* Helper for the duplicate-id lint and validate_global().
+     Collects every nac_id declared in the manifest's actions[],
+     fields[], tabs[], kpis[], rows.cells[], breadcrumbs[], etc. */
+  function _collectManifestIds(m) {
+    const out = [];
+    const groups = ['actions', 'fields', 'tabs', 'kpis', 'charts'];
+    groups.forEach(function (g) {
+      const arr = (m && m[g]) || [];
+      arr.forEach(function (x) {
+        if (x && x.nac_id) out.push(String(x.nac_id));
+      });
+    });
+    if (m && m.rows && Array.isArray(m.rows.cells)) {
+      m.rows.cells.forEach(function (c) {
+        if (c && c.nac_id) out.push(String(c.nac_id));
+      });
+    }
+    if (m && Array.isArray(m.breadcrumbs)) {
+      m.breadcrumbs.forEach(function (b) {
+        if (b && Array.isArray(b.items)) {
+          b.items.forEach(function (i) {
+            if (i && i.nac_id) out.push(String(i.nac_id));
+          });
+        }
+      });
+    }
+    return out;
   }
 
   function unregister(slug) {
@@ -955,6 +1028,111 @@
       manifest:  m,
       timestamp: Date.now(),
     };
+  }
+
+  /* ---------- v1.5.1: cross-plugin validator --------------------- */
+  /* validate_global() answers "are there duplicate nac_ids across
+     ALL registered plugins, and are there orphan elements in the
+     DOM that belong to no manifest?" The per-plugin validate(slug)
+     cannot see across boundaries; this one can.
+
+     Returns:
+       {
+         ok:         boolean,
+         duplicates: [{nac_id, plugins:[...]}],   // same id in 2+ manifests
+         orphans:    [{nac_id, in_dom:true, in_manifest:false, plugin_root:?}],
+         unmounted:  [{nac_id, in_manifest:true, in_dom:false, plugin}],
+         convention_violations: [{nac_id, plugin}], // nac_id missing 'plugin.' prefix
+         plugin_count, total_ids,
+         timestamp
+       }
+
+     A NAC-3 codebase that wants drift to be a CI blocker should run
+     this in addition to the per-plugin validate(slug) loop. */
+  function validate_global() {
+    const out = {
+      ok: true,
+      duplicates: [],
+      orphans:    [],
+      unmounted:  [],
+      convention_violations: [],
+      plugin_count: 0,
+      total_ids:    0,
+      timestamp:    Date.now(),
+    };
+
+    /* Build a manifest-side index { nac_id -> [plugins] }. */
+    const idIndex = Object.create(null);
+    const slugList = Object.keys(_manifests);
+    out.plugin_count = slugList.length;
+    slugList.forEach(function (slug) {
+      const m = _manifests[slug];
+      const ids = _collectManifestIds(m);
+      ids.forEach(function (id) {
+        if (!idIndex[id]) idIndex[id] = [];
+        if (idIndex[id].indexOf(slug) < 0) idIndex[id].push(slug);
+      });
+      /* Convention check: nac_id SHOULD start with the plugin slug
+         followed by a dot. The spec calls this 'plugin-namespaced'
+         in P1. Authors who ship 'apply_all' instead of
+         'patch_manager.apply_all' silently lose the namespacing
+         guard. */
+      ids.forEach(function (id) {
+        if (id.indexOf(slug + '.') !== 0 && id !== slug) {
+          out.convention_violations.push({
+            nac_id: id, plugin: slug,
+            hint:   'expected prefix "' + slug + '."',
+          });
+        }
+      });
+    });
+    out.total_ids = Object.keys(idIndex).length;
+
+    /* Duplicates: any id that appears in 2+ manifests. */
+    for (const id in idIndex) {
+      if (idIndex[id].length >= 2) {
+        out.duplicates.push({ nac_id: id, plugins: idIndex[id].slice() });
+      }
+    }
+
+    /* Walk the DOM once. For every [data-nac-id]:
+       - if not in idIndex, it is an orphan.
+       - track DOM-side seen ids to compute unmounted = manifest \ DOM. */
+    const inDom = Object.create(null);
+    if (typeof document !== 'undefined') {
+      const all = document.querySelectorAll('[data-nac-id]');
+      Array.prototype.forEach.call(all, function (el) {
+        const id = el.getAttribute('data-nac-id');
+        if (!id) return;
+        inDom[id] = true;
+        if (!idIndex[id]) {
+          /* Orphan in DOM but not in any manifest. Note: tabs
+             frequently are declared in DOM-only because the host
+             may add tabs dynamically; we report but at warn
+             severity for the caller to decide. */
+          const root = el.closest('[data-nac-plugin]');
+          out.orphans.push({
+            nac_id: id,
+            in_dom: true,
+            in_manifest: false,
+            plugin_root: root ? root.getAttribute('data-nac-plugin') : null,
+          });
+        }
+      });
+    }
+
+    /* Unmounted: declared in some manifest but not present in DOM. */
+    for (const id in idIndex) {
+      if (!inDom[id]) {
+        out.unmounted.push({
+          nac_id: id, in_manifest: true, in_dom: false,
+          plugin: idIndex[id][0],
+        });
+      }
+    }
+
+    out.ok = !out.duplicates.length;
+    return out;
   }
 
   /* ---------- v1.2: dynamic options ------------------------------- */
@@ -2084,7 +2262,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.5.0',
+    version:      '1.5.1',
     spec_version: '1.5',
     /* registry */
     register:        register,
@@ -2109,6 +2287,8 @@
     wait_for:        wait_for,
     screenshot:      screenshot,
     validate:        validate,
+    /* v1.5.1 -- cross-plugin validator */
+    validate_global: validate_global,
     /* v1.2 -- dynamic options */
     options:                 options,
     search_options:          search_options,

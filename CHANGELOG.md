@@ -22,6 +22,69 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.5.1] - 2026-05-06
+
+Patch release. Two surface areas:
+
+### Spec additions (normative)
+
+- **P7.1 Cross-plugin uniqueness + `NAC.validate_global()`**.
+  Answers the user question "how does NAC avoid duplicate
+  nac_ids across a large system". Three layers:
+  1. Convention (P1 reaffirmed): every `nac_id` SHOULD be
+     prefixed with its plugin slug + `.`.
+  2. Register-time warning: `NAC.register()` logs
+     `console.warn('[NAC] duplicate nac_ids ...')` when a new
+     manifest declares an id another plugin already uses.
+  3. CI gate: `NAC.validate_global()` returns a structured
+     `NacGlobalReport` with `duplicates`, `orphans` (DOM-only
+     ids), `unmounted` (manifest-only ids), and
+     `convention_violations` (ids not following the
+     `plugin_slug.<path>` grammar).
+- **P7.2 Recommended nac_id grammar** (informative).
+  `plugin_slug "." element_path` with examples. Grammar is
+  informative -- runtimes accept any non-empty string -- but
+  the CI gate flags violations.
+
+### Reference implementation (`js/nac.js`)
+
+- `register()` runs the cross-plugin duplicate check and emits
+  a `console.warn` when it finds collisions. Best-practice
+  nudge; never throws.
+- `_collectManifestIds(manifest)` helper walks every
+  contract-bearing array (`actions`, `fields`, `tabs`, `kpis`,
+  `charts`, `rows.cells`, `breadcrumbs.items`).
+- `NAC.validate_global()` exposed from `window.NAC.*`. Returns
+  the `NacGlobalReport` shape from spec P7.1 above.
+
+### Reference demo (`yujin.app/nac-spec/`)
+
+- **Full 10-locale i18n**. The Yujin standard locale set
+  (`es en pt fr ja zh hi ar de it`) covers every UI chrome
+  string in the demo plus every action / field / tab in the
+  manifests of `example_demo` and `example_assistant`. Locale
+  detection chain: `?lang=` URL param > html `lang` attr >
+  `navigator.language` > `en`. Runtime override via
+  `window.setNacDemoLang('zh')`.
+- **TTS BCP-47 lang** now follows the detected locale (was
+  hardcoded `es-AR` for both Web Speech synthesis and the
+  speech recognizer).
+- **System prompt updated** so the LLM knows it MUST match
+  user intent against `label_i18n` in any of the 10 locales,
+  not just the page's primary locale. A user typing
+  `弹一个 Do` ("play a Do" in Chinese) on a
+  Spanish-locale page still hits `note.c` because the
+  manifest carries `label_i18n.zh` alongside `label_i18n.es`.
+  The bot's reply is in the user's locale.
+- **Robustness**: `nacDemoSnapshotTree()` now wraps the entire
+  snapshot in try/catch + per-plugin `NAC.manifest()` call in
+  its own try, so a single brittle plugin does not abort the
+  whole agentic dispatch silently.
+
+The runtime contract from v1.5.0 is unchanged. v1.5.1 plugins
+are interchangeable with v1.5.0 plugins; the new
+`validate_global()` and the duplicate-id warning are additive.
+
 ## [1.5.0] - 2026-05-06
 
 MINOR release. The runtime contract (attributes + events +

@@ -7,13 +7,13 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.5 (spec) / 1.5.0 (reference runtime). v1.5.0 is a
-MINOR release that adds the canonical NAC + LLM agentic loop
-pattern (informative sections 9.1 and 9.2). The runtime contract
-is unchanged from v1.4.2; v1.5.0 is a spec + reference-demo
-release that documents the pattern many integrators will adopt.
-Strict superset of v1.4.2; every v1.0..v1.4.2 plugin remains
-valid. v1.4.2 normative additions on top of v1.4.1: P5.0 return
+**Version**: 1.5 (spec) / 1.5.1 (reference runtime). v1.5.1 is a
+patch release that adds normative section P7.1 (cross-plugin
+uniqueness + `NAC.validate_global()` cross-plugin audit) and
+P7.2 (recommended nac_id grammar). v1.5.0 added the canonical
+NAC + LLM agentic loop pattern (informative sections 9.1 and
+9.2) and the reference demo upgrade. v1.5.x is a strict
+superset of v1.4.2; every v1.0..v1.4.2 plugin remains valid. v1.4.2 normative additions on top of v1.4.1: P5.0 return
 shapes, 6.1 NAC-3 event-family scoping, 7.3.1 NAC-drives-
 ARIA-mirrors direction, 7.5 confirm-dialog contract, plus
 tightened plugin-id rule (sec 7.4) and click_by_verb tie-break
@@ -799,6 +799,91 @@ entire NAC surface. The manifest is:
 - Validated by the NAC runtime against the rendered DOM. Drift
   (manifest declares an ID not present in DOM, or DOM emits an ID not
   declared in manifest) is a CI blocker.
+
+#### P7.1. Cross-plugin uniqueness and validate_global() (normative, added v1.5.1)
+
+> Added in v1.5.1 in response to user question: "how does NAC
+> avoid duplicate keys in a large system, and does it report
+> duplicates?".
+
+`nac_id` is a single global namespace within a mounted page. Two
+manifests that declare the same `nac_id` make
+`find()` / `click()` resolution order-dependent and brittle.
+
+To prevent this:
+
+1. **Convention (P1 reaffirmed)**: every `nac_id` SHOULD be
+   prefixed with its owning plugin's slug followed by a dot
+   (e.g. `patch_manager.apply_all`, `patch_manager.row.123.apply`).
+   The convention makes collisions structurally impossible as
+   long as plugin slugs themselves are unique.
+2. **Register-time warning**: when a plugin calls
+   `NAC.register({...})` with a `nac_id` that another already-
+   registered manifest also declares, the runtime emits
+   `console.warn('[NAC] duplicate nac_ids between plugin "A" and
+   "B": [...]')`. The warning fires once per `register()` call
+   and never blocks registration -- it is a dev-time signal,
+   not a runtime gate.
+3. **CI gate via `NAC.validate_global()`**: the structured
+   audit returns:
+
+```typescript
+interface NacGlobalReport {
+  ok:         boolean;            // false when duplicates exist
+  duplicates: { nac_id: string, plugins: string[] }[];
+  orphans:    { nac_id: string, in_dom: true,
+                in_manifest: false, plugin_root: string|null }[];
+  unmounted:  { nac_id: string, in_manifest: true,
+                in_dom: false, plugin: string }[];
+  convention_violations: { nac_id: string, plugin: string,
+                           hint: string }[];
+  plugin_count: number;
+  total_ids:    number;
+  timestamp:    number;
+}
+```
+
+   Field semantics:
+   - `duplicates`: same `nac_id` declared in two or more
+     manifests. Always a hard error at NAC-3.
+   - `orphans`: a `data-nac-id` attribute is in the DOM but
+     no manifest declares it. Often legitimate (dynamically
+     added rows, host-injected widgets) but flagged so the
+     CI gate can require an explicit allow-list.
+   - `unmounted`: declared in manifest but absent from DOM
+     when the audit ran. Same finding shape as v1.4.1
+     `missing_in_dom` from `validate(slug)`, surfaced
+     globally.
+   - `convention_violations`: `nac_id` does not start with
+     `<plugin_slug>.` (or equal the slug itself). Warn
+     severity at NAC-3.
+
+A NAC-3 codebase that declares "drift is a CI blocker" SHOULD
+run `NAC.validate_global()` after the per-plugin
+`validate(slug)` loop and fail the build on any
+`duplicates.length > 0`. The reference runtime exposes the
+function from v1.5.1 onward.
+
+#### P7.2. Recommended nac_id grammar (informative)
+
+```
+nac_id        ::= plugin_slug "." element_path
+plugin_slug   ::= /[a-z][a-z0-9_]*/        ; one of the registered plugins
+element_path  ::= segment ( "." segment )*
+segment       ::= /[a-z][a-z0-9_]*/        ; one segment of the path
+
+Examples:
+  patch_manager.apply_all                       (top-level action)
+  patch_manager.row.42.apply                    (action on a specific row)
+  patch_manager.tab.failed                      (tab)
+  patch_manager.field.environment               (field)
+```
+
+The grammar is informative; runtimes accept any non-empty
+`nac_id` string. The CI gate via `validate_global()` calls
+out violations as `convention_violations`, not errors,
+because legacy ports may carry pre-v1.5 ids that do not
+match.
 
 Manifest schema:
 
