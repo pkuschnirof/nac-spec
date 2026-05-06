@@ -7,19 +7,18 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.4 (spec) / 1.4.1 (reference runtime). v1.4.1 is a
-patch-level release responding to the AI peer review of
-2026-05-06 (DeepSeek + Claude + Grok Fast); it adds five
-normative subsections (1.5.1 demo references, 1.5.2 adoption
-cost framing, 7.1 awaitable-write contract, 7.2 ARIA-NAC
-authority rule, 7.3 state mapping, 7.4 event scoping,
-P5.1 active-plugin resolution, 14.3.5 layer declaration) and
-patches the reference runtime accordingly. v1.4.1 is a strict
-superset of v1.4.0; every v1.0..v1.4.0 plugin remains valid.
-The spec base remains v1.4 because no new role / event /
-attribute vocabulary was added -- only contracts were tightened
-and missing rules made explicit. See CHANGELOG.md for the full
-diff.
+**Version**: 1.4 (spec) / 1.4.2 (reference runtime). v1.4.2 is a
+patch-level release responding to Microsoft Copilot's review of
+v1.4.1 (2026-05-06), which itself responded to the v1.4.0 peer
+review by DeepSeek + Claude + Grok Fast. The spec base remains
+v1.4 because no new role / event / attribute vocabulary was
+added -- only contracts were tightened and implicit rules made
+explicit. v1.4.2 normative additions on top of v1.4.1: P5.0
+return shapes, 6.1 NAC-3 event-family scoping, 7.3.1 NAC-drives-
+ARIA-mirrors direction, 7.5 confirm-dialog contract, plus
+tightened plugin-id rule (sec 7.4) and click_by_verb tie-break
++ tab_by_label matching rules (sec P5). Every v1.0..v1.4.1
+plugin remains valid. See CHANGELOG.md for the full diff.
 **Date**: 2026-05-06.
 **Authors**: Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com> (lead), Sumi (collaboration).
 **License**: MIT.
@@ -576,10 +575,157 @@ target in the manifest first (matching `actions[].verb` for
 timeout semantics, error throws) are unchanged. Pass `null` for
 `plugin` to use the active plugin per section P5.1.
 
+##### Tie-break (normative, added v1.4.2)
+
+When multiple `actions[]` entries within the resolved plugin's
+manifest share the same `verb`, `click_by_verb` MUST pick the
+**first match in `actions[]` array order**. Plugin authors that
+need different behaviour MUST give the actions distinct verbs;
+the first-match rule is deterministic and SHOULD NOT be relied
+on for routing. `NAC.validate(plugin)` from v1.4.2 onward emits
+a `warn` finding `duplicate_verb` for any plugin manifest that
+declares two actions with the same `verb`.
+
+When the manifest yields no match, `click_by_verb` falls back
+to a DOM scan within the plugin root for
+`[data-nac-action="<verb>"]`. The scan returns the **first
+match in DOM order**. Same first-match-wins rule applies.
+
+##### Label matching for `tab_by_label` (normative, added v1.4.2)
+
+The label argument is matched against, in order:
+
+1. `tabs[i].label` (legacy single-locale label, if present).
+2. Every value of `tabs[i].label_i18n` (every locale present
+   in the manifest, not just the active locale -- a voice
+   agent that speaks "failed" in English on a Spanish-locale
+   page should still find a tab whose `label_i18n.en === 'failed'`).
+3. `tabs[i].nac_id` (last-resort identifier match).
+
+Comparison rules:
+
+- **Case-insensitive**: both sides lower-cased via the language-
+  insensitive Unicode `toLowerCase()` before compare.
+- **Whitespace-trimmed**: leading/trailing whitespace stripped.
+- **Locale-aware optional**: implementations MAY use
+  `Intl.Collator(undefined, { sensitivity: 'base' })` for
+  matches sensitive to language-specific equivalences (Turkish
+  dotless-i, German esszett, full-width vs half-width). The
+  reference runtime uses simple lower-cased trim; this is
+  spec-permitted but stricter implementations are encouraged.
+- **No partial matches by default**: the strings MUST be equal
+  after the above normalisations. A future minor version MAY
+  add a `{ partial: true }` option for substring search.
+
+When two tabs match the same label after normalisation,
+`tab_by_label` MUST pick the **first match in `tabs[]` array
+order** (same first-match rule as `click_by_verb`).
+`NAC.validate(plugin)` emits a `warn` finding `duplicate_tab_label`
+for plugins that declare two tabs with the same label across
+their declared locales.
+
 The API MUST resolve `nac_id` first inside the active plugin, then
 fall back to global lookup. Operations on missing IDs MUST throw a
 typed `NacError` containing `code: 'not_found' | 'disabled' |
 'invalid' | 'timeout'`.
+
+#### P5.0 -- Return shapes (normative, added v1.4.2)
+
+> Added in v1.4.2 in response to AI peer review action item
+> 3.5-A (Copilot, 2026-05-06). Pre-v1.4.2 the names below were
+> declared in P5 method signatures but not formalised, so an
+> AI test runner reading the spec cold could not rely on the
+> shape of `describe().kpis[i].value` and similar.
+
+Every read function in the P5 interface returns one of the
+following shapes. All fields listed are normative; runtimes
+MUST emit them; consumers MAY ignore additional fields the
+runtime adds (forwards-compatible extension policy).
+
+```typescript
+interface NacElement {
+  nac_id:    string;            // canonical addressable ID
+  role:      NacRole;            // P2 role token
+  state:     string | null;     // current data-nac-state value, or null
+  label:     string;             // resolved label (aria-label || textContent || nac_id)
+  value:     string | number | boolean | null;
+                                 // current value if input/select/textarea/contenteditable;
+                                 // null otherwise. KPI value rendering: see NacKpi below.
+  action:    string | null;      // verb if role='action', else null
+  field_type: string | null;    // data-nac-field-type if role='field', else null
+  plugin:    string | null;      // owning plugin slug, or null if global
+  plugin_instance_id: string | null; // P5.1 multi-mount discriminator
+  disabled:  boolean;            // disabled || aria-disabled='true'
+  hidden:    boolean;            // aria-hidden='true' || display:none
+  error:     string | null;      // data-nac-error if present
+}
+
+interface NacSnapshot {
+  active:   string | null;       // active plugin slug per P5.1
+  plugins:  Array<{
+    plugin:  string;
+    version: string;
+    state:   'opening' | 'ready' | 'closing' | 'closed' | null;
+    elements: NacElement[];
+  }>;
+  fields:   NacElement[];        // flat list, role='field'
+  actions:  NacElement[];        // flat list, role='action'
+  kpis:     NacKpiReadout[];     // see below
+  tabs:     NacElement[];        // flat list, role='tab'
+  feedback: NacFeedback[];
+  timestamp: number;             // Date.now() at snapshot creation
+}
+
+interface NacKpiReadout {
+  nac_id:   string;
+  label:    string;              // localised label
+  value:    string | number | null;
+                                 // primary numeric/textual value
+  format?:  string;              // declared format token (e.g. 'currency', 'percent')
+  unit?:    string;              // declared unit (e.g. 'USD', '%')
+  trend?:   'up' | 'down' | 'flat' | null;
+                                 // optional, when manifest declares it
+  plugin:   string | null;
+}
+
+interface NacFeedback {
+  severity: 'info' | 'warn' | 'error' | 'success';
+  message:  string;              // localised text
+  nac_id:   string | null;       // element this feedback is bound to, or null if global
+  plugin:   string | null;
+  timestamp: number;
+}
+
+interface NacEvent {
+  event:  string;                // canonical event name e.g. 'nac:action:succeeded'
+  detail: object;                // event payload
+}
+
+interface NacResult {
+  ok:     boolean;
+  event:  NacEvent | null;       // the event that resolved the awaitable write,
+                                 // or null only when the manifest declared
+                                 // dispatch_mode:'sync' for that action
+                                 // (see section 7.1).
+}
+
+interface NacStateSnapshot {
+  active:    string | null;      // plugin slug per P5.1
+  errors:    NacElement[];       // every element with state='invalid' or 'error'
+  feedback:  NacFeedback[];
+  timestamp: number;
+}
+```
+
+The interface names above are the ones already used in the P5
+function signatures higher in this section. Pre-v1.4.2 they
+appeared only as type annotations without bodies; v1.4.2
+makes the bodies normative.
+
+Backwards compatibility: every v1.4.0 reference-runtime
+return value already conforms to these shapes (the bodies
+were extracted from the runtime, not invented). Existing
+consumers do not need changes.
 
 #### P5.1 -- Active-plugin resolution algorithm (normative, added v1.4.1)
 
@@ -774,6 +920,82 @@ plugin's level. This repository's own systems do exactly that under
 The official NAC badge image (SVG) is published under
 `docs/badge/nac-{level}.svg` for embedding in READMEs.
 
+### 6.1. Required vs optional event families per level (normative, added v1.4.2)
+
+> Added in v1.4.2 in response to AI peer review action item
+> 3.5-E (Copilot, 2026-05-06). Pre-v1.4.2, NAC-3 was read by
+> some reviewers as "every event family in v1.0..v1.4 is
+> required for every plugin". That interpretation forces a
+> plugin that ships zero accordions to also emit
+> `nac:accordion:expanded`, which is absurd. The correct rule
+> -- "events are required only for widget families the plugin
+> actually uses" -- is now stated normatively here.
+
+**Universal MUST events at NAC-3** (every plugin emits these
+regardless of which widgets it ships):
+
+- `nac:plugin:opening`
+- `nac:plugin:opened`
+- `nac:plugin:closing`
+- `nac:plugin:closed`
+- `nac:action:dispatching`
+- `nac:action:succeeded` (or `:failed` per action call)
+- `nac:field:changed` (only if the plugin declares any field
+  in its manifest; otherwise N/A)
+
+**Conditional MUST events at NAC-3** (the plugin emits these
+*if and only if* its manifest declares the corresponding
+widget family). Examples (non-exhaustive, generalises to
+every widget family):
+
+| Manifest declares      | Plugin MUST emit                                    |
+|------------------------|-----------------------------------------------------|
+| any tab in `tabs[]`    | `nac:tab:changed`                                   |
+| accordion in DOM       | `nac:accordion:expanded`, `:collapsed`              |
+| confirm dialog         | `nac:confirm:requested`, `:resolved`, `:cancelled`  |
+| stepper                | `nac:step:advanced`, `:back`                        |
+| tree                   | `nac:tree:expanded`, `:collapsed`, `:selected`      |
+| toast/banner           | `nac:toast:shown`, `:dismissed` (banner same)       |
+| drawer/bottom-sheet    | `nac:drawer:opened`, `:closed`, `:peeked`           |
+| calendar               | `nac:calendar:view_changed`, `:event_selected`      |
+| chart                  | `nac:chart:data_loaded`, `:series_toggled`          |
+| map                    | `nac:map:focused`, `:marker_selected`               |
+| richtext               | `nac:richtext:formatted`, `:link_inserted`          |
+| breadcrumb             | `nac:breadcrumb:navigated`                          |
+| carousel               | `nac:carousel:advanced`                             |
+| timeline               | `nac:timeline:loaded`                               |
+| reorder list           | `nac:reorder:applied`                               |
+
+**MAY events** (every level, optional):
+
+- `nac:focus:moved` (v1.4.1+, emitted by the runtime, not by
+  the plugin; plugins do NOT need to emit this themselves).
+- `nac:state:changed` for non-canonical states the plugin
+  defines (always optional, useful for telemetry).
+- `nac:section:reached` for section landmarks (v1.2 sec 14.7).
+
+**Validator behaviour at NAC-3**:
+
+- A plugin that declares `tabs[]` in its manifest but never
+  emits `nac:tab:changed` is non-compliant. Validator: `error`,
+  code `missing_required_event`.
+- A plugin that does NOT declare `tabs[]` and never emits
+  `nac:tab:changed` is fine.
+- The validator MUST treat the conditional table above as
+  exhaustive: a widget family in DOM (detected via
+  `data-nac-role` scan) without the corresponding manifest
+  declaration is itself a `warn` finding (code
+  `widget_in_dom_not_in_manifest`); a manifest declaration
+  without DOM presence is a `warn` (`widget_in_manifest_not_in_dom`,
+  this is the v1.4.1 missing_in_dom case).
+
+**Rationale**: the v1.4.0 spec was internally consistent but
+ambiguous about scope. v1.4.2 makes the per-family scoping
+explicit so a plugin author who ships only the v1.0 base + a
+single tablist + a confirm dialog does NOT accidentally lose
+NAC-3 by failing to emit `nac:accordion:expanded` for an
+accordion the plugin never uses.
+
 ---
 
 ## 7. Operator semantics
@@ -934,6 +1156,44 @@ equivalent and SHOULD NOT be mirrored. The contract is: every
 state token that maps to ARIA MUST mirror; every state token
 that does not map to ARIA stays NAC-only.
 
+### 7.3.1. Direction of mirroring (normative, added v1.4.2)
+
+> Added in v1.4.2 in response to AI peer review action item
+> 3.5-G (Copilot, 2026-05-06).
+
+The mapping in section 7.3 is **NAC drives, ARIA mirrors**.
+That is the only permitted direction at NAC-3. Specifically:
+
+- When a plugin transitions an element's state, the plugin
+  MUST update `data-nac-state` first (or in the same render
+  commit) and the corresponding `aria-*` attribute as a
+  mirror.
+- Plugins MUST NOT update `aria-*` first and rely on the
+  validator or a runtime hook to back-fill `data-nac-state`.
+- The reverse mapping (ARIA -> NAC) is intentionally NOT
+  defined. An ARIA-first codebase that adopts NAC MUST
+  rewrite the touchpoints so NAC is the source of truth for
+  every state mapped in section 7.3.
+
+Why this rule: NAC's driver semantics depend on
+`data-nac-state` for `find()` filtering, lifecycle gating,
+and validator drift detection. ARIA's semantics depend on the
+ARIA attribute. If both sides could be authoritative, the
+validator would have to choose -- and any choice produces a
+class of silent disagreements. Single-direction mirroring
+keeps the contract simple: NAC is the source, ARIA is the
+view. Authors writing accessibility-first code can still use
+ARIA in places NAC does not cover (section 7.3 is not
+exhaustive); they only commit to NAC-first when both layers
+apply to the same state.
+
+The validator emits an `error` finding `aria_first_state` when
+it detects an `aria-busy="true"` (or any 7.3-mapped ARIA
+attribute) on an element with `data-nac-id` whose
+`data-nac-state` does NOT correspond -- *and* the element
+appears in the manifest's `actions[]` / `fields[]` (i.e. it
+is a NAC-instrumented element, not a pure ARIA-only widget).
+
 ---
 
 ## 7.4. Event scoping (normative, added v1.4.1)
@@ -977,24 +1237,48 @@ Subscribers that omit the filter accept events from every
 plugin and every instance on the page. That is permitted but
 explicitly the subscriber's responsibility.
 
-### Plugin slug uniqueness
+### Plugin slug uniqueness (tightened in v1.4.2)
+
+> Tightened in v1.4.2 in response to AI peer review action item
+> 3.5-H (Copilot, 2026-05-06). v1.4.1 said hosts SHOULD set
+> `data-nac-plugin-id` per instance; v1.4.2 promotes that to
+> MUST when two roots with the same slug coexist in the DOM.
 
 Within a single mounted document, a plugin slug MAY appear on
 multiple roots (legitimate multi-instance UIs: stacked modals,
 multi-window CRM views, master-detail with two patch_manager
-panels). To address a specific instance, hosts MUST set
-`data-nac-plugin-id="<unique>"` on each root. Operators
-addressing a specific instance use:
+panels). When two or more `[data-nac-plugin]` elements with
+the same `data-nac-plugin` value are simultaneously in the
+DOM, **each MUST carry a unique `data-nac-plugin-id` attribute**.
+The pre-v1.4.2 fallback ("most recently mounted ready plugin
+in DOM order picks one") is permitted only when slugs are
+unique on the page. v1.4.2 makes the multi-mount-without-id
+case a NAC-3 validator error, not a soft fallback.
+
+Operators addressing a specific instance use:
 
 - For driver calls: `NAC.click('apply_all', { plugin_instance_id: 'modal-2' })`.
 - For event filtering: `e.detail.plugin_instance_id === 'modal-2'`.
 - For scoped find: `NAC.find('apply_all', { plugin_instance_id: 'modal-2' })`.
 
-If a host mounts multiple instances of the same plugin without
-distinguishing `data-nac-plugin-id`, the active-plugin
-algorithm in P5.1 picks one (the most recently mounted ready
-one). This is a permitted but lossy fallback; producers SHOULD
-NOT rely on it.
+If a single instance of a plugin is mounted, `data-nac-plugin-id`
+is OPTIONAL (the slug alone disambiguates).
+
+**Validator (v1.4.2 addition)**: `NAC.validate(plugin)` MUST
+report an `error` finding `duplicate_plugin_no_instance_id`
+when more than one element matching
+`[data-nac-plugin="<slug>"]` is in the DOM and at least one
+of those elements lacks a unique `data-nac-plugin-id`. The
+error references all conflicting roots (so the host knows
+which to fix). At NAC-3 this is a CI blocker.
+
+**Note for hosts using fragments / portals**: a
+plugin root MAY be unmounted and remounted across animations.
+The simultaneity check is "currently in the DOM", not "ever
+existed". Toggling display:none does NOT remove from the DOM
+and therefore counts; React unmount + remount in the same
+tick does NOT count if no two are present in the validator's
+snapshot.
 
 ### Per-plugin event buses (optional)
 
@@ -1025,6 +1309,120 @@ an iframe SHOULD use `postMessage` to forward NAC events to the
 parent frame, then re-dispatch them on the parent's `document`.
 Or operate the iframe via its own `window.NAC.*` instance,
 which is the recommended pattern.
+
+---
+
+## 7.5. Confirm-dialog contract (normative, added v1.4.2)
+
+> Added in v1.4.2 in response to AI peer review action item
+> 3.5-D (Copilot, 2026-05-06). The confirm-dialog primitive was
+> introduced in v1.3 (section 15.5) but was described
+> narratively. v1.4.2 promotes the contract to normative section
+> 7 so a reviewer reading only this chapter has the full shape.
+
+A confirm dialog is a modal that blocks operator input until
+the user (or autonomous operator) resolves a binary or
+multi-choice prompt. NAC-3 plugins that ship confirms MUST
+follow this contract.
+
+### DOM shape
+
+A confirm dialog is one element with the following attributes:
+
+```html
+<div data-nac-role="confirm-dialog"
+     data-nac-id="patch_manager.confirm_apply_all"
+     data-nac-state="pending"
+     data-nac-plugin="patch_manager"
+     role="alertdialog"
+     aria-modal="true"
+     aria-labelledby="..."
+     aria-describedby="...">
+  <p id="...">Apply all 27 pending patches?</p>
+  <button data-nac-role="action"
+          data-nac-action="confirm"
+          data-nac-id="patch_manager.confirm_apply_all.yes">Apply all</button>
+  <button data-nac-role="action"
+          data-nac-action="cancel"
+          data-nac-id="patch_manager.confirm_apply_all.no">Cancel</button>
+</div>
+```
+
+Required attributes:
+
+- `data-nac-role="confirm-dialog"`.
+- `data-nac-id`: namespaced ID (`<plugin>.confirm_<purpose>`).
+- `data-nac-state`: one of `pending` | `resolved` | `cancelled`.
+- `data-nac-plugin`: owning plugin slug.
+- `role="alertdialog"` and `aria-modal="true"` for ARIA parity
+  (per section 7.2 authority rule).
+- A focus trap: tab navigation MUST stay inside the dialog
+  while `data-nac-state="pending"`.
+
+The yes/no buttons are normal NAC actions with verbs
+`confirm` and `cancel`. Hosts MAY add additional choice
+buttons; their verbs are host-defined.
+
+### Lifecycle events (normative)
+
+Three events fire on `document` (per section 7.4 scoping):
+
+- `nac:confirm:requested` -- dispatched when a confirm dialog
+  enters the DOM with `data-nac-state="pending"`. Detail:
+  `{ plugin, plugin_instance_id, nac_id, prompt, choices,
+  timestamp }`.
+- `nac:confirm:resolved` -- dispatched when the user / agent
+  picks any positive choice (verb `confirm` or any host
+  positive verb). Detail: `{ plugin, plugin_instance_id,
+  nac_id, choice, timestamp }`.
+- `nac:confirm:cancelled` -- dispatched when the user / agent
+  picks `cancel` or dismisses by ESC / backdrop click. Detail:
+  same shape as `resolved` with `choice: 'cancel'`.
+
+The `nac:action:succeeded` / `nac:action:failed` events still
+fire on the underlying confirm/cancel buttons; the
+`confirm:resolved` / `confirm:cancelled` events are an
+*additional* lifecycle layer that operators reading the
+dialog as a single unit can subscribe to without parsing
+button verbs.
+
+### Driver API
+
+`NAC.list_pending_confirms(): NacElement[]` returns every
+`[data-nac-role="confirm-dialog"][data-nac-state="pending"]`
+on the page. An autonomous operator MUST check this list
+before any `click()` / `fill()` call; if a confirm is
+pending, the operator MUST resolve it first (or accept that
+its next call will likely fail with `disabled`).
+
+`NAC.confirm(prompt, opts): Promise<boolean>` is the
+*emitter* helper for plugin authors that want to programmatically
+raise a confirm. It returns a promise that resolves to `true`
+(verb `confirm`) or `false` (verb `cancel`). Hosts that ship
+their own confirm UI MAY skip this helper and dispatch the
+events themselves; the runtime helper is a convenience.
+
+### Validator (normative additions, v1.4.2)
+
+`NAC.validate(plugin)` MUST report an `error` finding
+`confirm_dialog_no_focus_trap` when a `[data-nac-role=
+"confirm-dialog"][data-nac-state="pending"]` exists but no
+focus trap is detectable (heuristic: the dialog must contain
+at least one focusable element AND tabindex on body must NOT
+allow focus to leave the dialog -- runtime checks the first
+condition only; second is host-tested).
+
+`NAC.validate(plugin)` MUST report an `error` finding
+`confirm_dialog_missing_aria` when the dialog lacks
+`role="alertdialog"` or `aria-modal="true"`.
+
+### Compliance levels
+
+- NAC-1: confirm dialogs MAY exist; no contract enforced.
+- NAC-2: confirm dialogs MUST have `data-nac-role` and
+  `data-nac-id`; lifecycle events not required.
+- NAC-3: full contract above MUST be implemented; validator
+  errors are blockers.
 
 ---
 

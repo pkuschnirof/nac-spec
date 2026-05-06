@@ -22,6 +22,124 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.4.2] - 2026-05-06
+
+Patch release responding to Microsoft Copilot's review of
+v1.4.1 (Copilot was the first reviewer to read v1.4.1; the
+earlier three reviewed v1.4.0). v1.4.2 closes 9 new action
+items (3.5-A through 3.5-I) without adding new role / event /
+attribute vocabulary. Strict superset of v1.4.1; every
+v1.0..v1.4.1 plugin remains valid.
+
+### Spec changes (normative)
+
+- **P5.0 Return shapes** (new). NacElement, NacSnapshot,
+  NacKpiReadout, NacFeedback, NacEvent, NacResult,
+  NacStateSnapshot all formalised as normative TypeScript
+  interfaces. Pre-v1.4.2 these names appeared only in P5
+  function signatures without bodies. AI test runners reading
+  the spec cold can now rely on `describe().kpis[i].value`
+  and similar.
+- **6.1 Required vs optional event families per level** (new).
+  NAC-3 event requirements split between universal (every
+  plugin emits) and conditional (plugin emits only when its
+  manifest declares the corresponding widget family). A plugin
+  that ships zero accordions does not need to emit
+  `nac:accordion:expanded`. The validator implements the
+  conditional table.
+- **7.3.1 Direction of mirroring** (new). NAC drives, ARIA
+  mirrors. The reverse direction is intentionally NOT defined.
+  ARIA-first codebases adopting NAC must rewrite touchpoints
+  so NAC is the authoritative source for every state mapped in
+  section 7.3. Validator emits error `aria_first_state` when
+  reverse mirroring detected.
+- **7.5 Confirm-dialog contract** (new). Promoted from v1.3
+  section 15.5 narrative + API_REFERENCE to a normative section
+  of chapter 7. Defines DOM shape (`data-nac-role=
+  "confirm-dialog"`, `data-nac-state="pending|resolved|
+  cancelled"`), lifecycle event family
+  (`nac:confirm:requested`, `:resolved`, `:cancelled`), focus
+  trap requirement, validator findings
+  (`confirm_dialog_no_focus_trap`,
+  `confirm_dialog_missing_aria`).
+- **7.4 plugin-id rule tightened**. Pre-v1.4.2 said hosts
+  SHOULD set `data-nac-plugin-id` per instance; v1.4.2 makes
+  it MUST when two roots with the same `data-nac-plugin` slug
+  are simultaneously in the DOM. Validator error
+  `duplicate_plugin_no_instance_id`.
+- **P5 click_by_verb / tab_by_label tie-break rules**
+  formalised. First-manifest-match-wins for both. Label
+  matching is case-insensitive trim across every declared
+  locale (locale-aware via `Intl.Collator` permitted but
+  optional). Validator emits warns `duplicate_verb` and
+  `duplicate_tab_label`.
+
+### Reference implementation (`js/nac.js`)
+
+- **`validate()`** gains four LINTs aligned with the new
+  normative rules: `duplicate_verb`, `duplicate_tab_label`,
+  `duplicate_plugin_no_instance_id`, plus the v1.4.1
+  `aria_nac_state_mismatch` already present.
+- **Focus follow** on every write entry point (`click`,
+  `fill`, `select`, `tab`, `navigate_breadcrumb`). The
+  internal helper `_focusElement(el)` runs
+  `scrollIntoView({block:'center'})`, focuses the element
+  (transiently adding `tabindex=-1` for non-focusable roles),
+  pulses `[data-nac-focus-pulse]` for 600ms, and emits
+  `nac:focus:moved`. A minimal default stylesheet is injected
+  once on install. Opt out per call via `el.__nac_skip_focus`
+  or globally via `NAC.config.focus_on_action = false`. This
+  closes a UX gap surfaced 2026-05-06: before this change,
+  programmatic clicks happened invisibly off-screen and the
+  page stayed static while the agent operated.
+
+### Demo fixes (`yujin.app/nac-spec/`)
+
+- `js/example.js` `interpret()` rewritten. Pre-v1.4.2 used
+  substring match on single letters (`'c'`) and short
+  syllables (`'do'`, `'re'`, `'mi'`, `'sol'`) which collide
+  with extremely common words: 'toca', 'tocate', 'secreto',
+  'cerrar', 'mira'. Every chat input dispatched note.c
+  regardless of intent. v1.4.2 tokenises the input
+  (whole-word match), strips Spanish accents via NFD +
+  combining range, reorders priority so action keywords
+  (secret, autopilot, wizard) beat the note fallback. Fixes
+  the "patito de Homero" bug.
+- `AudioContext` unlock is now global. Pre-v1.4.2,
+  programmatic `el.click()` from chat dispatch did not count
+  as user gesture, so `AudioContext` stayed suspended and
+  piano notes were silent. v1.4.2 attaches a capture-phase
+  `pointerdown / mousedown / touchstart / keydown` listener
+  on `document` that resumes the context. One real
+  interaction anywhere on the page unlocks audio for the
+  session.
+- `js/example.js` `drive()` and `drive_fill()` now route
+  through `NAC.click()` / `NAC.fill()` so the new focus
+  follow applies on chat-driven operations.
+
+### Documentation
+
+- `docs/MANUAL.md` adds two new chapters:
+  - **Framework integration patterns**: React 18, Vue 3,
+    Svelte 5, Angular 17 examples for atomic
+    `data-nac-state` + `aria-*` updates per section 7.2,
+    plus `aria_lag_ms` guidance for batched-update edge
+    cases. Lifecycle event hook table per framework.
+  - **Event correctness**: the five patterns (single async,
+    optimistic, async chain, retries with attempt counter,
+    AbortController cancellation, race-condition gate). NAC-3
+    summary checklist before declaring compliance.
+- `docs/API_REFERENCE.md` updated to reflect v1.4.2 runtime
+  (`NAC.version === '1.4.2'`).
+
+### Reviewer credit
+
+Action items addressed in this release were surfaced by
+Microsoft Copilot (free, web). Three more free-tier reviewers
+are queued: ChatGPT, Mistral, Kimi, Qwen, Gemini retry, plus
+Perplexity. Full reviews preserved verbatim in
+`docs/AI_REVIEWS_OF_NAC_SPEC.md`.
+
 ## [1.4.1] - 2026-05-06
 
 Patch release responding to the AI peer review of 2026-05-06.

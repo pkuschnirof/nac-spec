@@ -610,7 +610,271 @@ ranking.
 These are annotations, not edits to Grok's review. The review
 itself stays verbatim above.
 
-### 2.5 ChatGPT (free tier) -- pending
+### 2.5 Microsoft Copilot
+
+Model: Microsoft Copilot (free, web). Underlying model not
+  surfaced in the UI; assume GPT-4-class with browsing. Pablo
+  pasted the spec contents during the session when Copilot
+  asked, so the review is grounded in v1.4.1 (post-AI-peer-
+  review patch), not v1.4.0 like the previous three reviewers.
+Date:  2026-05-06 (post v1.4.1 release)
+Browsing: on (Copilot fetched the spec, then asked Pablo to
+  paste the runtime + manifest + ARIA-NAC sections directly)
+Prompt language: en (sanitized version)
+
+Tier note: Copilot is the first reviewer to read the v1.4.1
+spec. The earlier three (DeepSeek, Claude, Grok) reviewed
+v1.4.0. Score deltas are partially attributable to the
+in-flight contract tightening, not only to Copilot's reviewer
+profile. Capture this asymmetry explicitly in cross-AI
+comparisons.
+
+````
+I now have the full normative spec, including:
+
+P1-P7
+
+Manifest schema
+
+Event model
+
+Awaitable-write contract
+
+ARIA-NAC authority rules
+
+Compliance levels
+
+v1.1 widget extensions
+
+This is everything required to produce the full technical review.
+
+Full Technical Review of NAC (v1.0-v1.4.1)
+(T1-T6, <=1500 words, with citations to the spec you provided)
+
+T1. SUMMARY (<=120 words)
+NAC is an open-source UI contract that adds five DOM attributes, seven lifecycle events, and a driver API (window.NAC.*) so autonomous operators -- AI agents, voice assistants, RPA bots, and test runners -- can reliably navigate and operate a UI without selectors. It targets frontend teams, QA, and automation engineers. NAC ships: a normative spec (roles, states, events, manifest), a reference JS runtime, a validator, and a test runner. Its goal is to make UIs machine-operable with the same semantics humans see, while remaining compatible with ARIA (S1.5).
+
+T2. ARCHITECTURAL REVIEW (200-400 words)
+Strongest design decision: the seven pillars (P1-P7)
+The spec's backbone is the seven pillars (S3), especially P1 stable identity, P2 semantic roles, P3 explicit state, and P4 lifecycle events. Together they form a coherent, minimal contract that is both human-readable and machine-operable. The insistence that data-nac-id be semantic, stable, plugin-namespaced, and non-generated (S3 P1) is the single most important stabilizer for automation. The awaitable-write contract (S7.1) is also excellent: it eliminates flake by requiring that click() resolve only on real events, not timers.
+
+Weakest design decision: plugin-instance scoping and multi-mount complexity
+The multi-instance rules in P5.1 and S7.4 are correct but heavy. Requiring operators to pass plugin_instance_id to avoid ambiguity is realistic, yet the fallback ("last ready plugin in DOM order") is brittle for large apps. This is the one area where NAC's simplicity breaks: multi-mount UIs become significantly more complex to reason about, and the spec's rules are long and easy to misapply.
+
+Most adoption-challenging section: ARIA-NAC authority rules (S7.2)
+The requirement that authors synchronize NAC state and ARIA attributes atomically is correct but difficult in real production codebases. Many frameworks batch DOM updates asynchronously; guaranteeing that data-nac-state="loading" and aria-busy="true" update in the same tick is nontrivial. The fallback (aria_lag_ms in the manifest) is helpful but adds cognitive load.
+
+Other adoption risks
+Manifest drift rules (P7): requiring CI to fail when manifest and DOM diverge is good, but teams with dynamic UIs may underestimate the maintenance burden.
+
+Event vocabulary explosion (v1.1 S13.3): dozens of widget-specific events increase surface area; teams may implement only partially, leading to inconsistent operator behavior.
+
+State vocabulary richness (S7.3): mapping NAC -> ARIA is clear, but the reverse is not; developers may forget to mirror ARIA attributes.
+
+Overall, the architecture is strong, but multi-instance scoping and ARIA synchronization are the most fragile parts.
+
+T3. PROGRAMMING WALKTHROUGH (200-400 words)
+Using only window.NAC.* against the public demo (example_demo), here is how a test runner would operate:
+
+a) Read labels and current values of KPI cards
+js
+const snap = NAC.describe();   // P5
+const kpis = snap.kpis;        // spec: NacSnapshot includes kpis[]
+for (const k of kpis) {
+  console.log(k.nac_id, k.label, k.value);
+}
+Ambiguity:
+The spec defines NacSnapshot only narratively (S P5) and does not explicitly list the shape of kpis[]. The manual implies { nac_id, label, value }, but the normative spec does not define the exact fields.
+
+b) Trigger the action whose verb is "apply_all"
+Two options:
+
+js
+await NAC.click('apply_all');                 // P5
+// or (v1.4.1 ergonomic helper)
+await NAC.click_by_verb(null, 'apply');       // S P5, S 9
+Ambiguity:
+click_by_verb matches actions[].verb, not nac_id. If the verb is "apply" but the ID is "apply_all", the helper works; if a plugin has multiple "apply" verbs, behavior is underspecified (spec says "search manifest first" but not how ties break).
+
+c) Switch to the tab named "failed" inside patch_manager
+js
+await NAC.tab('patch_manager', 'tab.failed');     // P5
+// or (v1.4.1)
+await NAC.tab_by_label('patch_manager', 'failed');
+Ambiguity:
+tab_by_label matches label or label_i18n, but the spec does not define whether matching is case-insensitive or locale-aware.
+
+d) Detect whether a confirmation dialog is blocking input
+Use v1.3 confirm API:
+
+js
+const pending = NAC.list_pending_confirms();   // API_REFERENCE v1.3
+const isBlocking = pending.length > 0;
+Ambiguity:
+The normative spec does not define confirm dialogs at all; they exist only in the API reference. There is no section in the spec describing confirm lifecycle events or required DOM attributes.
+
+T4. RELATIONSHIP TO ARIA (150-300 words)
+The argument in S1.5 is convincing: ARIA and NAC serve different audiences and different layers. ARIA is declarative and screen-reader-oriented; NAC is imperative and operator-oriented. The spec is careful to avoid semantic overlap: NAC roles (action, field, kpi) do not conflict with ARIA roles (button, textbox, status). The authority rule (S7.2) is particularly strong: it explicitly states that ARIA governs assistive tech and NAC governs autonomous operators, resolving ambiguity.
+
+However, there are overlapping concepts that may confuse implementers:
+
+data-nac-state="loading" vs aria-busy="true"
+
+data-nac-state="invalid" vs aria-invalid="true"
+
+tab role vs ARIA role="tab"
+
+The mapping table (S7.3) helps, but developers must maintain both layers manually, which increases cognitive load.
+
+Would I adopt NAC alongside ARIA?
+Yes, if the project requires automation, voice control, or AI assistance. NAC does not replace ARIA; it fills a gap ARIA intentionally leaves open. If the project is accessibility-only, ARIA alone suffices; if the project is automation-heavy, NAC is the better investment.
+
+T5. ADOPTION ANALYSIS (150-300 words)
+Minimum work for NAC-3
+A team must implement all pillars P1-P7:
+
+Add five attributes to every interactive element (S3).
+
+Emit seven lifecycle events (S3 P4).
+
+Build and register a manifest (S P7).
+
+Implement the awaitable-write contract (S7.1).
+
+Mirror ARIA attributes (S7.2-7.3).
+
+Ensure validator passes in CI (S P7).
+
+Most underestimated part
+Event correctness. Teams often underestimate how hard it is to emit nac:action:succeeded at the exact semantic boundary of an operation. Many UIs have async chains, optimistic updates, or race conditions. Getting events wrong breaks automation more than missing attributes.
+
+What causes abandonment
+Manifest drift pain: if the manifest is large and the UI changes frequently, teams may find CI failures too noisy.
+
+Multi-instance complexity: apps with many modals or nested views may struggle with plugin_instance_id rules (S7.4).
+
+ARIA synchronization: teams not already disciplined in accessibility may find dual-layer updates burdensome.
+
+Widget extensions: v1.1 adds many roles/events; partial implementation leads to inconsistent behavior.
+
+The biggest risk is underestimating the rigor required for NAC-3. It is not "add some attributes"; it is "publish a stable contract and never violate it."
+
+T6. SCORES AND CLOSING LINE
+Axis    Score (1-10)
+Clarity of specification    8 -- very thorough, but long and occasionally redundant.
+Usefulness for automation    10 -- best-in-class contract for UI-driven agents.
+Ease of adoption    6 -- simple in concept, demanding in practice (events, ARIA sync, manifests).
+Ambition vs feasibility    9 -- ambitious but grounded; multi-instance rules are the hardest part.
+
+Recommendation: NAC is an excellent fit for AI-driven E2E testing in large SPAs where selector flake is the dominant cost.
+````
+
+#### Reviewer accuracy notes (added by maintainer, not by Copilot)
+
+Copilot is the first reviewer to read v1.4.1 (post-patch). The
+earlier three (DeepSeek, Claude, Grok) reviewed v1.4.0. With
+that asymmetry stated, Copilot's findings break down as
+follows:
+
+**Findings v1.4.1 already addresses (acknowledgement of patch):**
+
+- "Awaitable-write contract is excellent" -- Copilot reads
+  S7.1 as the final form, explicitly states this fixes the
+  flake-factory criticism that DeepSeek and Claude raised
+  against v1.4.0. v1.4.1 sec 7.1 lands this.
+- "Authority rule (S7.2) is particularly strong" -- the new
+  section that DeepSeek + Claude both implicitly asked for.
+- "Stable identity (P1) is the single most important
+  stabilizer" -- aligns with Grok's read of v1.4.0.
+
+**New findings not raised by the previous three reviewers:**
+
+1. **NacSnapshot / NacKpi / NacField / NacResult shapes are
+   defined narratively, not normatively.** Section P5 declares
+   the function signatures via TypeScript interface but does
+   not formalise the *return shapes*. The manual implies
+   `{ nac_id, label, value }` for kpis but the normative spec
+   has no such interface. AI test runners reading the spec
+   cold cannot rely on the kpi shape. Action item: 3.5-A.
+
+2. **`click_by_verb` tie-breaking when multiple actions share
+   the same verb in the same plugin.** Section P5 says
+   "search manifest first" but does not specify how the
+   resolver picks among actions with `verb: "apply"` that
+   have different `nac_id`s. Multi-action verbs are common
+   (a save button + a save-as button might both verb as
+   `apply`). Action item: 3.5-B.
+
+3. **`tab_by_label` matching rules unspecified.** The
+   reference runtime does case-insensitive trim; the spec
+   does not state this. Locale-aware matching (Turkish
+   dotless-i, German esszett) is also unspecified. Action
+   item: 3.5-C.
+
+4. **Confirm-dialog contract is in API_REFERENCE.md but the
+   normative spec section 15 is thin on lifecycle events and
+   required DOM attributes.** A reviewer who reads only the
+   spec (not the manual) cannot tell what shape a confirm
+   dialog must take. Action item: 3.5-D.
+
+5. **Event vocabulary at NAC-3 is treated as monolithic.**
+   Copilot flags v1.1 widget-specific events as a partial-
+   implementation risk: a team that ships only the seven
+   v1.0 lifecycle events and skips v1.1 widget events still
+   claims NAC-3 today. Compliance levels need a MUST/MAY
+   split per event family. Action item: 3.5-E.
+
+6. **ARIA synchronisation in batched-update frameworks is
+   underdocumented.** React 18 / Vue 3 / Svelte 5 all batch
+   DOM writes; guaranteeing that `data-nac-state` and
+   `aria-busy` land in the same tick requires framework-
+   specific patterns. The `aria_lag_ms` escape hatch in
+   manifest exists but the spec does not show how to apply
+   it correctly in each framework. Action item: 3.5-F
+   (manual addition, not spec change).
+
+7. **Reverse mapping ARIA -> NAC is not documented.**
+   Section 7.3 maps NAC states to ARIA but not the reverse.
+   Authors who start ARIA-first may forget to mirror back to
+   NAC. Action item: 3.5-G (decide whether to add reverse
+   mapping or normatively forbid it).
+
+8. **`data-nac-plugin-id` is currently SHOULD; multi-mount
+   apps would be safer if it were MUST.** Today the
+   active-plugin fallback (P5.1 step 3, "last ready plugin
+   in DOM order") is the *fail-soft* mode. Copilot reads
+   this as brittle for large apps. Action item: 3.5-H
+   (decide whether to upgrade SHOULD -> MUST when a host
+   mounts multiple instances of the same plugin slug).
+
+9. **"Event correctness is the most underestimated cost".**
+   This is a manual-level guidance gap, not a spec gap. The
+   manual currently shows attribute templates but not when
+   to fire `nac:action:succeeded` in async-chain / optimistic-
+   update / race-condition scenarios. Action item: 3.5-I.
+
+**Score interpretation (cross-AI comparison):**
+
+| Axis              | Claude v1.4.0 | DeepSeek v1.4.0 | Grok v1.4.0 | Copilot v1.4.1 |
+|-------------------|--------------|-----------------|-------------|----------------|
+| Clarity           | 6            | 7               | 8           | 8              |
+| Usefulness        | 7            | 9               | 9           | 10             |
+| Ease of adoption  | 5            | 5               | 6           | 6              |
+| Ambition vs feasibility | 6     | 8               | 8           | 9              |
+
+Clarity 6 -> 8 and Ambition 6 -> 9 between Claude (v1.4.0) and
+Copilot (v1.4.1) is the cleanest read of the patch's effect.
+Adoption stayed flat at 6 -- which is honest: tightening the
+contracts does not by itself reduce adoption work, only makes
+the work more explicit. Usefulness ticked from 7-9 to 10
+because every reviewer recognises NAC's automation case once
+they read it; the phantom-success bug capped Claude at 7
+specifically.
+
+These are annotations, not edits to Copilot's review. The
+review itself stays verbatim above.
+
+### 2.6 ChatGPT (free tier) -- pending
 
 ```
 Model: ___________________ (likely GPT-4o-mini or 5-mini in free tier)
@@ -621,7 +885,7 @@ Prompt language: en / es
 (paste full output here)
 ```
 
-### 2.6 Mistral Le Chat -- pending
+### 2.7 Mistral Le Chat -- pending
 
 ```
 Model: ___________________
@@ -632,7 +896,7 @@ Prompt language: en / es
 (paste full output here)
 ```
 
-### 2.7 Kimi (moonshot) -- pending
+### 2.8 Kimi (moonshot) -- pending
 
 ```
 Model: ___________________
@@ -643,7 +907,7 @@ Prompt language: en / es
 (paste full output here)
 ```
 
-### 2.8 Qwen Chat -- pending
+### 2.9 Qwen Chat -- pending
 
 ```
 Model: ___________________
@@ -662,10 +926,18 @@ Prompt language: en / es
 
 ## 3. Synthesis (running, updated as reviews arrive)
 
-> Currently N=3 (DeepSeek + Claude + Grok Fast). This section is
-> preliminary and will be revised as more reviews land. Patterns
-> called out below are tagged with the reviewers that raised them
-> so partial corroboration is visible.
+> Currently N=4 (DeepSeek + Claude + Grok Fast on v1.4.0;
+> Copilot on v1.4.1). This section is preliminary and will be
+> revised as more reviews land. Patterns called out below are
+> tagged with the reviewers that raised them so partial
+> corroboration is visible.
+>
+> **Versioning context.** The first three reviews drove the
+> v1.4.1 patch release. Copilot's review then ran against
+> v1.4.1 and validated several of the fixes, while surfacing
+> nine NEW findings (3.5-A through 3.5-I, listed in 3.5
+> below) that the earlier reviewers did not raise. The v1.5
+> roadmap is the consolidation point for those.
 
 ### 3.1 Patterns across reviewers
 
@@ -776,7 +1048,7 @@ reviewer, specific and falsifiable):**
 
 ### 3.2 Spec changes prompted by this review round
 
-- [ ] **3.2-A**: Reconcile the "~1 hour onboarding" promise in
+- [x] **3.2-A**: Reconcile the "~1 hour onboarding" promise in
       section 1.5 with the actual surface area at NAC-3 v1.4.
       Either revise the promise (state realistic numbers like
       "1 hour for NAC-1, 1-2 weeks for NAC-3 on a 30-screen
@@ -784,15 +1056,15 @@ reviewer, specific and falsifiable):**
       extension packs that teams can opt into. Two reviewers
       independently flag the gap; the right answer is probably
       both.
-- [ ] **3.2-B**: Document the `_activePlugin()` resolution
+- [x] **3.2-B**: Document the `_activePlugin()` resolution
       heuristic in section 3 P5 (or in section 4 lifecycle).
       Today the runtime falls back to "most recently mounted
       plugin with state=ready, then topmost in DOM order" --
       this is implementation behavior, not specified contract.
-- [ ] **3.2-C**: Add a normative way for a `system_map` (section
+- [x] **3.2-C**: Add a normative way for a `system_map` (section
       14.3) provider to declare which layer (legacy / mid /
       modern) it implements, so agents do not have to probe.
-- [ ] **3.2-D**: Clarify in section 7.2 that the awaitable-write
+- [x] **3.2-D**: Clarify in section 7.2 that the awaitable-write
       contract is mandatory: implementations MUST NOT resolve
       `click()` / `fill()` / `select()` until either
       `nac:action:succeeded` or `nac:action:failed` has fired,
@@ -805,7 +1077,7 @@ reviewer, specific and falsifiable):**
       mismatch), the spec MUST declare which side is
       authoritative for which kind of consumer (assistive tech
       vs. test runner vs. agent). Today, divergence is silent.
-- [ ] **3.2-E**: Document event scoping. Either (a) declare
+- [x] **3.2-E**: Document event scoping. Either (a) declare
       `event.detail.plugin` (currently named `plugin` /
       `plugin_slug` inconsistently across emitters) the
       canonical filter and require listeners to apply it, plus
@@ -821,7 +1093,7 @@ reviewer, specific and falsifiable):**
 
 ### 3.3 Documentation changes prompted
 
-- [ ] **3.3-A**: Add a one-page driver-API cheat sheet to the
+- [x] **3.3-A**: Add a one-page driver-API cheat sheet to the
       top of MANUAL.md (or as a separate `docs/API_REFERENCE.md`)
       listing every `window.NAC.*` method with its signature,
       version added, and a one-line description. DeepSeek missed
@@ -829,13 +1101,13 @@ reviewer, specific and falsifiable):**
       caught both but spent budget reading the full spec to do
       it. A cheat sheet would close the gap for less-thorough
       reviewers and for adopters.
-- [ ] **3.3-B**: Reorder the inline extension sections (13/14/
+- [x] **3.3-B**: Reorder the inline extension sections (13/14/
       15/16) so the driver functions appear earlier in each
       section, not buried in subsection 5/6 of each version.
       OR: pull every driver function into a single API reference
       table that is updated per version, separate from the
       narrative spec.
-- [ ] **3.3-C**: Reconcile the diffusion-plan demo target with
+- [x] **3.3-C**: Reconcile the diffusion-plan demo target with
       the spec example identifiers. The headline example
       (`patch_manager` / `apply_all`) lives behind admin auth at
       yujin.app/crm Centro de Control. The public demo at
@@ -848,7 +1120,7 @@ reviewer, specific and falsifiable):**
 
 ### 3.4 Implementation changes prompted
 
-- [ ] **3.4-A**: Fix the 200ms phantom-success in `NAC.click()`
+- [x] **3.4-A**: Fix the 200ms phantom-success in `NAC.click()`
       (js/nac.js line 282). Two reviewers independently flagged
       this. Recommended fix: replace the unconditional 200ms
       `resolve({ ok: true, event: null })` with a typed timeout
@@ -859,16 +1131,144 @@ reviewer, specific and falsifiable):**
       explicitly via the timeout, not silently see "success" and
       move on. Same fix likely applies to `fill()`, `select()`,
       `tab()`.
-- [ ] **3.4-B**: Strengthen `NAC.validate(slug)` to check field
+- [x] **3.4-B**: Strengthen `NAC.validate(slug)` to check field
       types, options_source, depends_on graphs, and v1.1 table
       column declarations against the manifest, not just ID
       presence. P7's "drift is a CI blocker" promise is
       currently vacuous because the validator catches almost no
       drift.
-- [ ] **3.4-C**: Either add `NAC.click_by_verb(plugin, verb)` or
+- [x] **3.4-C**: Either add `NAC.click_by_verb(plugin, verb)` or
       document explicitly that `click()` is by nac_id only and
       that voice agents must use `manifest()` -> filter -> nac_id
       lookup. Same for `tab_by_label`.
+
+### 3.5 New action items from Copilot's review of v1.4.1 (target v1.4.2 / v1.5)
+
+> Surfaced 2026-05-06 by Microsoft Copilot reading the v1.4.1
+> spec. Items 3.5-A..3.5-I are NEW; the previous reviewers did
+> not raise them. Triaged below by category. None are blockers
+> for v1.4.1 itself; the v1.4.1 contracts they apply to are
+> internally consistent, just under-formalised in places.
+
+#### Spec gaps (need normative additions)
+
+- [x] **3.5-A**: Formalise the return shapes of P5 driver
+      functions as normative TypeScript interfaces. Today the
+      function signatures use names like `NacSnapshot`,
+      `NacElement`, `NacKpi`, `NacField`, `NacResult`,
+      `NacFeedback`, `NacEvent`, `NacStateSnapshot`,
+      `NacManifest` -- but only `NacManifest`, `NacField`,
+      `NacAction`, `NacTab`, `NacKpi` (the manifest pieces)
+      are formalised. The runtime *return* shapes from
+      `describe()`, `find()`, `read_feedback()`,
+      `snapshot_state()`, and the `event` field returned by
+      write resolves are defined only narratively. AI test
+      runners reading the spec cold cannot rely on the kpi
+      shape returned from `describe()`. Action: add a "P5
+      return shapes" subsection with full interfaces.
+
+- [x] **3.5-B**: Define tie-breaking rule for
+      `click_by_verb()` when multiple actions in the same
+      plugin manifest declare the same `verb`. Section P5
+      says "search manifest first" but does not specify
+      ordering. Recommended: pick the first match in
+      `actions[]` array order, document this as the
+      deterministic rule, and add an `actions[].verb`
+      uniqueness LINT in `NAC.validate()`.
+
+- [x] **3.5-C**: Document `tab_by_label()` matching
+      semantics: case-insensitive, whitespace-trimmed,
+      locale-aware (Turkish dotless-i etc.). The reference
+      runtime today is case-insensitive trim only; spec is
+      silent. Either tighten runtime to use locale-aware
+      comparison and document, or explicitly call out the
+      simplification.
+
+- [x] **3.5-D**: Promote the confirm-dialog contract from
+      API_REFERENCE / section 15.5 narrative to a normative
+      lifecycle subsection of section 7. Required: confirm
+      DOM attributes (`data-nac-role="confirm-dialog"`,
+      `data-nac-state="pending|resolved|cancelled"`), event
+      family (`nac:confirm:requested|resolved|cancelled`),
+      and relationship to focus traps. Today a reviewer
+      reading only the spec (not the manual or
+      API_REFERENCE) cannot tell what shape a confirm
+      dialog must take. Copilot flagged this in T3-d.
+
+- [x] **3.5-E**: Compliance levels need a MUST/MAY split per
+      event family. Today all v1.0 lifecycle events are
+      MUST; v1.1+ widget-specific events are described as
+      "required to claim NAC-3" but the spec does not say
+      whether a NAC-3 plugin that ships zero accordions is
+      required to also emit `nac:accordion:expanded`. The
+      sensible interpretation -- "events are required only
+      for widget families the plugin actually uses" --
+      needs to be written into section 6 (compliance
+      levels).
+
+#### Spec ergonomics
+
+- [x] **3.5-G**: Reverse mapping ARIA -> NAC. Section 7.3
+      maps NAC states to ARIA but not the reverse. Authors
+      who start ARIA-first (already-accessible apps
+      adopting NAC) may forget to mirror back to NAC.
+      Decide:
+      (a) add a reverse mapping table (every common ARIA
+      state has a `data-nac-state` equivalent that the
+      validator can suggest); OR
+      (b) normatively forbid reverse mirroring -- declare
+      that NAC drives, ARIA mirrors, never the inverse.
+      Either is valid; today the rule is undeclared.
+
+- [x] **3.5-H**: Upgrade `data-nac-plugin-id` from SHOULD
+      to MUST when a host mounts multiple instances of the
+      same plugin slug simultaneously. Current spec (P5.1
+      step 3) falls back to "last ready plugin in DOM
+      order" which Copilot reads as brittle for large apps.
+      Tighten to: "If two `[data-nac-plugin]` elements
+      share the same `data-nac-plugin` value AND are
+      simultaneously in the DOM, each MUST carry a unique
+      `data-nac-plugin-id`. The DOM-order fallback is
+      permitted only when slugs are unique." Validator
+      additions: detect simultaneous duplicate slugs
+      without per-instance IDs and raise an `error`.
+
+#### Documentation gaps (manual additions, not spec)
+
+- [x] **3.5-F**: Add a "Framework integration patterns"
+      chapter to `docs/MANUAL.md` covering React 18 / Vue 3
+      / Svelte 5 / Angular 17. For each: how to guarantee
+      that `data-nac-state` and the corresponding `aria-*`
+      attribute land in the same render commit, what
+      `aria_lag_ms` should be set to (typically 0 if
+      updated in `useEffect` / `onMounted`, but
+      framework-specific), and the recommended hook /
+      directive for emitting `nac:plugin:opened` at the
+      right lifecycle point.
+
+- [x] **3.5-I**: Add an "Event correctness" chapter to
+      `docs/MANUAL.md` covering when to fire
+      `nac:action:succeeded`. Patterns: optimistic updates
+      (fire on local state commit OR on server
+      confirmation, not both), async chains (single
+      succeeded fires after the entire chain settles, not
+      per step), failed retries (each retry attempt is a
+      fresh action:dispatching/failed cycle), race
+      conditions (cancellation tokens, AbortController).
+      This is the finding Copilot rated "the most
+      underestimated cost" in T5.
+
+#### Triage summary
+
+- **Address before more reviews land** (cheap, no semantic
+  change): 3.5-A (interfaces), 3.5-B (tie-break), 3.5-C
+  (label match), 3.5-E (NAC-3 event scope).
+- **v1.4.2 minor patch** (small spec changes): 3.5-D
+  (confirm normative), 3.5-G (reverse mapping rule), 3.5-H
+  (plugin-id MUST when multi-mount).
+- **v1.5 manual sweep** (documentation only, no spec or
+  runtime change): 3.5-F (framework patterns), 3.5-I (event
+  correctness).
 
 ---
 

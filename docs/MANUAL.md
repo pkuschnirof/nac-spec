@@ -495,7 +495,358 @@ For an existing app:
 
 Typical effort per screen: 30-60 min for a simple form, 1-3 h for a
 complex multi-tab dashboard. Significantly less than writing the
-equivalent E2E tests by hand.
+equivalent E2E tests by hand. Note that "effort per screen" assumes
+a human author. With an AI coding agent applying NAC from
+`AI_INSTRUCTIONS.md` + this manual, per-screen wall-clock drops to
+a few minutes per screen plus human review time. See spec section
+1.5.2 for the agent-first adoption framing.
+
+---
+
+## Framework integration patterns
+
+> Added in v1.4.2 in response to AI peer review action item 3.5-F.
+> Section 7.2 of the spec mandates atomic updates to
+> `data-nac-state` and the corresponding `aria-*` attribute. Modern
+> reactive frameworks batch DOM writes asynchronously; this section
+> shows how to honour the contract per framework.
+
+### React 18
+
+React batches state updates inside event handlers and effects. To
+update both attributes atomically:
+
+```jsx
+function PatchRow({ patch }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      data-nac-id={`patch_manager.row.${patch.id}.apply`}
+      data-nac-role="action"
+      data-nac-action="apply"
+      data-nac-state={busy ? 'loading' : 'idle'}
+      role="button"
+      aria-label={`Apply patch ${patch.id}`}
+      aria-busy={busy}
+      onClick={async () => {
+        setBusy(true); // single setState -> atomic re-render
+        try {
+          await api.applyPatch(patch.id);
+          dispatchNac('nac:action:succeeded', { nac_id: ..., verb: 'apply' });
+        } finally {
+          setBusy(false);
+        }
+      }}
+    />
+  );
+}
+```
+
+Both `data-nac-state` and `aria-busy` derive from the same `busy`
+state, so a single `setBusy` call commits both attributes in the
+same render. `aria_lag_ms` in the manifest can stay at 0.
+
+If you maintain the two values as separate states (don't), use
+`flushSync` from `react-dom` only when crossing render boundaries:
+
+```jsx
+import { flushSync } from 'react-dom';
+flushSync(() => {
+  setNacState('loading');
+  setAriaBusy(true);
+});
+```
+
+`useDeferredValue` and `useTransition` defer renders -- they break
+atomicity. Avoid them for state mirrored to ARIA.
+
+### Vue 3 (Composition API)
+
+Vue's reactivity collapses multiple sets into one tick automatically:
+
+```vue
+<template>
+  <button
+    :data-nac-id="`patch_manager.row.${patch.id}.apply`"
+    data-nac-role="action"
+    data-nac-action="apply"
+    :data-nac-state="busy ? 'loading' : 'idle'"
+    role="button"
+    :aria-label="`Apply patch ${patch.id}`"
+    :aria-busy="busy"
+    @click="handle"
+  />
+</template>
+<script setup>
+import { ref } from 'vue';
+const busy = ref(false);
+async function handle() {
+  busy.value = true;
+  try { await api.applyPatch(patch.id); dispatchNac(...); }
+  finally { busy.value = false; }
+}
+</script>
+```
+
+Both bindings read `busy.value`; Vue commits them in the same DOM
+patch. Set `aria_lag_ms: 0` in the manifest.
+
+### Svelte 5 (runes)
+
+Same shape, even shorter:
+
+```svelte
+<script>
+  let busy = $state(false);
+  async function handle() {
+    busy = true;
+    try { await api.applyPatch(...); dispatchNac(...); }
+    finally { busy = false; }
+  }
+</script>
+
+<button
+  data-nac-id={`patch_manager.row.${patch.id}.apply`}
+  data-nac-role="action"
+  data-nac-action="apply"
+  data-nac-state={busy ? 'loading' : 'idle'}
+  role="button"
+  aria-busy={busy}
+  on:click={handle}
+/>
+```
+
+Svelte's compiler updates both attributes in the same micro-task.
+
+### Angular 17 (signals)
+
+```html
+<button
+  [attr.data-nac-id]="'patch_manager.row.' + patch.id + '.apply'"
+  data-nac-role="action"
+  data-nac-action="apply"
+  [attr.data-nac-state]="busy() ? 'loading' : 'idle'"
+  role="button"
+  [attr.aria-busy]="busy()"
+  (click)="handle()">
+</button>
+```
+
+```ts
+busy = signal(false);
+async handle() {
+  this.busy.set(true);
+  try { await api.applyPatch(...); this.dispatchNac(...); }
+  finally { this.busy.set(false); }
+}
+```
+
+Angular's change detection ensures both attribute bindings update
+in the same cycle.
+
+### When you cannot guarantee atomicity
+
+If your framework imposes asynchronous attribute commits (Web
+Components with separate property setters, jQuery with manual
+`.attr()` calls, legacy Backbone), declare the lag in the
+manifest:
+
+```js
+NAC.register({
+  plugin_slug: 'legacy_grid',
+  /* ... */
+  aria_lag_ms: 16, /* one frame; the validator uses this to
+                       silence aria_nac_state_mismatch findings
+                       within the declared window. */
+});
+```
+
+Validators MAY tolerate divergence up to `aria_lag_ms`; beyond
+that, the finding `aria_nac_state_mismatch` fires.
+
+### Lifecycle event hooks per framework
+
+| Event              | React            | Vue 3            | Svelte 5         | Angular            |
+|--------------------|------------------|------------------|------------------|--------------------|
+| `nac:plugin:opening` | top of mounting `useEffect` (empty deps) BEFORE first render | top of `<script setup>` after refs init, before template renders | top of component, $effect.pre | `ngOnInit`        |
+| `nac:plugin:opened`  | `useEffect` cleanup-free leg AFTER refs settle | `onMounted()` | `onMount()` | `ngAfterViewInit` |
+| `nac:plugin:closing` | early in `useEffect` cleanup function | `onBeforeUnmount` | `onDestroy` start | `ngOnDestroy` start |
+| `nac:plugin:closed`  | end of cleanup function | last line of `onBeforeUnmount` | end of `onDestroy` | end of `ngOnDestroy` |
+
+Server-side rendering note: emit lifecycle events only on the
+client. Wrap with `typeof document !== 'undefined'` (or
+framework-specific guards: `useEffect` is client-only in React,
+`onMounted` is client-only in Vue 3).
+
+---
+
+## Event correctness
+
+> Added in v1.4.2 in response to AI peer review action item 3.5-I.
+> Copilot rated this as "the most underestimated cost" of NAC
+> adoption. The patterns below cover the four shapes that break
+> automation runners most often.
+
+The contract: `nac:action:succeeded` MUST fire when, and only
+when, the operation the verb names is observably complete from
+the user's perspective. Not when the request was sent. Not when
+the optimistic UI updated. **When the work is done.**
+
+### Pattern 1 -- Single async call
+
+```js
+button.addEventListener('click', async () => {
+  emit('nac:action:dispatching', { nac_id, verb });
+  try {
+    await api.applyPatch(id); // observable result on server
+    emit('nac:action:succeeded', { nac_id, verb });
+  } catch (err) {
+    emit('nac:action:failed', { nac_id, verb, error: String(err) });
+  }
+});
+```
+
+Rule: the `succeeded` / `failed` event fires after `await`,
+inside the catch-or-success branch. Never before.
+
+### Pattern 2 -- Optimistic update + server confirmation
+
+The user sees the UI update immediately; the server confirms a
+moment later. The agent-relevant event is the SERVER confirmation,
+not the optimistic commit:
+
+```js
+async function applyPatch(id) {
+  // Local optimistic state for the human.
+  setLocal({ id, status: 'applying' });
+  emit('nac:action:dispatching', { nac_id, verb });
+  try {
+    const res = await api.applyPatch(id);
+    setLocal({ id, status: res.status }); // server-confirmed
+    emit('nac:action:succeeded', { nac_id, verb, result: res });
+  } catch (err) {
+    setLocal({ id, status: 'failed' });
+    emit('nac:action:failed', { nac_id, verb, error: String(err) });
+    rollbackOptimistic();
+  }
+}
+```
+
+The wrong pattern (do NOT do this) is firing `succeeded` on the
+optimistic commit. An agent that observes that event will move
+on, the server then rejects the request, and the agent now
+believes a state that does not exist.
+
+### Pattern 3 -- Async chain
+
+When the verb's outcome requires several backend hops:
+
+```js
+async function publishPost() {
+  emit('nac:action:dispatching', { nac_id, verb: 'publish' });
+  try {
+    const draft = await api.saveDraft(payload);
+    const reviewed = await api.submitForReview(draft.id);
+    const published = await api.publish(reviewed.id);
+    // The verb is "publish". Single succeeded event after the
+    // CHAIN settles, not per step.
+    emit('nac:action:succeeded', {
+      nac_id, verb: 'publish', result: published });
+  } catch (err) {
+    emit('nac:action:failed', { nac_id, verb: 'publish', error: String(err) });
+  }
+}
+```
+
+Rule: one verb produces at most one `succeeded` and at most one
+`failed`, regardless of how many internal steps execute.
+
+### Pattern 4 -- Retries
+
+Each retry attempt is a fresh `dispatching` / `succeeded` |
+`failed` cycle. The earlier `failed` is permanent; the new
+`succeeded` does not retract it -- agents see the full audit
+trail.
+
+```js
+async function applyWithRetry(id, max = 3) {
+  for (let attempt = 1; attempt <= max; attempt++) {
+    emit('nac:action:dispatching', { nac_id, verb, attempt });
+    try {
+      const res = await api.applyPatch(id);
+      emit('nac:action:succeeded', { nac_id, verb, attempt, result: res });
+      return res;
+    } catch (err) {
+      emit('nac:action:failed', { nac_id, verb, attempt, error: String(err) });
+      if (attempt === max) throw err;
+      await sleep(2 ** attempt * 1000); // backoff
+    }
+  }
+}
+```
+
+Note the `attempt` field in the event detail. Agents that
+implement intelligent retry can read it and skip duplicating the
+backoff.
+
+### Pattern 5 -- Cancellation
+
+Use `AbortController`. The verb produces a `failed` with error
+`'aborted'`; the consuming agent learns the cancellation:
+
+```js
+const ctrl = new AbortController();
+async function applyCancellable(id) {
+  emit('nac:action:dispatching', { nac_id, verb });
+  try {
+    const res = await api.applyPatch(id, { signal: ctrl.signal });
+    emit('nac:action:succeeded', { nac_id, verb, result: res });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      emit('nac:action:failed', { nac_id, verb, error: 'aborted' });
+    } else {
+      emit('nac:action:failed', { nac_id, verb, error: String(err) });
+    }
+  }
+}
+// Elsewhere:
+cancelButton.addEventListener('click', () => ctrl.abort());
+```
+
+### Race conditions
+
+If a user fires the same verb twice in quick succession (impatient
+double-click, or chat dispatching twice), the runtime's
+awaitable-write contract (section 7.1) protects the operator side
+-- the second `click()` resolves on the next event tick. The
+plugin author still has to ensure the BACKEND idempotent or
+serialised. The simplest pattern: while `data-nac-state="loading"`,
+ignore the verb. The runtime will see the disabled / loading state
+and reject the second call with `disabled` or `not_found`.
+
+```js
+async function handle() {
+  if (button.getAttribute('data-nac-state') === 'loading') return;
+  button.setAttribute('data-nac-state', 'loading');
+  /* ... */
+}
+```
+
+### Summary checklist
+
+Before declaring NAC-3, walk every action your plugin ships and
+verify:
+
+- [ ] `nac:action:dispatching` fires AT START of the handler.
+- [ ] `nac:action:succeeded` fires AFTER `await` resolves (server
+  confirmation, not optimistic commit).
+- [ ] `nac:action:failed` fires from the catch branch with a
+  string `error` field describing the failure.
+- [ ] One verb -> at most one terminal event per dispatch.
+- [ ] Retries each get their own dispatching / succeeded | failed
+  triplet with `attempt` in detail.
+- [ ] Cancellation produces `failed` with `error: 'aborted'`.
+- [ ] Double-fire prevention via `data-nac-state="loading"` gate.
 
 ---
 

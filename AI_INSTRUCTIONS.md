@@ -285,5 +285,8 @@ https://github.com/pkuschnirof/nac-spec
 
 ## Last updated
 
-2026-05-06. NAC spec version: 1.4 (strict superset of 1.3, 1.2,
-1.1, 1.0 -- track via CHANGELOG.md).
+2026-05-06. NAC spec version: 1.4 / runtime 1.4.2 (strict
+superset of 1.3, 1.2, 1.1, 1.0; v1.4.1 and v1.4.2 are patch
+releases that tighten contracts based on AI peer review --
+track via CHANGELOG.md). The vocabulary in this file is stable
+across all 1.x versions.

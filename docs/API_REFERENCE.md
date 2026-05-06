@@ -10,10 +10,26 @@ short description, error throws, and the spec section that
 formalises it. AI coding agents implementing NAC can use this
 table as the canonical lookup.
 
-Current runtime version: **`NAC.version === '1.4.1'`** (spec
+Current runtime version: **`NAC.version === '1.4.2'`** (spec
 `1.4`). The runtime exposes `NAC.version` and
 `NAC.spec_version` as strings; check them at boot if you need
 feature gating.
+
+Version history (most recent first):
+- **1.4.2** (2026-05-06) -- Copilot-review patch: P5 return
+  shapes formalised, NAC-3 event-family scoping (sec 6.1),
+  NAC-drives-ARIA-mirrors direction (sec 7.3.1), confirm-dialog
+  promoted to normative (sec 7.5), plugin-id MUST when
+  multi-mount (sec 7.4), click_by_verb / tab_by_label
+  tie-break rules. Focus follow on every write entry point.
+  4 new validator LINTs.
+- **1.4.1** (2026-05-06) -- AI-peer-review patch: phantom-
+  success removed, structured validate() errors[],
+  click_by_verb / tab_by_label, composed:true events,
+  system_map_layers().
+- **1.4.0** (2026-05-06) -- v1.4 base: navigation +
+  ordering primitives (breadcrumb, carousel, timeline,
+  reorder).
 
 ---
 
@@ -217,6 +233,23 @@ Layer B (per-view transitions) is declared inline in each manifest under `manife
 | `tab_by_label` | `tab_by_label(plugin, label, opts?): Promise<NacResult>` | Switch tab by label (e.g. "failed") instead of `nac_id` | 3.4-C, 9 |
 
 Both helpers accept `null` for `plugin` to use the active plugin (per section P5.1). They search the manifest first (matching `actions[].verb` or `tabs[].label` / `label_i18n`), fall back to a DOM scan, then delegate to `click()` / `tab()`. The underlying contracts (awaitable-write, timeout semantics, error throws) are unchanged.
+
+**Tie-break rules (v1.4.2)**: when multiple actions in the same manifest share the same `verb`, `click_by_verb` picks the **first match in `actions[]` array order**. Same first-match rule applies to `tab_by_label` for tabs sharing labels after case-insensitive trim. The validator emits `warn` findings `duplicate_verb` and `duplicate_tab_label` to flag these cases.
+
+---
+
+## v1.4.2 -- focus follow (general runtime behaviour)
+
+Every write entry point (`click`, `fill`, `select`, `tab`, `navigate_breadcrumb`) now calls an internal `_focusElement(el)` helper before the underlying DOM action. Behaviour, applied uniformly:
+
+1. `scrollIntoView({ behavior: 'smooth', block: 'center' })`.
+2. `el.focus({ preventScroll: true })`. Non-focusable elements (a div with `role=action`) get `tabindex=-1` transiently, removed on blur.
+3. `[data-nac-focus-pulse]` attribute set for 600ms; a default stylesheet (`#nac-focus-pulse-style`) is injected once on install. Hosts can override with higher-specificity rules.
+4. `nac:focus:moved` event dispatched on `document`. Detail: `{ plugin, plugin_instance_id, nac_id, timestamp }`.
+
+Opt out per-call by setting `el.__nac_skip_focus = true` before the runtime sees it, or globally via `NAC.config.focus_on_action = false`.
+
+This is what makes a NAC-driven UI visible to a human reviewer watching an autonomous operator. Pre-v1.4.2 demos felt static while the agent operated; v1.4.2 makes the page move with the agent.
 
 ---
 

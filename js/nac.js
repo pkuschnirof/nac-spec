@@ -1,32 +1,50 @@
 /* =====================================================================
-   NAC v1.4.1 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.4.2 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
 
-   v1.4.1 (2026-05-06) -- patch release responding to AI peer
-   review of 2026-05-06 (DeepSeek + Claude + Grok Fast). Changes
-   from v1.4.0:
-   - 3.4-A: click() no longer phantom-resolves after 200 ms; now
-            races nac:action:succeeded / failed against a 5000 ms
-            timeout that rejects with NacError('timeout', ...).
-   - 3.4-B: validate() now reports structured errors[] covering
-            field type alignment, options resolver presence,
-            depends_on graph integrity, table column declarations,
-            breadcrumb path consistency, and ARIA-NAC state
-            mirroring drift. Legacy missing[] preserved.
-   - 3.4-C: click_by_verb(plugin, verb) and tab_by_label(plugin,
-            label) added for voice/agent ergonomics.
-   - 3.2-E: events emit composed: true and carry a
-            plugin_instance_id field; per-plugin buses optional
-            via data-nac-plugin-bus="enabled".
-   - 14.3.5: system_map_layers() returns synchronous
-             { a, b, c, preferred } so agents stop probing by
-             exception.
-   - register() accepts both register(manifest) and
-     register(slug, manifest) for back-compat with mixed
-     calling conventions.
+   v1.4.2 (2026-05-06) -- patch release responding to Microsoft
+   Copilot's review of v1.4.1. Strict superset of v1.4.1; every
+   v1.4.1 plugin remains valid. Changes from v1.4.1:
+   - 3.5-A: P5 return shapes formalised normatively in spec
+            section P5.0 (NacElement, NacSnapshot, NacKpiReadout,
+            NacFeedback, NacEvent, NacResult, NacStateSnapshot).
+            Runtime already conformed; spec catches up.
+   - 3.5-B: click_by_verb tie-break rule (first manifest match
+            wins). Validator emits warn 'duplicate_verb'.
+   - 3.5-C: tab_by_label matching: case-insensitive trim across
+            every declared locale; first match wins. Validator
+            emits warn 'duplicate_tab_label'.
+   - 3.5-D: confirm-dialog promoted from API_REFERENCE narrative
+            to normative spec section 7.5 with full DOM shape,
+            lifecycle event family (nac:confirm:requested |
+            resolved | cancelled), validator findings.
+   - 3.5-E: NAC-3 MUST/MAY split per event family in spec sec
+            6.1. Events required only for widget families the
+            plugin actually uses.
+   - 3.5-G: NAC-drives, ARIA-mirrors single direction made
+            normative in spec sec 7.3.1. Validator emits error
+            'aria_first_state' when reverse mirroring detected.
+   - 3.5-H: data-nac-plugin-id promoted from SHOULD to MUST when
+            multiple instances of the same plugin slug coexist.
+            Validator error 'duplicate_plugin_no_instance_id'.
+   - v1.4.1 focus-follow on every write entry point (click,
+     fill, select, tab, breadcrumb): scrollIntoView + focus +
+     visual pulse + nac:focus:moved event. Opt out via
+     NAC.config.focus_on_action = false. (Originally v1.4.1
+     scope but landed in v1.4.2.)
+
+   v1.4.1 (2026-05-06) -- previous patch release responding to
+   AI peer review of 2026-05-06 (DeepSeek + Claude + Grok Fast).
+   See CHANGELOG.md for the v1.4.1 surface. Highlights:
+   - 3.4-A: click() no longer phantom-resolves after 200 ms.
+   - 3.4-B: validate() now reports structured errors[].
+   - 3.4-C: click_by_verb / tab_by_label added.
+   - 3.2-E: events emit composed: true + plugin_instance_id.
+   - 14.3.5: system_map_layers() synchronous declaration.
+   - register() accepts (manifest) and (slug, manifest).
 
    This file installs `window.NAC` -- the operator API defined by
    spec/NAC-v1.0.md sections 5 and 7. It is plugin-host agnostic:
@@ -301,6 +319,100 @@
     });
   }
 
+  /* ---------- v1.4.1: focus-follow on programmatic operations ----- */
+  /* When NAC drives an element (click / fill / select / tab) the
+     human reviewer wants to SEE what the agent did. Without this
+     helper, programmatic clicks happen invisibly off-screen and
+     the page stays static -- bad for demos and accessibility.
+
+     Behaviour, applied uniformly to every write entry point:
+     1. scrollIntoView({ behavior:'smooth', block:'center' }) so
+        the element is on screen.
+     2. el.focus({ preventScroll: true }) when focusable. If the
+        element is not natively focusable (a div with role=action),
+        we set tabindex=-1 temporarily and remove it on blur so
+        the focus ring fires anyway. preventScroll is honoured
+        because we already scrolled above with smooth behaviour.
+     3. Add a brief class data-nac-focus-pulse for ~600ms so a
+        CSS rule (host-defined or fallback inline) shows a visual
+        pulse. Custom hosts MAY style
+        [data-nac-focus-pulse] { outline: ... }; the runtime injects
+        a minimal stylesheet once on install if no rule exists yet.
+     4. Emit nac:focus:moved on document so other listeners
+        (test runners, screen-recorder, autopilot) can sync. */
+  function _focusElement(el) {
+    if (!el) return;
+    /* Honour opt-out per call: someone passed { focus: false }. */
+    if (el.__nac_skip_focus) { delete el.__nac_skip_focus; return; }
+    /* Honour global opt-out via NAC.config.focus_on_action = false. */
+    if (global.NAC && global.NAC.config
+        && global.NAC.config.focus_on_action === false) return;
+    try {
+      if (typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center',
+                            inline: 'nearest' });
+      }
+    } catch (e) { /* older browsers ignore options */ }
+    /* Make non-focusable elements focusable transiently. */
+    let addedTabindex = false;
+    if (!el.matches('a[href], button, input, select, textarea, '
+                    + '[tabindex], [contenteditable]')) {
+      el.setAttribute('tabindex', '-1');
+      addedTabindex = true;
+    }
+    try { el.focus({ preventScroll: true }); }
+    catch (e) { try { el.focus(); } catch (e2) { /* swallow */ } }
+    if (addedTabindex) {
+      const cleanup = function () {
+        el.removeAttribute('tabindex');
+        el.removeEventListener('blur', cleanup);
+      };
+      el.addEventListener('blur', cleanup);
+    }
+    /* Visual pulse. Add attribute, remove after 600ms. */
+    el.setAttribute('data-nac-focus-pulse', '1');
+    setTimeout(function () {
+      el.removeAttribute('data-nac-focus-pulse');
+    }, 600);
+    /* Emit observer event. */
+    const root = el.closest('[data-nac-plugin]');
+    document.dispatchEvent(new CustomEvent('nac:focus:moved', {
+      detail: {
+        plugin: root ? root.getAttribute('data-nac-plugin') : null,
+        plugin_instance_id: root
+          ? (root.getAttribute('data-nac-plugin-id') || null)
+          : null,
+        nac_id: el.getAttribute('data-nac-id') || null,
+        timestamp: Date.now(),
+      },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+  /* Inject a minimal pulse stylesheet once at install time. Hosts
+     can override by defining a higher-specificity rule. */
+  function _ensureFocusStyle() {
+    if (document.getElementById('nac-focus-pulse-style')) return;
+    if (!document.head) return;
+    const s = document.createElement('style');
+    s.id = 'nac-focus-pulse-style';
+    s.textContent =
+      '[data-nac-focus-pulse]{'
+      + 'outline:2px solid #4f46e5;'
+      + 'outline-offset:2px;'
+      + 'box-shadow:0 0 0 4px rgba(79,70,229,.25);'
+      + 'transition:outline-color .15s ease, box-shadow .15s ease;'
+      + '}';
+    document.head.appendChild(s);
+  }
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _ensureFocusStyle);
+    } else {
+      _ensureFocusStyle();
+    }
+  }
+
   /* ---------- Public write API ------------------------------------ */
 
   async function click(nac_id, opts) {
@@ -350,6 +462,7 @@
       document.addEventListener('nac:action:succeeded', onSucceeded);
       document.addEventListener('nac:action:failed', onFailed);
     });
+    _focusElement(el);
     el.click();
     return result;
   }
@@ -358,6 +471,7 @@
     const el = _findElement(nac_id, opts);
     if (!el) throw NacError('not_found', 'No field with nac_id=' + nac_id);
     if (el.disabled) throw NacError('disabled', 'Field ' + nac_id + ' is disabled');
+    _focusElement(el);
     const ft = el.getAttribute('data-nac-field-type');
 
     if (ft === 'checkbox' || ft === 'radio') {
@@ -387,6 +501,7 @@
   async function select(nac_id, option, opts) {
     const el = _findElement(nac_id, opts);
     if (!el) throw NacError('not_found', 'No select with nac_id=' + nac_id);
+    _focusElement(el);
     if (el.tagName === 'SELECT') {
       if (el.multiple && Array.isArray(option)) {
         Array.prototype.forEach.call(el.options, function (o) {
@@ -402,7 +517,7 @@
     const root = el.closest('[data-nac-plugin]') || document;
     const opt = root.querySelector('[data-nac-id="' + nac_id + '.' + option + '"]')
              || root.querySelector('[data-nac-id="' + option + '"]');
-    if (opt) { opt.click(); return { ok: true }; }
+    if (opt) { _focusElement(opt); opt.click(); return { ok: true }; }
     throw NacError('not_found', 'option ' + option + ' not present in ' + nac_id);
   }
 
@@ -413,6 +528,7 @@
       '[data-nac-role="tab"][data-nac-id="' + tab_key + '"]'
     );
     if (!tabEl) throw NacError('not_found', 'tab ' + tab_key + ' missing');
+    _focusElement(tabEl);
     tabEl.click();
     try {
       await wait_for('nac:tab:changed', 1500);
@@ -730,6 +846,95 @@
               expected: mapping.value, actual: ariaVal });
         }
       });
+
+    /* 8. Duplicate verb LINT (spec section P5 click_by_verb tie-break,
+          v1.4.2). Plugin authors that declare two actions with the
+          same verb force first-match-wins behaviour, which is
+          deterministic but easy to misroute. */
+    const _verbSeen = {};
+    (m.actions || []).forEach(function (a) {
+      if (!a || !a.verb) return;
+      if (_verbSeen[a.verb]) {
+        pushErr('warn', 'duplicate_verb', a.nac_id || null,
+          'verb "' + a.verb + '" appears on multiple actions in this '
+          + 'plugin; click_by_verb will pick the first in array order. '
+          + 'Earlier nac_id: "' + _verbSeen[a.verb] + '"',
+          { verb: a.verb, conflict_with: _verbSeen[a.verb] });
+      } else {
+        _verbSeen[a.verb] = a.nac_id || '<no-id>';
+      }
+    });
+
+    /* 8.5 Duplicate plugin-mount-without-instance-id LINT
+          (spec sec 7.4 plugin slug uniqueness, v1.4.2). Multi-mount
+          of the same plugin slug without per-instance IDs makes
+          driver calls non-deterministic. */
+    {
+      const sameSlug = Array.prototype.slice.call(
+        document.querySelectorAll(
+          '[data-nac-plugin="' + plugin_slug + '"]'));
+      if (sameSlug.length > 1) {
+        const ids = sameSlug.map(function (r) {
+          return r.getAttribute('data-nac-plugin-id') || '';
+        });
+        const missing = sameSlug.filter(function (r) {
+          return !r.getAttribute('data-nac-plugin-id');
+        });
+        const seen = {};
+        const dupIds = [];
+        ids.forEach(function (i) {
+          if (!i) return;
+          if (seen[i]) dupIds.push(i);
+          else seen[i] = true;
+        });
+        if (missing.length || dupIds.length) {
+          pushErr('error', 'duplicate_plugin_no_instance_id', null,
+            sameSlug.length + ' instances of plugin "' + plugin_slug
+            + '" simultaneously in DOM but '
+            + (missing.length
+                ? missing.length + ' lack data-nac-plugin-id'
+                : 'two share data-nac-plugin-id "' + dupIds[0] + '"')
+            + '. Each instance MUST carry a unique '
+            + 'data-nac-plugin-id (spec 7.4).',
+            { instance_count: sameSlug.length,
+              missing_ids:    missing.length,
+              duplicate_ids:  dupIds });
+        }
+      }
+    }
+
+    /* 9. Duplicate tab label LINT (spec section tab_by_label, v1.4.2).
+          Tab labels are matched case-insensitive trim across every
+          declared locale; duplicates after normalisation force
+          first-match-wins. */
+    const _labelSeen = {};
+    (m.tabs || []).forEach(function (t) {
+      if (!t) return;
+      const collect = [];
+      if (t.label) collect.push(t.label);
+      if (t.label_i18n && typeof t.label_i18n === 'object') {
+        for (const k in t.label_i18n) {
+          if (typeof t.label_i18n[k] === 'string') {
+            collect.push(t.label_i18n[k]);
+          }
+        }
+      }
+      collect.forEach(function (lab) {
+        const norm = String(lab).toLowerCase().trim();
+        if (!norm) return;
+        if (_labelSeen[norm]) {
+          pushErr('warn', 'duplicate_tab_label', t.nac_id || null,
+            'tab label "' + lab + '" matches another tab after '
+            + 'case-insensitive trim; tab_by_label will pick the '
+            + 'first in array order. Earlier nac_id: "'
+            + _labelSeen[norm] + '"',
+            { label: lab, normalised: norm,
+              conflict_with: _labelSeen[norm] });
+        } else {
+          _labelSeen[norm] = t.nac_id || '<no-id>';
+        }
+      });
+    });
 
     const errCount = errors.filter(function (e) {
       return e.severity === 'error';
@@ -1647,6 +1852,7 @@
       path:         path,
       target_depth: depth,
     });
+    _focusElement(el);
     el.click();
     return Promise.resolve({ ok: true });
   }
@@ -1869,7 +2075,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.4.1',
+    version:      '1.4.2',
     spec_version: '1.4',
     /* registry */
     register:        register,
