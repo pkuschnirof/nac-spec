@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "NAC migrator -- annotate any web project with data-nac-* in one PR.",
   "license": "MIT",
-  "author": "Pablo Kuschnirof + Sumi",
+  "author": "Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com> + Sumi",
   "bin": {
     "nacify": "./bin/nacify.js"
   },

@@ -7,9 +7,9 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.3 (extends v1.2 which extends v1.1 which extends v1.0; sections 1-14 unchanged).
+**Version**: 1.4 (extends v1.3 which extends v1.2 which extends v1.1 which extends v1.0; sections 1-15 unchanged).
 **Date**: 2026-05-06.
-**Authors**: Pablo Kuschnirof (lead), Sumi (collaboration).
+**Authors**: Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com> (lead), Sumi (collaboration).
 **License**: MIT.
 
 ---
@@ -620,8 +620,8 @@ released under MIT. Forks and derivatives are encouraged. Citation:
 
 ```
 NAC v1.0 -- Navegabilidad Automatica Compliance.
-Pablo Kuschnirof, Sumi. 2026. MIT License.
-https://github.com/<TBD-after-publish>/nac-spec
+Pablo Adrian Kuschniroff, Sumi. 2026. MIT License.
+https://github.com/pkuschnirof/nac-spec
 ```
 
 ---
@@ -1682,4 +1682,283 @@ node-toggle button when the page does not register
 
 The semver impact of v1.3 is **MINOR**.
 
-End of NAC v1.3 normative document.
+---
+
+## 16. Navigation and ordering primitives extension (v1.4, normative)
+
+This section is normative. It is a strict superset of v1.3.
+Every v1.0 / v1.1 / v1.2 / v1.3 plugin remains valid; every
+v1.0 / v1.1 / v1.2 / v1.3 operator continues to work. The
+additions in this section name four UI primitive families that
+v1.3 left under-specified: hierarchical breadcrumbs, carousels
+(rotating slideshows), timelines / activity feeds, and
+in-place reordering within a single list.
+
+The motivation is recognition, not operability. A v1.3 operator
+can already drive every one of these widgets through
+`click` / `fill` / drag-drop / generic events. What it cannot
+do is *recognise* them as the kind of widget they are -- and
+so it cannot reason about hierarchy depth, carousel position,
+chronological ordering, or in-list reordering as first-class
+properties of the surface.
+
+The four families, with their pre-v1.4 modeling and the
+problem each one introduces:
+
+A. **Breadcrumb** -- today rendered as a sequence of
+   `<a>` tags. An agent has no signal that this *is* a
+   hierarchy nor what level the user is currently at. Stack
+   depth and parent-of-current-view are load-bearing context
+   for any next-step decision (e.g. "go up one level" is a
+   common voice command).
+B. **Carousel** -- the obvious name `slider` was taken in v1.1
+   for the continuous-numeric input (`min/max/step`). A
+   carousel is a paginated container of slides with optional
+   autoplay, dots, and prev/next controls. Verbs missing in
+   v1.3: `slide_next`, `slide_prev`, `slide_to`,
+   `pause_autoplay`, `play_autoplay`.
+C. **Timeline / activity feed** -- linear chronological
+   list, often infinite-scroll, often live-updating (Slack
+   thread, audit log, social feed, support ticket history).
+   Modeling it as `row[]` loses the "this is *time-ordered*
+   and that matters" hint, plus the load-older / load-newer
+   pagination that is fundamentally different from v1.1
+   `pagination-control`.
+D. **Reorder-within-list** -- v1.1 ships `draggable` +
+   `drop-target` + `nac:drag:dropped { from_nac_id,
+   target_nac_id }`. When source and target are the *same*
+   list, the agent cannot tell whether the user *reparented*
+   (cross-list) or *reordered* (in-list with a new index).
+   The semantics matter: reorder is positional; reparent is
+   relational.
+
+Every addition follows the existing five-attribute pattern --
+`data-nac-id`, `data-nac-role`, `data-nac-state`,
+`data-nac-action`, `data-nac-field-type` -- with new role,
+state and verb values. New events are namespaced under
+`nac:<family>:<verb>`; new driver functions are added to
+`window.NAC`. No existing primitive is repurposed.
+
+### 16.1. New roles (7 normative additions)
+
+```
+breadcrumb         container of breadcrumb-item (current location in hierarchy)
+breadcrumb-item    one level in the breadcrumb chain
+carousel           rotating slideshow of slides with optional autoplay
+carousel-slide     one slide inside a carousel
+carousel-dot       one navigation dot of a carousel (alternative to prev/next)
+timeline           container of chronologically-ordered timeline-item
+timeline-item      one entry in a timeline
+```
+
+The `reorder` capability does NOT introduce a new role. It is
+expressed by a `draggable` whose enclosing `drop-target` is the
+*same* container declared in `nac:drag:dropped` (i.e.
+`from_nac_id` and `target_nac_id` resolve to the same parent
+list). The operator MAY also supply a positional index via the
+new `reorder` verb (16.3).
+
+### 16.2. New states
+
+```
+breadcrumb-item    current | navigable
+carousel           playing | paused
+carousel-slide     active | inactive
+carousel-dot       active | inactive
+timeline           live | static
+timeline-item      visible | hidden
+```
+
+`timeline=live` signals to the operator that new items may
+arrive without any user action; the operator SHOULD subscribe
+to `nac:timeline:item_appeared` instead of polling. `static`
+means snapshot-only.
+
+### 16.3. New verbs (`data-nac-action`)
+
+```
+navigate_to_crumb   breadcrumb-item: navigate up the hierarchy to this level
+slide_next          carousel: advance to next slide
+slide_prev          carousel: go back to previous slide
+slide_to            carousel: jump to specific slide_idx
+pause_autoplay      carousel: pause auto-rotation
+play_autoplay       carousel: resume auto-rotation
+load_older          timeline: fetch entries before the current oldest
+load_newer          timeline: fetch entries after the current newest
+reorder             draggable: change position within the same list
+```
+
+### 16.4. New events (10 total)
+
+All on `document`, `bubbles: true`.
+
+```
+breadcrumb
+  nac:breadcrumb:navigated     { id, depth, path, target_depth }
+                                // path is an array of breadcrumb-item ids
+                                // ordered root-to-current; target_depth is
+                                // the depth the user navigated to.
+
+carousel
+  nac:carousel:slide_changed   { carousel_id, from_idx, to_idx, total,
+                                 trigger }
+                                // trigger: 'next'|'prev'|'dot'|'autoplay'|
+                                //          'programmatic'
+  nac:carousel:autoplay_paused { carousel_id, dismissed_by }
+                                // dismissed_by: 'user'|'programmatic'|
+                                //                'visibility'
+  nac:carousel:autoplay_resumed { carousel_id }
+
+timeline
+  nac:timeline:item_clicked    { timeline_id, item_id, ts }
+  nac:timeline:scrolled_to     { timeline_id, cursor_ts, direction }
+                                // direction: 'older'|'newer'
+  nac:timeline:loaded_more     { timeline_id, direction, count }
+  nac:timeline:item_appeared   { timeline_id, item_id, ts }
+                                // only when state=live
+
+reorder (extension of v1.1 drag-and-drop)
+  nac:list:reordered           { list_id, item_id, from_index, to_index }
+                                // emitted INSTEAD of nac:drag:dropped when
+                                // from_nac_id and target_nac_id resolve to
+                                // the same parent list. The original
+                                // nac:drag:* events MAY also fire (lifecycle)
+                                // but the canonical signal is reordered.
+```
+
+### 16.5. New driver API functions
+
+```
+breadcrumb
+  NAC.list_breadcrumbs() -> Breadcrumb[]
+                                // Breadcrumb: { id, items: [{ id, label,
+                                //   depth, navigable, current }] }
+  NAC.navigate_breadcrumb(item_id) -> Promise<NacResult>
+                                // resolves once the target view is ready
+
+carousel
+  NAC.list_carousels() -> Carousel[]
+  NAC.carousel_state(carousel_id) -> {
+    current_idx, total, autoplay, slide_ids: string[]
+  }
+  NAC.carousel_advance(carousel_id, delta?) -> Promise<NacResult>
+                                // delta defaults to +1; -1 goes back
+  NAC.carousel_to(carousel_id, slide_idx) -> Promise<NacResult>
+  NAC.carousel_autoplay(carousel_id, on: boolean) -> Promise<NacResult>
+
+timeline
+  NAC.list_timelines() -> Timeline[]
+  NAC.timeline_load_older(timeline_id, limit?) -> Promise<TimelineItem[]>
+                                // limit defaults to 20
+  NAC.timeline_load_newer(timeline_id, limit?) -> Promise<TimelineItem[]>
+  NAC.timeline_state(timeline_id) -> {
+    is_live, ordering, oldest_ts, newest_ts, item_count
+  }
+
+reorder
+  NAC.reorder(list_id, item_id, to_index) -> Promise<NacResult>
+                                // emits nac:list:reordered when settled
+```
+
+### 16.6. Manifest extensions
+
+Three new top-level manifest arrays are introduced. All are
+optional; absent arrays mean the plugin ships no widget of
+that family.
+
+```typescript
+interface NacBreadcrumb {
+  nac_id: string;                  // id of the breadcrumb container
+  items: {
+    id: string;                    // id of one breadcrumb-item
+    label_i18n: string;
+    depth: number;                 // 0 = root
+    navigable: boolean;            // false on the current level
+  }[];
+}
+
+interface NacCarousel {
+  nac_id: string;
+  slides: {
+    id: string;
+    label_i18n?: string;
+  }[];
+  autoplay_default: boolean;
+  interval_ms?: number;            // when autoplay_default = true
+  loop: boolean;                   // last slide wraps to first?
+}
+
+interface NacTimeline {
+  nac_id: string;
+  ordering: 'newest_first' | 'oldest_first';
+  is_live: boolean;
+  load_older_supported: boolean;
+  load_newer_supported: boolean;
+  // items[] is NOT declared statically -- it is fetched dynamically,
+  // similar to the v1.0 row contract.
+}
+```
+
+`NacManifest` (section 3 P7) gains three optional properties:
+
+```typescript
+interface NacManifest {
+  // ...existing fields...
+  breadcrumbs?: NacBreadcrumb[];
+  carousels?:   NacCarousel[];
+  timelines?:   NacTimeline[];
+}
+```
+
+The `reorder` capability does not require a manifest entry --
+it is implied by any `draggable` whose `drop-target` is its
+own parent. Plugins MAY signal explicit reorder support by
+adding `supports_reorder: true` to a v1.1 `NacRowDef` entry
+(opt-in hint for operators that prefer to use `NAC.reorder`
+over generic `NAC.drag` calls).
+
+### 16.7. NAC-3 v1.4 compliance level
+
+A plugin claiming **NAC-3 v1.4** MUST:
+
+1. Satisfy NAC-3 v1.3 (and therefore v1.0..v1.2).
+2. For every widget it ships from the families listed in
+   16.1, declare the appropriate role from 16.1, emit the
+   appropriate events from 16.4 and (when applicable) include
+   the appropriate manifest entries from 16.6.
+3. Implement the corresponding driver functions from 16.5
+   when the widget is operated programmatically (e.g. a
+   carousel MUST support `NAC.carousel_advance` /
+   `_autoplay`; a timeline that supports infinite scroll MUST
+   support `NAC.timeline_load_older`).
+4. For any list that supports drag-reorder within itself,
+   emit `nac:list:reordered` with `from_index` and `to_index`
+   in addition to (or instead of) the v1.1 `nac:drag:dropped`
+   event.
+
+### 16.8. Backwards compatibility commitment
+
+Every v1.4 addition is additive. A v1.0..v1.3 operator parses
+a v1.4 plugin without crashing: unknown roles are treated as
+`region`, unknown verbs are treated as opaque actions, unknown
+events are ignored, unknown manifest arrays (`breadcrumbs[]`,
+`carousels[]`, `timelines[]`) are silently skipped.
+
+A v1.4 operator drives a v1.0..v1.3 plugin without retrofit:
+absence of the new roles, events, or driver functions
+downgrades the operator to the equivalent v1.3 path. For
+example:
+
+- `NAC.navigate_breadcrumb(item_id)` falls back to clicking
+  the `<a>` element matching the item's label or href when
+  the page does not register `breadcrumb` roles.
+- `NAC.carousel_advance` falls back to clicking the next/prev
+  buttons by their conventional aria-labels.
+- `NAC.timeline_load_older` falls back to scrolling the
+  container to its bottom and waiting for new rows to mount.
+- `NAC.reorder` falls back to a programmatic drag sequence
+  using v1.1 `nac:drag:*` events.
+
+The semver impact of v1.4 is **MINOR**.
+
+End of NAC v1.4 normative document.

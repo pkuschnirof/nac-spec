@@ -22,6 +22,69 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.4.0] - 2026-05-06
+
+Strict superset of v1.3. Every v1.0 / v1.1 / v1.2 / v1.3 plugin
+remains valid; every v1.0..v1.3 operator continues to work. Adds
+vocabulary for four UI primitive families that v1.3 left
+under-specified: hierarchical breadcrumbs, carousels, timelines /
+activity feeds, and in-place reordering within a single list.
+
+### Added
+
+- **Spec section 16** -- "Navigation and ordering primitives
+  extension (v1.4, normative)". Strict superset of sections
+  1-15 covering 4 widget families:
+  - **A. Breadcrumb** -- `role=breadcrumb / breadcrumb-item`,
+    states `current | navigable`, verb `navigate_to_crumb`,
+    event `nac:breadcrumb:navigated { id, depth, path,
+    target_depth }`. Driver: `NAC.list_breadcrumbs`,
+    `NAC.navigate_breadcrumb`. Manifest: optional
+    `breadcrumbs[]` array.
+  - **B. Carousel** -- `role=carousel / carousel-slide /
+    carousel-dot`, states `playing | paused`, verbs
+    `slide_next | slide_prev | slide_to | pause_autoplay |
+    play_autoplay`, events `nac:carousel:slide_changed |
+    autoplay_paused | autoplay_resumed`. Driver:
+    `NAC.list_carousels`, `carousel_state`, `carousel_advance`,
+    `carousel_to`, `carousel_autoplay`. Manifest: optional
+    `carousels[]` array. The naming gap (v1.1 already used
+    `slider` for continuous numeric input) is closed.
+  - **C. Timeline / activity feed** -- `role=timeline /
+    timeline-item`, states `live | static` and `visible |
+    hidden`, verbs `load_older | load_newer`, events
+    `nac:timeline:item_clicked | scrolled_to | loaded_more |
+    item_appeared`. Driver: `NAC.list_timelines`,
+    `timeline_load_older`, `timeline_load_newer`,
+    `timeline_state`. Manifest: optional `timelines[]` array
+    declaring ordering, live status, and pagination support.
+  - **D. Reorder-within-list** -- new verb `reorder` on
+    existing v1.1 `draggable`, new event
+    `nac:list:reordered { list_id, item_id, from_index,
+    to_index }` emitted INSTEAD of `nac:drag:dropped` when
+    source and target resolve to the same parent list. Driver:
+    `NAC.reorder(list_id, item_id, to_index)`. Optional
+    manifest hint: `supports_reorder: true` on a `NacRowDef`.
+- 7 new roles, 7 new states, 9 new verbs, 10 new events, 11
+  new driver functions, 3 new manifest arrays.
+
+### NAC-3 v1.4 compliance
+
+A plugin claiming NAC-3 v1.4 MUST satisfy NAC-3 v1.3 plus
+declare appropriate roles/events/manifest entries for every
+v1.4 widget it ships, AND emit `nac:list:reordered` for any
+in-list drag-reorder.
+
+### Backwards compatibility
+
+Every v1.4 addition is additive. v1.0..v1.3 operators ignore
+unknown roles/events/manifest arrays per section 16.8. v1.4
+operators drive v1.0..v1.3 plugins via documented fallbacks
+(e.g. `NAC.navigate_breadcrumb` clicks the `<a>` matching the
+item label when no `breadcrumb` role is registered).
+
+The semver impact of v1.4 is **MINOR**.
+
 ## [1.3.0] - 2026-05-06
 
 Strict superset of v1.2. Every v1.0 / v1.1 / v1.2 plugin
@@ -443,7 +506,7 @@ families that v1.0 left under-specified.
   dependencies, MIT licensed).
 - Practical authoring + operating + testing manual
   (`docs/MANUAL.md`).
-- MIT License with citation request honoring Pablo Kuschnirof + Sumi
+- MIT License with citation request honoring Pablo Adrian Kuschniroff + Sumi
   (the AI partner).
 - First production deployment: yujin.app/crm Centro de Control
   (Patch Manager + Plan tiles, NAC-3 verified).
@@ -454,7 +517,8 @@ families that v1.0 left under-specified.
   2026-05-05 (Patch Manager mvp60 SCORE 22/22, Plan tile NAC-3
   certified).
 
-[Unreleased]: https://github.com/pkuschnirof/nac-spec/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/pkuschnirof/nac-spec/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.0.1...v1.1.0

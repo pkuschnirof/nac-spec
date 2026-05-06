@@ -499,5 +499,5 @@ MIT. See [LICENSE](../LICENSE).
 
 ```
 NAC v1.0 -- Navegabilidad Automatica Compliance.
-Pablo Kuschnirof and Sumi. 2026. MIT License.
+Pablo Adrian Kuschniroff and Sumi. 2026. MIT License.
 ```

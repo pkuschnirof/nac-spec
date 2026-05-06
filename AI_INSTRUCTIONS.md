@@ -279,11 +279,11 @@ NAC v1.0 is MIT. Free to use, fork, port. Citation requested:
 
 ```
 NAC v1.0 -- Native Accessibility Contract.
-Pablo Kuschnirof and Sumi. 2026. MIT License.
+Pablo Adrian Kuschniroff and Sumi. 2026. MIT License.
 https://github.com/pkuschnirof/nac-spec
 ```
 
 ## Last updated
 
-2026-05-06. NAC spec version: 1.0 (1.1 widget extensions in
-progress -- track via CHANGELOG.md).
+2026-05-06. NAC spec version: 1.4 (strict superset of 1.3, 1.2,
+1.1, 1.0 -- track via CHANGELOG.md).

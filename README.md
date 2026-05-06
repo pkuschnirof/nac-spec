@@ -6,12 +6,12 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.3](https://img.shields.io/badge/NAC-v1.3-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.4](https://img.shields.io/badge/NAC-v1.4-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
-**Authors:** Pablo Kuschnirof, Sumi.
+**Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v1.3 (2026-05-06; strict superset of v1.2, v1.1, v1.0).
+**Spec version:** v1.4 (2026-05-06; strict superset of v1.3, v1.2, v1.1, v1.0).
 
 ---
 
@@ -83,6 +83,40 @@ systems are not.
 - **Future-proof**: the same UI that a human uses today is what an
   agent will use tomorrow. No bespoke API to expose; the UI itself
   is the API.
+
+## What v1.4 adds (May 2026)
+
+Four navigation and ordering primitives that v1.0..v1.3 left
+under-specified -- a v1.3 operator could already drive them via
+generic `click` / drag-drop, but could not *recognise* them:
+
+- **Breadcrumb** -- `role=breadcrumb / breadcrumb-item`, verb
+  `navigate_to_crumb`, event `nac:breadcrumb:navigated { id,
+  depth, path, target_depth }`. Driver:
+  `NAC.list_breadcrumbs`, `NAC.navigate_breadcrumb(item_id)`.
+  Hierarchy depth and parent-of-current-view are now
+  first-class.
+- **Carousel** -- `role=carousel / carousel-slide /
+  carousel-dot`, states `playing | paused`, verbs
+  `slide_next | slide_prev | slide_to | pause_autoplay |
+  play_autoplay`. Driver: `carousel_advance`, `carousel_to`,
+  `carousel_autoplay`, `carousel_state`. Closes the v1.1
+  naming gap (where `slider` had been taken for numeric input).
+- **Timeline / activity feed** -- `role=timeline /
+  timeline-item`, states `live | static`, verbs `load_older |
+  load_newer`, events `nac:timeline:item_clicked |
+  scrolled_to | loaded_more | item_appeared`. Driver:
+  `timeline_load_older`, `timeline_load_newer`. Distinct from
+  `calendar-event` (anchored grid) and `pagination-control`.
+- **Reorder-within-list** -- new verb `reorder` on existing
+  v1.1 `draggable`, new event `nac:list:reordered { list_id,
+  item_id, from_index, to_index }`. Disambiguates from cross-
+  list drag-drop. Driver: `NAC.reorder(list_id, item_id,
+  to_index)`.
+
+Spec section 16 in [`spec/NAC-v1.0.md`](spec/NAC-v1.0.md).
+Every v1.0 / v1.1 / v1.2 / v1.3 plugin remains valid v1.4
+without modification. semver impact **MINOR**.
 
 ## What v1.3 adds (May 2026)
 
@@ -541,7 +575,7 @@ python nac_runner.py --target http://localhost:3000 --plugin contact_form
 
 ```
 NAC v1.0 -- Navegabilidad Automatica Compliance.
-Pablo Kuschnirof and Sumi. 2026. MIT License.
+Pablo Adrian Kuschniroff and Sumi. 2026. MIT License.
 ```
 
 ## Status

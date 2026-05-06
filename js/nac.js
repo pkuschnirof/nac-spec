@@ -1,7 +1,7 @@
 /* =====================================================================
    NAC v1.0 -- Navegabilidad Automatica Compliance
    Reference JavaScript implementation.
-   MIT License -- Pablo Kuschnirof + Sumi, 2026.
+   MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
 
    This file installs `window.NAC` -- the operator API defined by
@@ -1196,12 +1196,286 @@
       { field_id: field_id, user_id: user_id, label: label });
   }
 
+  /* ---------- v1.4: breadcrumb ----------------------------------- */
+
+  function _breadcrumbContainer(crumb_id) {
+    return document.querySelector(
+      '[data-nac-role="breadcrumb"][data-nac-id="' + crumb_id + '"]');
+  }
+  function _breadcrumbItems(rootEl) {
+    if (!rootEl) return [];
+    return Array.prototype.slice.call(
+      rootEl.querySelectorAll('[data-nac-role="breadcrumb-item"]'));
+  }
+  function list_breadcrumbs() {
+    var roots = document.querySelectorAll('[data-nac-role="breadcrumb"]');
+    var out = [];
+    Array.prototype.forEach.call(roots, function (root) {
+      var items = _breadcrumbItems(root).map(function (el, idx) {
+        var st = el.getAttribute('data-nac-state') || 'navigable';
+        return {
+          id:        el.getAttribute('data-nac-id'),
+          label:     el.getAttribute('aria-label')
+                       || el.textContent.trim(),
+          depth:     idx,
+          navigable: st === 'navigable',
+          current:   st === 'current',
+        };
+      });
+      out.push({
+        id:    root.getAttribute('data-nac-id'),
+        items: items,
+      });
+    });
+    return out;
+  }
+  function navigate_breadcrumb(item_id) {
+    var el = document.querySelector(
+      '[data-nac-role="breadcrumb-item"][data-nac-id="'
+        + item_id + '"]');
+    if (!el) {
+      // fallback: any anchor whose label matches
+      el = document.querySelector('a[data-nac-id="' + item_id + '"]');
+    }
+    if (!el) {
+      return Promise.reject(new NacError('not_found',
+        'breadcrumb item not found: ' + item_id));
+    }
+    var root = el.closest('[data-nac-role="breadcrumb"]');
+    var items = _breadcrumbItems(root);
+    var depth = items.indexOf(el);
+    var path = items.slice(0, depth + 1)
+      .map(function (i) { return i.getAttribute('data-nac-id'); });
+    _emit('nac:breadcrumb:navigated', {
+      id:           root ? root.getAttribute('data-nac-id') : null,
+      depth:        items.length - 1,
+      path:         path,
+      target_depth: depth,
+    });
+    el.click();
+    return Promise.resolve({ ok: true });
+  }
+
+  /* ---------- v1.4: carousel ------------------------------------- */
+
+  function _carousel(carousel_id) {
+    return document.querySelector(
+      '[data-nac-role="carousel"][data-nac-id="' + carousel_id + '"]');
+  }
+  function _carouselSlides(rootEl) {
+    if (!rootEl) return [];
+    return Array.prototype.slice.call(
+      rootEl.querySelectorAll('[data-nac-role="carousel-slide"]'));
+  }
+  function _carouselCurrentIdx(rootEl) {
+    var slides = _carouselSlides(rootEl);
+    for (var i = 0; i < slides.length; i++) {
+      if (slides[i].getAttribute('data-nac-state') === 'active') return i;
+    }
+    return 0;
+  }
+  function list_carousels() {
+    var roots = document.querySelectorAll('[data-nac-role="carousel"]');
+    var out = [];
+    Array.prototype.forEach.call(roots, function (root) {
+      out.push({
+        id:       root.getAttribute('data-nac-id'),
+        total:    _carouselSlides(root).length,
+        current_idx: _carouselCurrentIdx(root),
+        autoplay: root.getAttribute('data-nac-state') === 'playing',
+      });
+    });
+    return out;
+  }
+  function carousel_state(carousel_id) {
+    var root = _carousel(carousel_id);
+    if (!root) {
+      throw new NacError('not_found',
+        'carousel not found: ' + carousel_id);
+    }
+    var slides = _carouselSlides(root);
+    return {
+      current_idx: _carouselCurrentIdx(root),
+      total:       slides.length,
+      autoplay:    root.getAttribute('data-nac-state') === 'playing',
+      slide_ids:   slides.map(function (s) {
+        return s.getAttribute('data-nac-id');
+      }),
+    };
+  }
+  function _carousel_change(carousel_id, to_idx, trigger) {
+    var root = _carousel(carousel_id);
+    if (!root) {
+      return Promise.reject(new NacError('not_found',
+        'carousel not found: ' + carousel_id));
+    }
+    var slides = _carouselSlides(root);
+    var total = slides.length;
+    if (total === 0) {
+      return Promise.reject(new NacError('invalid',
+        'carousel has no slides'));
+    }
+    var from_idx = _carouselCurrentIdx(root);
+    var bounded = ((to_idx % total) + total) % total;
+    slides.forEach(function (s, i) {
+      s.setAttribute('data-nac-state', i === bounded ? 'active' : 'inactive');
+    });
+    _emit('nac:carousel:slide_changed', {
+      carousel_id: carousel_id,
+      from_idx:    from_idx,
+      to_idx:      bounded,
+      total:       total,
+      trigger:     trigger || 'programmatic',
+    });
+    return Promise.resolve({ ok: true });
+  }
+  function carousel_advance(carousel_id, delta) {
+    var root = _carousel(carousel_id);
+    if (!root) {
+      return Promise.reject(new NacError('not_found',
+        'carousel not found: ' + carousel_id));
+    }
+    var current = _carouselCurrentIdx(root);
+    var d = (typeof delta === 'number') ? delta : 1;
+    var trigger = d > 0 ? 'next' : 'prev';
+    return _carousel_change(carousel_id, current + d, trigger);
+  }
+  function carousel_to(carousel_id, slide_idx) {
+    return _carousel_change(carousel_id, slide_idx, 'dot');
+  }
+  function carousel_autoplay(carousel_id, on) {
+    var root = _carousel(carousel_id);
+    if (!root) {
+      return Promise.reject(new NacError('not_found',
+        'carousel not found: ' + carousel_id));
+    }
+    root.setAttribute('data-nac-state', on ? 'playing' : 'paused');
+    _emit(on ? 'nac:carousel:autoplay_resumed'
+             : 'nac:carousel:autoplay_paused',
+      on ? { carousel_id: carousel_id }
+         : { carousel_id: carousel_id, dismissed_by: 'programmatic' });
+    return Promise.resolve({ ok: true });
+  }
+
+  /* ---------- v1.4: timeline ------------------------------------- */
+
+  function _timeline(timeline_id) {
+    return document.querySelector(
+      '[data-nac-role="timeline"][data-nac-id="' + timeline_id + '"]');
+  }
+  function _timelineItems(rootEl) {
+    if (!rootEl) return [];
+    return Array.prototype.slice.call(
+      rootEl.querySelectorAll('[data-nac-role="timeline-item"]'));
+  }
+  function list_timelines() {
+    var roots = document.querySelectorAll('[data-nac-role="timeline"]');
+    var out = [];
+    Array.prototype.forEach.call(roots, function (root) {
+      var items = _timelineItems(root);
+      out.push({
+        id:         root.getAttribute('data-nac-id'),
+        is_live:    root.getAttribute('data-nac-state') === 'live',
+        ordering:   root.getAttribute('data-nac-ordering') || 'newest_first',
+        item_count: items.length,
+      });
+    });
+    return out;
+  }
+  function timeline_state(timeline_id) {
+    var root = _timeline(timeline_id);
+    if (!root) {
+      throw new NacError('not_found',
+        'timeline not found: ' + timeline_id);
+    }
+    var items = _timelineItems(root);
+    var times = items.map(function (it) {
+      return it.getAttribute('data-nac-ts');
+    }).filter(Boolean).sort();
+    return {
+      is_live:    root.getAttribute('data-nac-state') === 'live',
+      ordering:   root.getAttribute('data-nac-ordering') || 'newest_first',
+      oldest_ts:  times[0] || null,
+      newest_ts:  times[times.length - 1] || null,
+      item_count: items.length,
+    };
+  }
+  function _timeline_load(timeline_id, direction, limit) {
+    var root = _timeline(timeline_id);
+    if (!root) {
+      return Promise.reject(new NacError('not_found',
+        'timeline not found: ' + timeline_id));
+    }
+    var resolver = root.__nac_timeline_resolver;
+    var p;
+    if (typeof resolver === 'function') {
+      p = Promise.resolve(resolver(direction, limit || 20));
+    } else {
+      p = Promise.resolve([]);
+    }
+    return p.then(function (items) {
+      var arr = items || [];
+      _emit('nac:timeline:loaded_more', {
+        timeline_id: timeline_id,
+        direction:   direction,
+        count:       arr.length,
+      });
+      return arr;
+    });
+  }
+  function timeline_load_older(timeline_id, limit) {
+    return _timeline_load(timeline_id, 'older', limit);
+  }
+  function timeline_load_newer(timeline_id, limit) {
+    return _timeline_load(timeline_id, 'newer', limit);
+  }
+
+  /* ---------- v1.4: reorder (extends v1.1 drag-and-drop) --------- */
+
+  function reorder(list_id, item_id, to_index) {
+    var list = _byId(list_id);
+    if (!list) {
+      return Promise.reject(new NacError('not_found',
+        'list not found: ' + list_id));
+    }
+    var item = list.querySelector(
+      '[data-nac-role="draggable"][data-nac-id="' + item_id + '"]')
+      || _byId(item_id);
+    if (!item) {
+      return Promise.reject(new NacError('not_found',
+        'draggable item not found: ' + item_id));
+    }
+    var siblings = Array.prototype.slice.call(list.querySelectorAll(
+      '[data-nac-role="draggable"]'));
+    var from_index = siblings.indexOf(item);
+    var bounded = Math.max(0, Math.min(to_index, siblings.length - 1));
+    if (from_index === -1) {
+      return Promise.reject(new NacError('invalid',
+        'item is not a draggable child of list'));
+    }
+    if (from_index !== bounded) {
+      var ref = siblings[bounded];
+      if (bounded > from_index && ref && ref.nextSibling) {
+        list.insertBefore(item, ref.nextSibling);
+      } else if (ref) {
+        list.insertBefore(item, ref);
+      }
+    }
+    _emit('nac:list:reordered', {
+      list_id:    list_id,
+      item_id:    item_id,
+      from_index: from_index,
+      to_index:   bounded,
+    });
+    return Promise.resolve({ ok: true });
+  }
+
   /* ---------- Install -------------------------------------------- */
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.3.0',
-    spec_version: '1.3',
+    version:      '1.4.0',
+    spec_version: '1.4',
     /* registry */
     register:        register,
     unregister:      unregister,
@@ -1284,6 +1558,22 @@
     richtext_format:             richtext_format,
     richtext_insert_link:        richtext_insert_link,
     richtext_insert_mention:     richtext_insert_mention,
+    /* v1.4 -- breadcrumb */
+    list_breadcrumbs:            list_breadcrumbs,
+    navigate_breadcrumb:         navigate_breadcrumb,
+    /* v1.4 -- carousel */
+    list_carousels:              list_carousels,
+    carousel_state:              carousel_state,
+    carousel_advance:            carousel_advance,
+    carousel_to:                 carousel_to,
+    carousel_autoplay:           carousel_autoplay,
+    /* v1.4 -- timeline */
+    list_timelines:              list_timelines,
+    timeline_state:              timeline_state,
+    timeline_load_older:         timeline_load_older,
+    timeline_load_newer:         timeline_load_newer,
+    /* v1.4 -- reorder (in-list) */
+    reorder:                     reorder,
     /* v1.2 -- error codes */
     errors: {
       RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',
