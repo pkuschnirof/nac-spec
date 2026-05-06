@@ -643,11 +643,102 @@
     };
   }
 
+  /* ---------- v1.2: section navigation --------------------------- */
+
+  function _findSection(sectionId) {
+    return document.querySelector(
+      '[data-nac-role="section"][data-nac-id="' + sectionId + '"]');
+  }
+
+  function list_sections() {
+    const out = [];
+    document.querySelectorAll('[data-nac-role="section"][data-nac-id]')
+      .forEach(function (el) {
+        out.push({
+          id:    el.getAttribute('data-nac-id'),
+          label: el.getAttribute('data-nac-label')
+                 || (el.querySelector('h1,h2,h3,h4') || {}).textContent
+                 || '',
+          visible: el.getAttribute('data-nac-state') !== 'hidden',
+        });
+      });
+    return out;
+  }
+
+  async function go_to_section(sectionId) {
+    const sec = _findSection(sectionId);
+    if (!sec) {
+      throw NacError('section_not_found', 'no section with id ' + sectionId);
+    }
+    /* If the section sits inside a collapsed accordion or non-active
+       tab, the v1.2 reference impl SHOULD lift those constraints
+       before scrolling. We probe two well-known patterns and rely on
+       the page's own NAC handlers; if neither matches, we just scroll. */
+    const collapsedAcc = sec.closest('[data-nac-role="accordion-section"][data-nac-state="collapsed"]');
+    if (collapsedAcc && typeof global.NAC.expand === 'function') {
+      try { await global.NAC.expand(collapsedAcc.getAttribute('data-nac-id')); }
+      catch (e) { /* not fatal */ }
+    }
+    const tabPanel = sec.closest('[data-nac-role="tabpanel"]');
+    if (tabPanel && typeof global.NAC.tab === 'function') {
+      const plugin = tabPanel.getAttribute('data-nac-plugin');
+      const tabSlug = tabPanel.getAttribute('data-nac-tab');
+      if (plugin && tabSlug) {
+        try { await global.NAC.tab(plugin, tabSlug); }
+        catch (e) { /* not fatal */ }
+      }
+    }
+    sec.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+    await new Promise(function (r) { setTimeout(r, 350); });
+    document.dispatchEvent(new CustomEvent('nac:section:reached', {
+      detail: {
+        section_id: sectionId,
+        label: sec.getAttribute('data-nac-label')
+               || (sec.querySelector('h1,h2,h3,h4') || {}).textContent
+               || '',
+      },
+      bubbles: true,
+    }));
+    return { ok: true, section_id: sectionId };
+  }
+
+  /* Auto-instrument visibility on sections via IntersectionObserver. */
+  if (typeof IntersectionObserver !== 'undefined') {
+    function _wireSectionObserver() {
+      const els = document.querySelectorAll('[data-nac-role="section"][data-nac-id]');
+      if (!els.length) return;
+      const io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          const newState = en.isIntersecting ? 'visible' : 'hidden';
+          const prior = en.target.getAttribute('data-nac-state') || 'hidden';
+          if (prior !== newState) {
+            en.target.setAttribute('data-nac-state', newState);
+            document.dispatchEvent(new CustomEvent('nac:state:changed', {
+              detail: {
+                nac_id: en.target.getAttribute('data-nac-id'),
+                role: 'section',
+                old_state: prior,
+                new_state: newState,
+              },
+              bubbles: true,
+            }));
+          }
+        });
+      }, { threshold: 0.2 });
+      els.forEach(function (el) { io.observe(el); });
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _wireSectionObserver);
+    } else {
+      _wireSectionObserver();
+    }
+  }
+
   /* ---------- Install -------------------------------------------- */
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.2.0',
+    version:      '1.2.1',
     spec_version: '1.2',
     /* registry */
     register:        register,
@@ -684,6 +775,9 @@
     capabilities:                capabilities,
     set_system_map_provider:     set_system_map_provider,
     set_capabilities_provider:   set_capabilities_provider,
+    /* v1.2 -- section landmarks */
+    list_sections:               list_sections,
+    go_to_section:               go_to_section,
     /* v1.2 -- error codes */
     errors: {
       RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',

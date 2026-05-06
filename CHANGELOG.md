@@ -20,7 +20,54 @@ Versioning conventions for the spec:
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Spec section 14.7** -- "Section navigation (page-level
+  landmarks)". `data-nac-role="section"` plus
+  `data-nac-id="page.section.<slug>"` plus optional
+  `data-nac-label`. New driver functions
+  `NAC.list_sections()` and `NAC.go_to_section(id)`. New event
+  `nac:section:reached`. Reference impl wires an
+  IntersectionObserver per section so visibility flips emit
+  `nac:state:changed` automatically. Lets a voice or chat
+  operator say "go to the pricing section" and the page does
+  the right thing -- expand, switch tab if needed, scroll,
+  settle.
+- **Reference impl `js/nac.js`** bumped to 1.2.1: section
+  driver functions + observer.
+
+### Demo
+
+- **`yujin.app/nac-spec/example.php`** (cache buster v4):
+  - Every top-level `<section>` (intro, demos grid, wizard,
+    chat, manifest panel) now carries `data-nac-role="section"`
+    + `data-nac-id="page.section.<slug>"`.
+  - New "Self-test & introspect" card added before the events
+    log. Five buttons:
+    - **Show navmap** -- inline `NAC.system_map()` JSON.
+    - **Show capabilities** -- inline `NAC.capabilities()`
+      JSON.
+    - **List sections** -- `NAC.list_sections()` rendered as
+      `id  [visible|hidden]  label`.
+    - **Run NAC self-test** -- in-browser version of the
+      Python runner. Walks every registered plugin, exercises
+      the first 3 actions + first 2 fields per plugin, plus
+      6 static gap rules (R1 button without nac-id, R2 plugin
+      root without manifest, R3 field without field-type,
+      R4 section without label, R5 page section without role,
+      R6 action without verb). Outputs a per-test breakdown
+      plus an expandable gap report inline.
+    - **AI agent: tour the page** -- discovers plugins via
+      `system_map()`, walks every section via
+      `go_to_section()`, exercises one action per plugin,
+      narrating in the chat panel via `botSpeak`.
+  - Self-test card carries minimize / maximize / restore
+    chrome buttons like the other v1.2 cards.
+
+### Documented
+
+- **CHANGELOG** notes Self-test panel + AI agent tour as
+  Demo additions.
 
 ## [1.2.0] - 2026-05-06
 

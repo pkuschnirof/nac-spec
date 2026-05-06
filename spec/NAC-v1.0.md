@@ -1300,4 +1300,43 @@ manifest fields (`options_source`, `depends_on`,
 operator drives a v1.1 plugin without retrofit per the
 degradations above.
 
+### 14.7. Section navigation (page-level landmarks)
+
+A NAC-compliant page MAY tag its top-level page sections (the
+narrative blocks a human user scrolls between) with:
+
+- `data-nac-role="section"`.
+- `data-nac-id="page.section.<slug>"`. The `page.section.`
+  prefix is normative -- it lets operators distinguish landmark
+  sections from plugin-internal regions.
+- `data-nac-label="<i18n key or human label>"`. Optional; when
+  absent, the operator falls back to the section's first
+  heading text.
+- `data-nac-state="visible" | "hidden"`. The operator updates
+  this on the IntersectionObserver boundary.
+
+A v1.2 reference implementation MUST expose:
+
+- `NAC.go_to_section(id) -> Promise<void>` -- smooth-scrolls to
+  the named section, dispatches `nac:section:reached`. If the
+  section is in a collapsed accordion or in another tab, the
+  implementation SHOULD expand / switch first, then scroll.
+- `NAC.list_sections() -> { id, label, visible }[]` -- the
+  page's section roster, in DOM order.
+
+A new event:
+
+- `nac:section:reached` -- detail: `{ section_id, label }`.
+  Fired AFTER scroll has settled.
+
+The motivation: a voice or chat operator can say "go to the
+pricing section" and the page does the right thing -- expand,
+switch tab, scroll, settle. Without page-level landmarks, the
+operator can only navigate plugin-by-plugin, which is the wrong
+unit of granularity for a long marketing or docs page.
+
+Sections are NOT plugins. Multiple sections may live inside one
+plugin; one section may host multiple plugins. The roles do not
+overlap.
+
 End of NAC v1.2 normative document.
