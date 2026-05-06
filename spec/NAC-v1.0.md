@@ -7,8 +7,8 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.0.
-**Date**: 2026-05-05.
+**Version**: 1.2 (extends v1.1 which extends v1.0; sections 1-13 unchanged).
+**Date**: 2026-05-06.
 **Authors**: Pablo Kuschnirof (lead), Sumi (collaboration).
 **License**: MIT.
 
@@ -946,3 +946,358 @@ removes or repurposes a v1.0 attribute, event, or function will
 require **MAJOR** (v2.0).
 
 End of NAC v1.1 normative document.
+
+---
+
+## 14. Discoverability and dynamic data extensions (v1.2, normative)
+
+This section is normative. It is a strict superset of v1.1 (and
+therefore of v1.0). Every v1.0 plugin and every v1.1 plugin remains
+valid; every v1.0/v1.1 operator continues to work. The additions
+in this section are MOTIVATED by three real-world scenarios that
+v1.0 and v1.1 left under-specified:
+
+- A. Dropdowns whose options come from a JSON catalog or a
+  database table -- often with thousands of entries, often
+  filtered by what the user already typed elsewhere on the form.
+- B. Plugin window chrome -- the minimize / maximize / restore
+  buttons that today live in the application's frame and are
+  invisible to NAC.
+- C. First-contact discovery -- an agent connecting to a system
+  it has never seen, needing to know what views exist, how they
+  connect, and what capabilities the system has, BEFORE acting.
+
+Every addition below is namespaced (`options:`, `plugin:` for the
+new lifecycle events; `system:` for discovery) and additive. Any
+v1.0/v1.1 operator that does not implement v1.2 will see the new
+attributes/events as unknown and ignore them per section 13.8.
+
+### 14.1. Dynamic option resolution (scenario A)
+
+#### 14.1.1. Manifest extensions
+
+A `fields[]` entry MAY declare an `options_source` shape. Three
+values are normative:
+
+- `static` -- the options are enumerable now, in the manifest,
+  under `options[]`. This is the v1.0/v1.1 default and MUST stay
+  the assumption when `options_source` is absent.
+- `dynamic` -- the options are computable now, but the application
+  generates them client-side (filtering an in-memory catalog,
+  derived from another field's value). The agent MUST NOT trust
+  any `options[]` array in the manifest as authoritative; it
+  MUST call `NAC.options(field_id)` to obtain the current set.
+- `remote` -- the options are server-fetched, typically large
+  cardinality, typically with a search input. The agent SHOULD
+  NOT call `NAC.options(field_id)` (it would download the full
+  set); it MUST call `NAC.search_options(field_id, query, limit)`
+  to obtain a candidate list.
+
+A `fields[]` entry MAY declare `depends_on: [field_id, ...]`.
+This signals to the agent that changing any listed field
+invalidates the option set on this field. A v1.2-compliant
+operator that changed any field listed in `depends_on` MUST
+either re-fetch the options or rely on the application emitting
+`nac:options:invalidated` (see 14.1.3).
+
+A `fields[]` entry MAY declare `search_supported: true`. This
+signals that the application implements a server-side search
+endpoint reachable through `NAC.search_options`. The presence
+of `search_supported: true` REQUIRES `options_source` to be
+either `dynamic` or `remote`.
+
+Example manifest entry for a "select customer" combobox backed
+by a customers table:
+
+```json
+{
+  "id": "deal.customer",
+  "role": "field",
+  "field_type": "combobox",
+  "label": "Customer",
+  "options_source": "remote",
+  "search_supported": true,
+  "min_chars": 2
+}
+```
+
+Example for a "select province" select that depends on country:
+
+```json
+{
+  "id": "address.province",
+  "role": "field",
+  "field_type": "select",
+  "label": "Province",
+  "options_source": "dynamic",
+  "depends_on": ["address.country"]
+}
+```
+
+#### 14.1.2. Driver functions
+
+The reference implementation MUST expose:
+
+- `NAC.options(field_id) -> Promise<Option[]>` where `Option`
+  is `{ value: string, label: string, disabled?: boolean,
+  group?: string }`. Resolves with the current full option set
+  for `field_id`. For `static` sources this returns the manifest
+  array synchronously-wrapped. For `dynamic` it triggers the
+  client-side computation and returns the resulting list. For
+  `remote` it MUST throw `NAC.errors.RemoteSourceRequiresSearch`
+  -- the agent must use `search_options` instead.
+
+- `NAC.search_options(field_id, query, limit?) ->
+  Promise<Option[]>` Issues the same fetch the application uses
+  for autocomplete. `limit` defaults to 10. The implementation
+  SHOULD debounce identical queries within 200 ms. Resolves with
+  the candidates ranked by the application's own scoring.
+
+Both functions resolve quickly when the answer is cached. Both
+MAY reject with `NAC.errors.OptionsUnavailable` when the source
+is offline; agents SHOULD retry once with backoff.
+
+#### 14.1.3. Events
+
+Three new events are normative on `document`, `bubbles: true`:
+
+- `nac:options:loading` -- detail: `{ field_id, source, query? }`.
+  Fired when an options fetch starts (whether triggered by the
+  agent via `options`/`search_options`, or by the user typing in
+  the combobox).
+- `nac:options:loaded` -- detail: `{ field_id, source, query?,
+  count }`. Fired when the fetch resolved successfully.
+- `nac:options:invalidated` -- detail: `{ field_id, reason,
+  trigger_field_id? }`. Fired when a previously-cached option
+  set is no longer authoritative (a `depends_on` field changed,
+  the user clicked "refresh", a TTL expired). Operators MUST
+  discard cached results and re-query before next use.
+
+A v1.2-compliant operator MAY chain `wait_for("options:loaded")`
+between `fill(country)` and `fill(province)` to make the
+sequence deterministic.
+
+### 14.2. Window chrome and viewport state (scenario B)
+
+#### 14.2.1. New verbs
+
+Four new verbs are added to the `data-nac-action` value space:
+
+- `minimize` -- collapse the plugin to its taskbar / dock
+  representation. The plugin remains running.
+- `maximize` -- expand the plugin to fill the available viewport.
+- `restore` -- return the plugin to its previous, non-minimized,
+  non-maximized geometry.
+- `toggle_fullscreen` -- enter or leave OS-level fullscreen
+  (typically `requestFullscreen()` on the plugin root).
+
+Plugins SHOULD expose these as separate `data-nac-action`
+buttons in the plugin chrome (header bar). Plugins MAY ship a
+single button that cycles through states, in which case
+`data-nac-action` MUST reflect the action that the next click
+will perform, and MUST update on each transition.
+
+#### 14.2.2. New states
+
+Three new values are added to the `data-nac-state` value space,
+applied to the plugin root element:
+
+- `minimized` -- plugin is collapsed.
+- `maximized` -- plugin fills the viewport.
+- `normal` -- plugin is at its default user-resized geometry.
+
+Mutually exclusive: a plugin root MUST carry exactly one of
+`minimized | maximized | normal | fullscreen` at any moment.
+
+#### 14.2.3. New events
+
+Three new events are normative:
+
+- `nac:plugin:minimized` -- detail: `{ plugin, prior_state }`.
+- `nac:plugin:maximized` -- detail: `{ plugin, prior_state }`.
+- `nac:plugin:restored` -- detail: `{ plugin, prior_state }`.
+- `nac:plugin:fullscreen_changed` -- detail: `{ plugin,
+  fullscreen: boolean }`.
+
+These fire AFTER the geometry transition has settled.
+`prior_state` is one of the four state values listed in 14.2.2.
+
+#### 14.2.4. Driver functions
+
+- `NAC.minimize(plugin)` -- minimizes the named plugin window.
+  Resolves with the new state.
+- `NAC.maximize(plugin)` -- maximizes the named plugin window.
+- `NAC.restore(plugin)` -- restores to `normal`.
+- `NAC.fullscreen(plugin, on?)` -- if `on` is omitted, toggles;
+  otherwise sets fullscreen to the boolean.
+
+All four resolve when the corresponding lifecycle event has
+fired, or reject after a 2 s timeout.
+
+### 14.3. System discovery and navigation map (scenario C)
+
+This is the most consequential addition in v1.2. It lets an
+agent connect to a NAC system for the first time and obtain a
+mental model of what exists, how it connects, and what it can
+do, BEFORE driving anything.
+
+The model has three layers, ordered by completeness. A
+v1.2-compliant system SHOULD expose at least one. An agent that
+finds none of them MAY still operate the system view by view
+using v1.0/v1.1 primitives, but it cannot plan multi-view
+sequences.
+
+#### 14.3.1. Layer A -- system map (precomputed)
+
+A v1.2-compliant system MAY expose:
+
+- `NAC.system_map() -> Promise<SystemMap>` where:
+
+```
+SystemMap = {
+  views: ViewSummary[],
+  transitions: Transition[],
+  capabilities: CapabilityInventory,
+  generated_at: ISO8601,
+  ttl_seconds: number
+}
+
+ViewSummary = {
+  id: string,
+  label: string,
+  parent_view?: string,
+  reachable_from: string[],
+  manifest_url?: string,
+  fields_count: number,
+  actions_count: number,
+  tabs_count: number,
+  required_permissions?: string[]
+}
+
+Transition = {
+  from_view: string,
+  to_view: string,
+  via_action: string,
+  conditions?: { field?: string, value?: string }[],
+  side_effects?: string[]
+}
+
+CapabilityInventory = {
+  entities: { slug, label, verbs[] }[],
+  actions: { id, label, verbs[] }[],
+  reports?: { slug, label }[],
+  dashboards?: { slug, label }[],
+  integrations?: { slug, label }[],
+  languages?: string[]
+}
+```
+
+The system map MUST be a snapshot consistent at
+`generated_at`. Operators MUST treat it as stale after
+`ttl_seconds` and re-fetch.
+
+#### 14.3.2. Layer B -- per-view transitions (crawlable)
+
+If the precomputed map is absent, a v1.2-compliant manifest MAY
+declare its outgoing edges:
+
+```json
+{
+  "id": "patch_manager",
+  "label": "Patch Manager",
+  "transitions": [
+    {
+      "to_view": "patch_detail",
+      "via_action": "open_patch",
+      "conditions": [{"field": "patch_id", "required": true}]
+    },
+    {
+      "to_view": "settings",
+      "via_action": "open_settings"
+    }
+  ]
+}
+```
+
+An operator that lacks `system_map` MAY crawl by calling
+`NAC.describe()`, recording transitions, then traversing each
+edge. This is breadth-first navigation discovery.
+
+#### 14.3.3. Layer C -- capability inventory (catalog only)
+
+A v1.2-compliant system MAY expose:
+
+- `NAC.capabilities() -> Promise<CapabilityInventory>`
+
+This is the minimum useful answer to "what can this system do?"
+when the agent does not need (or cannot afford) the full
+navigation graph. It returns the same `CapabilityInventory`
+shape from 14.3.1, without the views or transitions.
+
+Sources for the inventory in a typical implementation are the
+project's own registry layer -- entity registry, workflow action
+catalog, sidebar / mokuji table, plugin manifest list. The spec
+does NOT prescribe how to assemble it; only its shape.
+
+#### 14.3.4. The three layers are layered, not exclusive
+
+An agent SHOULD probe in order: A, then B, then C. The first
+positive response wins. A system that exposes A SHOULD also
+expose C (cheap), MAY skip B (subsumed). A system that exposes
+only B forces breadth-first crawling. A system that exposes
+only C limits the agent to single-view planning.
+
+A reference implementation of all three layers, drawing the
+data from a `mokuji` (navigation registry) table plus per-view
+manifests, is available in the public repository under
+`runner/system_map_reference.py`.
+
+### 14.4. Errors and conventions
+
+A new error namespace `NAC.errors` is normative for v1.2:
+
+- `NAC.errors.RemoteSourceRequiresSearch` -- raised by
+  `NAC.options(field_id)` when the field's `options_source` is
+  `remote`.
+- `NAC.errors.OptionsUnavailable` -- raised when an options
+  fetch fails after retries.
+- `NAC.errors.SystemMapNotProvided` -- raised by
+  `NAC.system_map()` when no system map endpoint is registered.
+- `NAC.errors.CapabilitiesNotProvided` -- raised by
+  `NAC.capabilities()` when no inventory endpoint is registered.
+
+Errors are plain `Error` subclasses with a stable `code`
+property matching the name (`code: 'RemoteSourceRequiresSearch'`)
+so non-JS hosts can switch on them.
+
+### 14.5. NAC-3 v1.2 compliance level
+
+A plugin claiming **NAC-3 v1.2** MUST:
+
+1. Satisfy NAC-3 v1.1 (and therefore v1.0).
+2. For every dynamic dropdown / autocomplete it ships, declare
+   `options_source` and `depends_on` in the manifest, and emit
+   `nac:options:loading` + `nac:options:loaded` per fetch.
+3. For every plugin window with chrome controls (minimize /
+   maximize / restore / fullscreen), declare the verbs in
+   `data-nac-action` and emit the matching events.
+4. Either expose `NAC.system_map()`, or declare `transitions[]`
+   on every manifest, or expose `NAC.capabilities()`.
+
+A v1.2 operator drives a v1.0/v1.1 plugin without retrofit:
+absence of `options_source` is read as `static`; absence of
+`transitions[]` is read as a leaf view; absence of system map
+plus capabilities downgrades the agent to per-view planning.
+The semver impact of v1.2 is **MINOR**.
+
+### 14.6. Backwards compatibility commitment
+
+Every v1.2 addition is additive. A v1.1 operator parses a v1.2
+plugin without crashing: unknown verbs (`minimize`, etc) are
+treated as opaque actions, unknown events are ignored, the new
+manifest fields (`options_source`, `depends_on`,
+`search_supported`, `transitions`) are silently skipped. A v1.2
+operator drives a v1.1 plugin without retrofit per the
+degradations above.
+
+End of NAC v1.2 normative document.

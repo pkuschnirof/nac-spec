@@ -20,6 +20,86 @@ Versioning conventions for the spec:
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.2.0] - 2026-05-06
+
+Strict superset of v1.1. Every v1.0/v1.1 plugin remains valid;
+every v1.0/v1.1 operator continues to work. Adds three
+capability blocks the public spec was asked about by early
+readers:
+
+- **A** -- dropdowns whose options come from JSON or DB tables
+  (including high-cardinality remote autocompletes).
+- **B** -- plugin window chrome: minimize, maximize, restore,
+  fullscreen.
+- **C** -- first-contact discovery: an agent connecting to an
+  unknown system can call `NAC.system_map()` once and obtain a
+  complete navigation tree + capability inventory before
+  acting.
+
+### Added
+
+- **Spec section 14** -- "Discoverability and dynamic data
+  extensions (v1.2, normative)". Strict superset of sections
+  1-13.
+- **4 new verbs** in `data-nac-action`: `minimize`, `maximize`,
+  `restore`, `toggle_fullscreen`.
+- **3 new state values** on plugin roots: `minimized`,
+  `maximized`, `normal` (the four-way set
+  `minimized | maximized | normal | fullscreen` is mutually
+  exclusive).
+- **4 new lifecycle events** on `document`, bubbling:
+  `nac:plugin:minimized`, `nac:plugin:maximized`,
+  `nac:plugin:restored`, `nac:plugin:fullscreen_changed`.
+- **3 new options events** on `document`, bubbling:
+  `nac:options:loading`, `nac:options:loaded`,
+  `nac:options:invalidated`.
+- **8 new driver API functions** on `window.NAC`:
+  `options(field_id)`, `search_options(field_id, query, limit?)`,
+  `invalidate_options(field_id, reason?)`,
+  `set_options_resolver(plugin, field_id, fn)`,
+  `minimize(plugin)`, `maximize(plugin)`, `restore(plugin)`,
+  `fullscreen(plugin, on?)`.
+- **4 new discovery functions** on `window.NAC`:
+  `system_map()`, `capabilities()`,
+  `set_system_map_provider(fn)`, `set_capabilities_provider(fn)`.
+- **3 new manifest extensions** on `fields[]`:
+  `options_source` (`static | dynamic | remote`),
+  `depends_on: [field_id]`, `search_supported: true`,
+  `min_chars`.
+- **1 new manifest extension** on the manifest root:
+  `transitions: [{to_view, via_action, conditions?,
+  side_effects?}]` -- per-view edges of the navigation graph.
+- **Error namespace** `NAC.errors` with stable codes:
+  `RemoteSourceRequiresSearch`, `OptionsUnavailable`,
+  `SystemMapNotProvided`, `CapabilitiesNotProvided`.
+- **Compliance level NAC-3 v1.2** defined. A v1.0/v1.1 plugin
+  MAY claim NAC-3 v1.0/v1.1 (baseline) without v1.2 conformance.
+
+### Demo
+
+- **`yujin.app/nac-spec/example.php`** -- two new cards added:
+  Remote autocomplete (5000-city catalog with debounced
+  search, `options_source=remote`, full options-event flow)
+  and System map (buttons that call `NAC.system_map()` and
+  `NAC.capabilities()` and pretty-print the result). Both
+  cards carry minimize / maximize / restore window-chrome
+  buttons exercised through `NAC.minimize/maximize/restore`.
+  Asset cache buster bumped to `v3`.
+- **`yujin.app/nac-spec/example-navmap.php`** (new) -- a
+  separate scenario page: an "agent panel" lands on three
+  unknown plugins (inventory, customers, orders), calls
+  `NAC.system_map()` once to discover the graph, then plans
+  and executes a 3-step task ("create order for Acme Corp,
+  $1500, high priority") via NAC.search_options + NAC.fill +
+  NAC.click + NAC.wait_for. No selectors. No DOM scraping.
+  All NAC events are observed live in the right-hand log.
+- **`js/nac.js`** reference impl bumped from 1.0.0 / spec 1.0
+  to 1.2.0 / spec 1.2. ~280 LOC added across options
+  resolvers, chrome verbs, and discovery providers. Still
+  zero dependencies. Still ASCII-pure.
+
 ### Documented
 
 - **`docs/IMPACT_RPA.md`** (new) -- long-form treatment of how
@@ -40,21 +120,22 @@ Versioning conventions for the spec:
   performance), the migration path for an existing
   Playwright/Cypress/Selenium suite, and the test-pyramid
   reshape that follows.
-- **`README.md`** -- new "Impact on RPA and automated testing"
-  section pointing at the two new docs.
+- **`README.md`** -- "Impact on RPA and automated testing"
+  section pointing at the two new docs; badge bumped to v1.2.
 - **`docs/MANUAL.md`** -- "Testing with the runner" section
   cross-references `IMPACT_TESTING.md` and `IMPACT_RPA.md`.
 
-### Demo
+### Migration
 
-- **`yujin.app/nac-spec/example.php`** -- v1.1 widget extensions
-  exercised end to end: tabs, accordion, combobox autocomplete,
-  slider with live readout, sortable / filterable / paginated
-  table, drag-and-drop between two lists, file dropzone with
-  simulated upload progress. Driver API extensions added on
-  `window.NAC` (`expand`, `collapse`, `set_slider`, `sort`,
-  `go_to_page`, `drag_drop`). Chat NLU extended with phrases
-  for the new widgets. Asset cache buster bumped to `v2`.
+- A v1.0/v1.1 plugin is valid v1.2 without modification.
+- A v1.0/v1.1 operator parses a v1.2 plugin without crashing
+  (unknown verbs treated as opaque, unknown manifest fields
+  silently skipped, unknown events ignored).
+- A v1.2 operator drives a v1.0/v1.1 plugin without retrofit:
+  absent `options_source` is read as `static`, absent
+  `transitions[]` is read as a leaf view, absent system map +
+  capabilities downgrades to per-view planning.
+- semver impact: **MINOR**. No breaking change.
 
 ## [1.1.0] - 2026-05-06
 
@@ -208,6 +289,8 @@ families that v1.0 left under-specified.
   2026-05-05 (Patch Manager mvp60 SCORE 22/22, Plan tile NAC-3
   certified).
 
-[Unreleased]: https://github.com/pkuschnirof/nac-spec/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/pkuschnirof/nac-spec/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/pkuschnirof/nac-spec/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/pkuschnirof/nac-spec/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/pkuschnirof/nac-spec/releases/tag/v1.0.0

@@ -413,12 +413,242 @@
     };
   }
 
+  /* ---------- v1.2: dynamic options ------------------------------- */
+
+  /* Per-field option resolver. Plugin authors call
+     NAC.set_options_resolver(plugin, field_id, fn) once at boot;
+     fn(query, limit) -> Promise<Option[]>. Static manifest options
+     are wrapped automatically when no resolver is set. */
+  const _optionResolvers = Object.create(null);
+
+  function _resolverKey(plugin, field_id) {
+    return String(plugin || '') + '::' + String(field_id || '');
+  }
+
+  function set_options_resolver(plugin, field_id, fn) {
+    if (typeof fn !== 'function') {
+      throw NacError('invalid', 'resolver fn required');
+    }
+    _optionResolvers[_resolverKey(plugin, field_id)] = fn;
+  }
+
+  function _findFieldDef(field_id) {
+    /* Walk every registered manifest, return the first matching
+       fields[] entry with its plugin slug. */
+    for (const slug in _manifests) {
+      const m = _manifests[slug];
+      const arr = (m && m.fields) || [];
+      for (let i = 0; i < arr.length; i++) {
+        if (arr[i] && arr[i].id === field_id) {
+          return { plugin: slug, field: arr[i] };
+        }
+      }
+    }
+    return null;
+  }
+
+  function _emitOptionsEvent(name, detail) {
+    document.dispatchEvent(new CustomEvent('nac:options:' + name, {
+      detail: detail, bubbles: true,
+    }));
+  }
+
+  async function options(field_id) {
+    const found = _findFieldDef(field_id);
+    if (!found) {
+      throw NacError('field_not_found', 'no field with id ' + field_id);
+    }
+    const f = found.field;
+    const src = f.options_source || 'static';
+    if (src === 'remote') {
+      throw NacError('RemoteSourceRequiresSearch',
+        'field ' + field_id + ' is remote; use NAC.search_options');
+    }
+    _emitOptionsEvent('loading', { field_id: field_id, source: src });
+    let result;
+    try {
+      const resolver = _optionResolvers[_resolverKey(found.plugin, field_id)];
+      if (resolver) {
+        result = await resolver('', null);
+      } else if (Array.isArray(f.options)) {
+        result = f.options.slice();
+      } else {
+        result = [];
+      }
+    } catch (err) {
+      _emitOptionsEvent('error', { field_id: field_id, source: src, message: String(err && err.message || err) });
+      throw NacError('OptionsUnavailable', 'options fetch failed: ' + (err && err.message || err));
+    }
+    _emitOptionsEvent('loaded', { field_id: field_id, source: src, count: result.length });
+    return result;
+  }
+
+  async function search_options(field_id, query, limit) {
+    const found = _findFieldDef(field_id);
+    if (!found) {
+      throw NacError('field_not_found', 'no field with id ' + field_id);
+    }
+    const f = found.field;
+    const src = f.options_source || 'static';
+    const lim = Number(limit || 10);
+    const q = String(query == null ? '' : query);
+    _emitOptionsEvent('loading', { field_id: field_id, source: src, query: q });
+    let result;
+    try {
+      const resolver = _optionResolvers[_resolverKey(found.plugin, field_id)];
+      if (resolver) {
+        result = await resolver(q, lim);
+      } else if (Array.isArray(f.options)) {
+        const ql = q.toLowerCase();
+        result = f.options.filter(function (o) {
+          if (!ql) return true;
+          const lab = String(o.label || o.value || '').toLowerCase();
+          return lab.indexOf(ql) !== -1;
+        }).slice(0, lim);
+      } else {
+        result = [];
+      }
+    } catch (err) {
+      _emitOptionsEvent('error', { field_id: field_id, source: src, query: q, message: String(err && err.message || err) });
+      throw NacError('OptionsUnavailable', 'search failed: ' + (err && err.message || err));
+    }
+    _emitOptionsEvent('loaded', { field_id: field_id, source: src, query: q, count: result.length });
+    return result;
+  }
+
+  function invalidate_options(field_id, reason, trigger_field_id) {
+    _emitOptionsEvent('invalidated', {
+      field_id: field_id,
+      reason: reason || 'manual',
+      trigger_field_id: trigger_field_id || null,
+    });
+  }
+
+  /* ---------- v1.2: window chrome (min/max/restore) --------------- */
+
+  function _findPluginRoot(plugin) {
+    return document.querySelector('[data-nac-plugin="' + plugin + '"]')
+        || document.querySelector('[data-nac-id="' + plugin + '"]');
+  }
+
+  function _setPluginState(plugin, newState) {
+    const root = _findPluginRoot(plugin);
+    if (!root) {
+      throw NacError('plugin_not_found', 'no DOM root for plugin ' + plugin);
+    }
+    const prior = root.getAttribute('data-nac-state') || 'normal';
+    root.setAttribute('data-nac-state', newState);
+    return { prior: prior, root: root };
+  }
+
+  function _emitPluginGeometry(name, plugin, prior_state, extra) {
+    const detail = Object.assign({ plugin: plugin, prior_state: prior_state }, extra || {});
+    document.dispatchEvent(new CustomEvent('nac:plugin:' + name, {
+      detail: detail, bubbles: true,
+    }));
+  }
+
+  async function minimize(plugin) {
+    const r = _setPluginState(plugin, 'minimized');
+    _emitPluginGeometry('minimized', plugin, r.prior);
+    return 'minimized';
+  }
+
+  async function maximize(plugin) {
+    const r = _setPluginState(plugin, 'maximized');
+    _emitPluginGeometry('maximized', plugin, r.prior);
+    return 'maximized';
+  }
+
+  async function restore(plugin) {
+    const r = _setPluginState(plugin, 'normal');
+    _emitPluginGeometry('restored', plugin, r.prior);
+    return 'normal';
+  }
+
+  async function fullscreen(plugin, on) {
+    const root = _findPluginRoot(plugin);
+    if (!root) {
+      throw NacError('plugin_not_found', 'no DOM root for plugin ' + plugin);
+    }
+    const currentlyFs = !!document.fullscreenElement;
+    const target = (typeof on === 'boolean') ? on : !currentlyFs;
+    try {
+      if (target && root.requestFullscreen) {
+        await root.requestFullscreen();
+      } else if (!target && document.exitFullscreen && currentlyFs) {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      /* permission denied or not supported -- fall back to state-only */
+    }
+    const newState = target ? 'fullscreen' : 'normal';
+    const prior = root.getAttribute('data-nac-state') || 'normal';
+    root.setAttribute('data-nac-state', newState);
+    _emitPluginGeometry('fullscreen_changed', plugin, prior, { fullscreen: target });
+    return newState;
+  }
+
+  /* ---------- v1.2: discovery (system map / capabilities) -------- */
+
+  let _systemMapProvider = null;
+  let _capabilitiesProvider = null;
+
+  function set_system_map_provider(fn) {
+    if (typeof fn !== 'function') {
+      throw NacError('invalid', 'provider fn required');
+    }
+    _systemMapProvider = fn;
+  }
+
+  function set_capabilities_provider(fn) {
+    if (typeof fn !== 'function') {
+      throw NacError('invalid', 'provider fn required');
+    }
+    _capabilitiesProvider = fn;
+  }
+
+  async function system_map() {
+    if (!_systemMapProvider) {
+      throw NacError('SystemMapNotProvided', 'no system_map provider registered');
+    }
+    return await _systemMapProvider();
+  }
+
+  async function capabilities() {
+    if (_capabilitiesProvider) {
+      return await _capabilitiesProvider();
+    }
+    /* Fallback: synthesise a minimal CapabilityInventory from known
+       manifests. This is what the spec calls "Layer C from Layer B". */
+    const slugs = Object.keys(_manifests);
+    const actions = [];
+    for (let i = 0; i < slugs.length; i++) {
+      const m = _manifests[slugs[i]];
+      const acts = (m && m.actions) || [];
+      for (let j = 0; j < acts.length; j++) {
+        if (acts[j] && acts[j].id) {
+          actions.push({ id: acts[j].id, label: acts[j].label || acts[j].id, verbs: [acts[j].verb || 'click'] });
+        }
+      }
+    }
+    return {
+      entities: [],
+      actions: actions,
+      reports: [],
+      dashboards: [],
+      integrations: [],
+      languages: [],
+      _synthesised: true,
+    };
+  }
+
   /* ---------- Install -------------------------------------------- */
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.0.0',
-    spec_version: '1.0',
+    version:      '1.2.0',
+    spec_version: '1.2',
     /* registry */
     register:        register,
     unregister:      unregister,
@@ -439,6 +669,28 @@
     wait_for:        wait_for,
     screenshot:      screenshot,
     validate:        validate,
+    /* v1.2 -- dynamic options */
+    options:                 options,
+    search_options:          search_options,
+    invalidate_options:      invalidate_options,
+    set_options_resolver:    set_options_resolver,
+    /* v1.2 -- window chrome */
+    minimize:        minimize,
+    maximize:        maximize,
+    restore:         restore,
+    fullscreen:      fullscreen,
+    /* v1.2 -- discovery */
+    system_map:                  system_map,
+    capabilities:                capabilities,
+    set_system_map_provider:     set_system_map_provider,
+    set_capabilities_provider:   set_capabilities_provider,
+    /* v1.2 -- error codes */
+    errors: {
+      RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',
+      OptionsUnavailable:         'OptionsUnavailable',
+      SystemMapNotProvided:       'SystemMapNotProvided',
+      CapabilitiesNotProvided:    'CapabilitiesNotProvided',
+    },
     /* config */
     config: {
       default_timeout_ms: 5000,

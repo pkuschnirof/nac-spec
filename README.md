@@ -6,12 +6,12 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.1](https://img.shields.io/badge/NAC-v1.1-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.2](https://img.shields.io/badge/NAC-v1.2-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Kuschnirof, Sumi.
 **License:** MIT.
-**Spec version:** v1.1 (2026-05-06; strict superset of v1.0).
+**Spec version:** v1.2 (2026-05-06; strict superset of v1.1, which is a strict superset of v1.0).
 
 ---
 
@@ -83,6 +83,43 @@ systems are not.
 - **Future-proof**: the same UI that a human uses today is what an
   agent will use tomorrow. No bespoke API to expose; the UI itself
   is the API.
+
+## What v1.2 adds (May 2026)
+
+The spec is now at v1.2 and answers three questions early
+readers raised about real-world UIs:
+
+- **Dynamic dropdowns from JSON or DB tables.** A new
+  `options_source: 'static' | 'dynamic' | 'remote'` on every
+  field, plus driver functions `NAC.options(field_id)` and
+  `NAC.search_options(field_id, query, limit)` for high-cardinality
+  remote autocompletes. Three new lifecycle events
+  (`nac:options:loading`, `nac:options:loaded`,
+  `nac:options:invalidated`) so an agent can wait deterministically
+  on the application's own fetch instead of polling the DOM.
+  Live demo card on `example.php` (5000-city catalog with
+  debounced server-side search).
+
+- **Window chrome (minimize / maximize / restore / fullscreen).**
+  Four new `data-nac-action` verbs, four new lifecycle events,
+  three new `data-nac-state` values, four new driver functions on
+  `window.NAC`. Agents that today cannot drive the corner buttons
+  of a plugin window now can. Live demo on the same cards via the
+  three chrome buttons in each card header.
+
+- **First-contact discovery.** New `NAC.system_map()` returns the
+  full navigation graph + capability inventory of the system.
+  Manifests can declare per-view `transitions[]`. Stand-alone demo
+  at `yujin.app/nac-spec/example-navmap.php`: an agent panel lands
+  on three unknown plugins, calls `system_map()` once, plans a
+  3-step task ("create order for Acme Corp, $1500, high"), and
+  executes it via NAC primitives only -- no selectors, no DOM
+  scraping, no human help.
+
+Spec section 14 in `spec/NAC-v1.0.md` is the normative document.
+Every v1.0/v1.1 plugin remains valid v1.2 without modification;
+every v1.0/v1.1 operator continues to work against v1.2 plugins.
+The semver impact is **MINOR**.
 
 ## Impact on RPA and automated testing
 
