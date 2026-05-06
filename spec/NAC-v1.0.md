@@ -119,6 +119,131 @@ independently under MIT and tracks its own version line.
 
 ---
 
+## 1.6. The two principles that produced NAC
+
+NAC is the technical consequence of two product principles. They
+are stated here as part of the normative document because they
+constrain every shape decision in the spec; an extension that
+violates either principle is out of scope.
+
+### Principle 1 -- The system disappears
+
+A modern UI exists because a human needs to do work. The UI is
+not the work. The UI is the surface through which the work
+happens. A well-built system gets out of the user's way -- and,
+by extension, out of any operator's way.
+
+NAC takes this principle seriously and applies it to non-human
+operators. If the UI is transparent for the human, it MUST be
+transparent for any operator -- voice, chat, AI agent, RPA bot,
+automated test -- that acts on behalf of a human or alongside
+one. That requires a contract that the UI publishes and any
+operator consumes uniformly, on the surface of the UI itself.
+
+This produces the technical decisions:
+- attributes ON the DOM (not behind a separate metadata file),
+- events emitted ON the page (not behind a separate transport),
+- `window.NAC` exposed to whoever loads the page (not gated by
+  authentication).
+
+### Principle 2 -- The AI agent acts as a human, not as another system
+
+When an AI agent operates a system on behalf of a user, NAC
+mandates that it goes through the same path the human takes. It
+uses the same buttons, the same forms, the same modals, the same
+permission gates, the same audit trail. There is no privileged
+backend API and no service-identity bypass.
+
+Whatever the human user can do via the UI is exactly what the
+agent can do via NAC -- nothing more, nothing less. The contract
+exposes the *surface* of the human's ability, not the *interior*
+of the system's capability.
+
+This produces six concrete properties for free:
+
+1. **Permission parity.** The agent is gated by the same role
+   check that gates the human. The button is the permission;
+   clicking it inherits the gate.
+2. **Audit parity.** The agent's actions appear in the audit
+   trail under the same user identity, indistinguishable from
+   the human's.
+3. **i18n / locale parity.** A button that translates to
+   "Aceptar" / "OK" / native script is one `data-nac-id`. The
+   agent operates uniformly across locales.
+4. **Drift resistance.** When a backend changes endpoint, schema
+   or shape, an agent driving via NAC keeps working as long as
+   the UI keeps the button. The contract lives at the surface,
+   not at the boundary.
+5. **No backdoor surface.** The agent goes through login + MFA +
+   session lifecycle. There is no privileged service identity
+   to leak.
+6. **The system disappears for the agent too.** The agent does
+   not know the backend; it acts through the UI. The backend is
+   free to be refactored, sharded, or replaced as long as UI
+   semantics stay.
+
+### What this rules out
+
+The principles forbid certain extensions to the spec:
+
+- **NAC will not standardise direct backend access.** That is
+  MCP's job (see section 1.7).
+- **NAC will not standardise pixel scraping.** Reading
+  screenshots is the antithesis of "the system disappears".
+- **NAC will not standardise selector engines, XPath, CSS-path
+  recipes.** Those exist because contracts failed; NAC IS the
+  contract.
+- **NAC will not introduce per-vendor extensions to its
+  vocabulary.** Vendors that need their own surface should use
+  a sibling namespace (`data-vendor-*`), not pollute NAC's.
+
+For the full philosophical treatment see
+`docs/PHILOSOPHY.md`.
+
+---
+
+## 1.7. NAC vs MCP -- complementary contracts
+
+The Model Context Protocol (MCP) is the modern contract for
+exposing a system to LLMs as a server with typed tools. NAC and
+MCP are complementary, not competing; they sit on different
+layers and answer different design questions.
+
+### The crucial distinction
+
+- **MCP**: the agent reaches the system **as another system**.
+  It calls typed tools on a server, knows the backend function
+  shape, has privileged access via API key.
+- **NAC**: the agent reaches the system **as a human**. It
+  operates the UI through the same path the human takes. It
+  does not know the backend; it does not need to.
+
+### Comparison table
+
+| Question | MCP answer | NAC answer |
+|---|---|---|
+| Reach | Backend, server-to-server | Frontend UI, page-level |
+| Knows | Tool surface (function names, params, returns) | UI surface (plugins, actions, fields, states) |
+| Permissions | Re-implemented per tool | Inherited from UI gate |
+| Audit | Service identity | User identity |
+| Drift | Breaks on backend change | Stable while UI keeps the button |
+| i18n | Per-tool handling | Free, from the UI |
+| Best for | Server-to-server, batch, headless reads | UI-driven assistance, voice/chat, RPA, UI tests |
+
+### Layered usage
+
+A serious product uses both protocols, layered:
+
+- Acting on behalf of the user with permissions and audit -> NAC.
+- Reading data or running headless backend work -> MCP.
+- Both, in the same agent -> use both.
+
+NAC does not fold MCP into its surface, and MCP does not fold
+NAC into its surface. They are sibling contracts at different
+abstraction layers.
+
+---
+
 ## 2. Terminology
 
 - **Plugin**: any self-contained UI surface that follows the contract.

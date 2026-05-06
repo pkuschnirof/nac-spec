@@ -15,6 +15,40 @@
 
 ---
 
+## The thesis in two principles
+
+NAC is the technical consequence of two product principles. If
+you do not buy these two principles, you do not need NAC. If you
+do buy them, you cannot avoid building something close to NAC.
+
+### 1. The system disappears
+
+The UI is not the work. The UI is the surface through which the
+work happens. A well-built system gets out of the user's way --
+and out of any operator's way. That demands a contract on the
+surface of the UI itself, not behind it.
+
+### 2. The agent acts as a human, not as another system
+
+When an AI agent operates a system on behalf of the user, it
+goes through the same buttons, forms, modals, permission checks
+and audit trails as the human. No privileged backend API. No
+service-identity backdoor. Whatever the human can do, the agent
+can do, **the same way**. NAC is the contract that makes that
+possible.
+
+This is the explicit difference with MCP (Model Context
+Protocol): MCP exposes the system *as another system* (function
+calls, backend access, server tools). NAC exposes the system *as
+it is exposed to humans*. They are layered and complementary,
+not competing -- see "NAC vs MCP" below for the full rationale.
+
+Read [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) for the full
+treatment, including why these two principles produce every
+shape decision in the spec.
+
+---
+
 ## Why NAC
 
 Modern UIs are built for human eyes first. As a result, automated
@@ -187,6 +221,72 @@ screen reader. No conflict. No duplication of effort.
 > ARIA gives a blind user the audio map of your UI;
 > NAC gives an AI agent the **operable** map.
 > Same DOM, different audiences, complementary layers.
+
+---
+
+## NAC vs MCP -- agent as human vs agent as system
+
+The Model Context Protocol (Anthropic, 2024-2026) is the modern
+contract for exposing a system to LLMs as a server with typed
+tools. It is excellent at what it does. **NAC and MCP are
+complementary, not competing**: they sit on different layers and
+answer different questions about *how* the agent reaches the
+system.
+
+The crucial design distinction:
+
+- **MCP**: the agent reaches the system **as another system**.
+  It connects to a server, calls typed tools, receives typed
+  responses. The agent knows there is a backend; it knows the
+  function names, the parameter shapes, the return types. It
+  has privileged access by virtue of the API key or token.
+
+- **NAC**: the agent reaches the system **as a human**. It
+  opens the page, clicks buttons, fills fields, reads UI state.
+  It does not know what is behind the buttons; it does not need
+  to. Whatever the human user can do via the UI is exactly what
+  the agent can do via NAC -- nothing more, nothing less.
+
+| Question | MCP answer | NAC answer |
+|---|---|---|
+| How does the agent reach the system? | Backend API, server-to-server, typed tools | Frontend UI, click + fill, declarative attributes |
+| What does the agent know? | Backend tool surface (function names, params, returns) | UI surface (plugins, actions, fields, states) |
+| Permissions enforced where? | Re-implemented inside each MCP tool | Inherited from the existing UI permission gate |
+| Audit identity | Service identity (linked to user out-of-band) | User identity (same login session as human) |
+| Surface stability | Breaks when backend changes | Stable as long as UI keeps the same button |
+| i18n / locale handling | Per-tool string handling | Free, from the UI |
+| Best for | Server-to-server, batch jobs, headless reads, data pipelines | UI-driven assistance, voice/chat, RPA, automated UI tests |
+| What disappears | The integration (no UI rendered) | The system (UI mediates invisibly) |
+
+**Use both, layered**, in a real product:
+
+- An assistant that **drafts an invoice** for the user uses NAC
+  -- it fills the invoice form on the user's screen, leaving the
+  human in the loop, with the same permissions and audit trail
+  as the human would have.
+- The same assistant, when asked to **summarise sales for the
+  quarter**, uses MCP -- it queries a read-only sales server
+  bypassing the UI because no UI mediation is needed for an
+  aggregate read.
+
+**Rule of thumb:**
+
+- Acting on behalf of the user with permissions, audit, and
+  identity? -> **NAC**.
+- Reading data or running headless backend work? -> **MCP**.
+- Both? -> **use both**, on the same agent.
+
+The deeper point: principle 2 of NAC ("agent as human") is not
+just a stylistic preference. It buys permission parity, audit
+parity, locale parity, drift resistance, and zero-backdoor
+surface -- all for free, by reusing the existing UI gate. MCP
+cannot give those properties even in principle, because it
+operates below the UI gate. The two protocols are answering
+different design questions; a serious product needs both.
+
+For the long-form treatment, including the six implications of
+"agent as human" and what the principles rule out of NAC's
+scope, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md).
 
 ---
 

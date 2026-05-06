@@ -19,6 +19,25 @@ contract; this manual focuses on day-to-day patterns.
 
 ## Mental model
 
+### The two principles
+
+NAC was extracted from two product principles. Read
+[`PHILOSOPHY.md`](PHILOSOPHY.md) for the full treatment;
+the short version:
+
+1. **The system disappears.** The UI is not the work; it is the
+   surface through which the work happens. The contract lives
+   on that surface.
+2. **The agent acts as a human, not as another system.** When
+   the agent operates the UI on behalf of the user, it goes
+   through the same buttons, forms, permissions, and audit
+   trail as the human. No privileged backdoor, no
+   service-identity bypass.
+
+Every spec decision flows from these two principles.
+
+### Three layers
+
 NAC is three things stacked:
 
 1. **A vocabulary** -- a fixed set of `data-nac-*` attributes that
@@ -31,6 +50,18 @@ NAC is three things stacked:
 
 A plugin authored for NAC says: "here is my surface, here are my
 ingredients, here is my state, here are my events, drive me."
+
+### NAC vs MCP
+
+If you also build agents that consume MCP servers, internalise:
+
+- **MCP** = agent as another system (typed backend tools).
+- **NAC** = agent as a human (UI driving with the same path).
+
+They are complementary. Use both, layered: NAC for acting on
+behalf of the user with permissions and audit; MCP for headless
+backend reads and integrations. See `PHILOSOPHY.md` for the full
+NAC-vs-MCP comparison.
 
 ---
 
