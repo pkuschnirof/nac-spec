@@ -34,6 +34,109 @@ ingredients, here is my state, here are my events, drive me."
 
 ---
 
+## NAC vs ARIA -- when to use what
+
+Most teams already ship some ARIA. NAC does not replace it. The
+two contracts cover different audiences and stack on the same
+DOM. This section is a quick decision guide.
+
+### One-line rule
+
+If a **human without sight** needs to consume the element via
+audio -> use ARIA. If an **autonomous operator** (AI agent, voice
+runner, RPA bot, test runner) needs to drive the element
+programmatically -> use NAC. If both -> use both, on the same
+element.
+
+### Decision matrix
+
+| You want to ... | Use ARIA | Use NAC | Use both |
+|---|---|---|---|
+| Read aloud the label of a button | yes (`aria-label`) | -- | yes |
+| Announce that a long task started | yes (`aria-busy="true"`) | -- | yes |
+| Tell an agent which button is "apply" vs "submit" | -- | yes (`data-nac-action="apply"`) | yes |
+| Let an agent click a button by stable ID | -- | yes (`NAC.click(id)`) | yes |
+| Let an agent wait for a modal to close | -- | yes (`nac:plugin:closed`) | yes |
+| Expose the list of fields a form has | partial (DOM scan only) | yes (`manifest_nac.fields`) | yes |
+| Let an agent know what tabs a plugin has | partial (`role="tablist"`) | yes (`manifest_nac.tabs`) | yes |
+| Tell an agent which open modes are valid (modal / maximized / new tab) | -- | yes (`modes_supported`) | yes |
+| Render a screen reader announcement | yes (`aria-live`) | -- | yes |
+| Let an agent read the validation summary | -- | yes (`NAC.read_feedback()`) | yes |
+
+### Coexistence pattern
+
+Every interactive element in production should carry attributes
+from BOTH layers when relevant. They are not mutually exclusive.
+
+```html
+<button
+  data-nac-id="patch_manager.apply_all"
+  data-nac-role="action"
+  data-nac-action="apply"
+  data-nac-state="idle"
+  role="button"
+  aria-label="Apply all pending patches"
+  aria-busy="false">
+  Apply all
+</button>
+```
+
+Five NAC attributes for the autonomous operator. Three ARIA
+attributes for the screen reader. Zero overlap in semantics; both
+work without stepping on each other.
+
+### Common confusions
+
+- **"NAC roles overlap with ARIA roles."** They do not. ARIA
+  `role="button"` declares "this is a button for a screen reader
+  to announce". NAC `data-nac-role="action"` declares "this is an
+  imperative action for an agent to invoke". A button that opens
+  a modal is `role="button"` (for the screen reader) AND
+  `data-nac-role="action"` with `data-nac-action="apply"` (for
+  the agent). Same element, two layers.
+
+- **"NAC `data-nac-state` overlaps with `aria-busy`."** Partial
+  overlap, intentional. `aria-busy="true"` is a binary flag
+  declaring "do not announce changes right now". NAC
+  `data-nac-state` is one of `idle | active | success | invalid |
+  busy | dirty | pristine | success | error` and is the
+  authoritative state observed by the agent. When a long task
+  starts, set both: `aria-busy="true"` AND
+  `data-nac-state="active"`. When it finishes, set both back.
+
+- **"NAC events look like the `change` event."** They are not the
+  same. Native events fire on every keystroke and are not
+  namespaced. NAC events are emitted at semantic boundaries
+  (action started, action succeeded, plugin opened) and carry a
+  structured `detail` object with `nac_id`, `verb`, `value`, and
+  context. An agent subscribes once and receives the lifecycle
+  cleanly without filtering noise.
+
+### When you can skip NAC
+
+You CAN skip NAC for an element if all of the following are true:
+
+1. It is a built-in HTML5 widget (`<button>`, `<input>`,
+   `<select>`, `<dialog>`, `<details>`) that the host platform
+   describes via the accessibility tree natively.
+2. There is a single, stable `id` already on the element that no
+   other plugin reuses.
+3. No autonomous operator needs to know the difference between
+   "apply", "submit", "refresh", "retry", "cancel" -- a generic
+   click is enough.
+4. The page never opens long-running operations whose lifecycle
+   an operator must wait for.
+
+In practice, most modern UIs fail at least one of these and
+therefore benefit from NAC.
+
+### When you can skip ARIA
+
+You CANNOT. Always ship ARIA. NAC complements; it does not
+replace.
+
+---
+
 ## Authoring a plugin
 
 ### Step 1 -- Mark the plugin root

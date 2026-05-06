@@ -50,6 +50,146 @@ systems are not.
   agent will use tomorrow. No bespoke API to expose; the UI itself
   is the API.
 
+## NAC vs ARIA -- why we did not extend ARIA
+
+The first reaction from any web-platform engineer is: "isn't this
+just ARIA + custom events?" Short answer: ARIA covers part of the
+problem, but a different audience and with deliberate scope limits
+that exclude what NAC delivers. Both layers coexist on the same
+DOM and a compliant element will carry attributes from each.
+
+### What ARIA gives you
+
+ARIA (W3C Accessible Rich Internet Applications) is the de facto
+contract for **assistive technology aimed at human users without
+sight**. It standardises ~50 attributes:
+
+- `role` (button, dialog, listbox, combobox, tabpanel, slider, ...)
+- `aria-label` / `aria-labelledby` / `aria-describedby` for text
+  surrogates
+- `aria-expanded` / `aria-checked` / `aria-pressed` /
+  `aria-selected` / `aria-current` for binary states
+- `aria-live` / `aria-atomic` / `aria-relevant` for announcements
+- `aria-busy`, `aria-disabled`, `aria-hidden`, `aria-required`,
+  `aria-invalid` for status
+- `aria-controls`, `aria-owns`, `aria-flowto` for relationships
+
+It is excellent for screen readers. We use it. NAC does not
+replace it.
+
+### What ARIA does not give you
+
+Seven gaps that block AI-driven, voice-driven, and RPA-driven
+operation of a UI:
+
+1. **No stable, namespaced identifier.** ARIA reuses HTML `id`
+   which is global, not namespaced per plugin, often missing, and
+   often regenerated on re-render. NAC adds `data-nac-id` like
+   `patch_manager.apply_all`, namespaced and stable.
+
+2. **No verb semantics.** ARIA has `role="button"` but every
+   button looks alike. An agent cannot distinguish *apply* from
+   *submit* from *refresh* from *retry* from *cancel* from
+   *discard*. NAC adds `data-nac-action="apply | submit | refresh
+   | retry | cancel"`.
+
+3. **No driver API.** ARIA is declarative-only by design; the WG
+   has explicitly excluded an imperative API from its scope. Every
+   automation tool (Selenium, Playwright, Cypress, Browser Use,
+   Anthropic Computer Use) reinvents its own selector engine and
+   click strategy. NAC publishes one: `NAC.click(id)`,
+   `NAC.fill(id, val)`, `NAC.tab(plugin, tab)`,
+   `NAC.snapshot_state()`. One call -- voice, chat, RPA, and AI
+   agents share the same surface.
+
+4. **No structured lifecycle events.** ARIA has `aria-busy="true"`
+   as an attribute, not an event. To know when a long-running
+   operation finished, a consumer has to poll the DOM. NAC emits
+   `nac:action:dispatching -> succeeded | failed`,
+   `nac:plugin:opening -> opened -> closing -> closed`,
+   `nac:field:changed`, `nac:state:changed`. Consumers subscribe.
+
+5. **No declarative manifest.** Each ARIA widget is self-contained
+   in the DOM; there is no index a tool can read to know what
+   actions exist before exploring the screen. NAC requires
+   `manifest_nac` declared up front with `{kpis, actions, fields,
+   tabs, rows, modes_supported}`. A workflow engine, an agent or a
+   help system can introspect with `NAC.describe('patch_manager')`
+   and act without ever rendering the UI.
+
+6. **No "modes supported" concept.** ARIA cannot tell a tool
+   whether a plugin can be opened maximised, in a new tab or in a
+   new window. NAC declares `modes_supported: ['modal',
+   'maximized', 'new_tab', 'new_window']`.
+
+7. **High adoption cost.** ARIA defines ~50 attributes and 80+
+   patterns in the WAI-ARIA Authoring Practices guide. Onboarding
+   a developer takes about a week. NAC is 5 attributes + 7 events
+   + 5 driver functions. Onboarding takes about an hour.
+
+### Different audiences, different requirements
+
+| | Screen reader | Voice / chat / AI agent / RPA |
+|---|---|---|
+| Reads | Linear text in DOM order | Whatever the manifest declares, in any order |
+| Wants | Announcements as state changes | Events to subscribe to with payloads |
+| Needs | `role` + `label` to read aloud | `nac_id` + `verb` to dispatch programmatically |
+| Operates | Keyboard, single-step | Programmatic, multi-step, branching |
+| Recovers | "Press Tab and try again" | Reads `nac:action:failed` and decides |
+
+**ARIA was designed for humans without sight. NAC was designed for
+agents without hands.** Different audiences. Different
+requirements. Both layers complement each other on the same DOM.
+
+### Why we did not extend ARIA upstream
+
+Three reasons:
+
+1. **Scope mismatch.** The ARIA WG has explicitly excluded
+   imperative APIs and structured custom events from its scope.
+   `NAC.click()` and `nac:*` events are incompatible with the WG's
+   declarative-only philosophy. Trying to upstream them would be
+   rejected on principle.
+2. **Iteration speed.** ARIA 1.2 shipped in 2023; ARIA 1.3 has
+   been in working draft for 2+ years. The community needs an
+   AI-driving contract today, not in 2028.
+3. **Adoption cost.** Adding to ARIA's surface deepens the
+   onboarding cliff. NAC is deliberately a smaller, parallel
+   layer that a team can adopt in an afternoon.
+
+Once NAC has multiple production deployments and ports, a subset
+may be proposed to the ARIA WG. Until then, NAC ships
+independently under MIT and tracks its own version line.
+
+### Coexistence example
+
+A single element typically carries both layers:
+
+```html
+<button
+  data-nac-id="patch_manager.apply_all"
+  data-nac-role="action"
+  data-nac-action="apply"
+  data-nac-state="idle"
+  role="button"
+  aria-label="Apply all pending patches"
+  aria-busy="false">
+  Apply all
+</button>
+```
+
+Five NAC attributes for the agent. Three ARIA attributes for the
+screen reader. No conflict. No duplication of effort.
+
+### One-line pitch
+
+> NAC is to AI agents what ARIA is to screen readers.
+> ARIA gives a blind user the audio map of your UI;
+> NAC gives an AI agent the **operable** map.
+> Same DOM, different audiences, complementary layers.
+
+---
+
 ## How it works
 
 A compliant UI annotates its DOM with seven kinds of attributes:
@@ -196,7 +336,26 @@ through a spec PR with at least one production reference deployment.
 
 ## Related work
 
-NAC is conceptually adjacent to ARIA (accessibility), but solves a
-different problem: ARIA targets assistive tech for humans, NAC
-targets autonomous operators (machines and AI). The two are
-complementary and a compliant UI satisfies both.
+- **ARIA / WAI-ARIA (W3C)** -- the dominant accessibility contract.
+  See the dedicated "NAC vs ARIA" section above for the detailed
+  comparison and coexistence pattern.
+- **HTML5 native semantics** (`<button>`, `<dialog>`,
+  `<details>`, `<input type="...">`) -- adequate for built-in
+  widgets. NAC fills the gap when an app ships custom widgets that
+  HTML5 cannot describe.
+- **WebDriver BiDi (W3C, in-flight)** -- low-level browser
+  protocol for testing automation. Pairs with NAC: BiDi delivers
+  the transport, NAC the semantic contract above the DOM.
+- **Model Context Protocol (MCP, Anthropic)** -- spec for LLMs to
+  call server-side tools. Complementary, not competing: MCP =
+  "this server exposes these functions"; NAC = "this UI is
+  operable by these actions".
+- **Microsoft UIA / Apple Accessibility / AccessKit** -- desktop
+  OS-level accessibility frameworks. Different platform target.
+- **Playwright `getByRole` / Cypress semantic locators** -- test
+  library abstractions over ARIA. They are consumers; NAC is the
+  layer the apps emit.
+
+NAC sits at the intersection: client-side, multi-driver
+(voice / chat / AI / RPA / a11y), declarative + imperative,
+adoption-light. None of the above covers all five attributes.

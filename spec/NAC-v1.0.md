@@ -41,6 +41,84 @@ describes the contract; reference implementations live in `js/`,
 
 ---
 
+## 1.5. Rationale -- why not just ARIA
+
+ARIA (Accessible Rich Internet Applications, W3C) is the dominant
+contract for UI accessibility. It targets one audience: human users
+operating UIs through assistive technology, primarily screen readers.
+NAC targets a different audience: autonomous operators (AI agents,
+voice runners, RPA bots, AI-driven test runners) operating UIs
+programmatically.
+
+Both layers MAY be present on the same DOM element. ARIA covers what
+a screen reader needs; NAC covers what an autonomous operator needs.
+The two contracts are complementary, not competing.
+
+NAC is intentionally NOT a superset of ARIA, nor an extension of
+ARIA, for three reasons:
+
+1. **Scope mismatch.** The ARIA Working Group has explicitly
+   excluded imperative driver APIs and structured custom-event
+   contracts from its scope; ARIA is declarative-only by design.
+   NAC's `NAC.click()` / `NAC.fill()` / `NAC.snapshot_state()`
+   functions and the `nac:*` event family are incompatible with
+   that philosophy.
+
+2. **Evolution speed.** ARIA 1.2 shipped in 2023; ARIA 1.3 has
+   been in working draft for 2+ years. The ecosystem of AI-driven
+   automation tooling needs a contract today, not in 2028.
+
+3. **Adoption cost.** ARIA defines ~50 attributes plus 80+
+   patterns in WAI-ARIA Authoring Practices. Onboarding a
+   developer takes about a week. NAC v1.0 is 5 attributes,
+   7 events, and 5 driver functions. Onboarding takes about an
+   hour. A smaller surface keeps the contract adoptable for the
+   long tail of apps that have neither budget nor expertise to
+   onboard ARIA.
+
+The seven gaps that NAC addresses, which ARIA does not:
+
+| Gap | What ARIA gives | What NAC adds | Why it matters for autonomous operators |
+|---|---|---|---|
+| Stable, namespaced ID | `id` (HTML, global, often regenerated) | `data-nac-id="plugin.element"` (namespaced per plugin, stable across re-renders) | An agent must address the same element across renders without colliding with sibling plugins |
+| Verb semantics | `role="button"` | `data-nac-action="apply | submit | refresh | retry | cancel | discard"` | An agent must distinguish *apply* from *submit* from *refresh* without parsing button labels |
+| Driver API | None (declarative-only by WG decision) | `NAC.click(id)`, `NAC.fill(id, val)`, `NAC.tab(plugin, tab)`, `NAC.snapshot_state()` | One call surface multi-consumer (voice, chat, RPA, AI agent, test runner) |
+| Lifecycle as events | `aria-busy="true"` (state attribute) | `nac:action:dispatching | succeeded | failed`, `nac:plugin:opening | opened | closing | closed`, `nac:field:changed`, `nac:state:changed` | Consumers SUBSCRIBE to events with payloads instead of polling DOM mutations |
+| Declarative manifest | Each ARIA widget is self-contained in DOM; no index | `manifest_nac` declared up front with `{kpis, actions, fields, tabs, rows, modes_supported}` | An agent or workflow engine introspects with `NAC.describe(plugin)` BEFORE rendering, enabling planning |
+| Modes supported | None | `modes_supported: ['modal', 'maximized', 'new_tab', 'new_window']` | An agent decides where to open the plugin without trial-and-error |
+| Adoption surface | ~50 attributes + 80+ patterns, ~1 week onboarding | 5 attributes + 7 events + 5 functions, ~1 hour onboarding | The long tail of apps gets coverage |
+
+**The single-line distinction**: ARIA is to screen readers what
+NAC is to AI agents. ARIA gives a blind user the audio map of a
+UI; NAC gives an autonomous operator the *operable* map. Same
+DOM, different audiences, complementary layers.
+
+A compliant element in production typically carries both layers:
+
+```html
+<button
+  data-nac-id="patch_manager.apply_all"
+  data-nac-role="action"
+  data-nac-action="apply"
+  data-nac-state="idle"
+  role="button"
+  aria-label="Apply all pending patches"
+  aria-busy="false">
+  Apply all
+</button>
+```
+
+Five NAC attributes for the autonomous operator, three ARIA
+attributes for the screen reader. No conflict, no duplication of
+concept.
+
+Once NAC has multiple production deployments and ports to other
+languages, a subset MAY be proposed to the ARIA WG as an
+imperative companion specification. Until then, NAC ships
+independently under MIT and tracks its own version line.
+
+---
+
 ## 2. Terminology
 
 - **Plugin**: any self-contained UI surface that follows the contract.
