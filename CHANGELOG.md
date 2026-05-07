@@ -22,6 +22,53 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.6.5] - 2026-05-07
+
+PATCH release. Closes two regressions discovered by Pablo while
+voice-testing v1.6.4. Strict superset of v1.6.4.
+
+### Detached-option click match (runtime)
+
+Pre-v1.6.5 behaviour: `NAC.click('cities.option.3')` STILL
+timed out at 5s even with the v1.6.4 matcher, because the
+host's click handler does `cityList.innerHTML = ''` BEFORE
+emitting `nac:field:changed`. By the time the event fires the
+clicked LI is detached; `el.closest('[data-nac-plugin]')`
+returns null, the v1.6.4 plugin-scope check rejected the match.
+
+Fix: `NAC.click()` now caches plugin slug, option `data-nac-value`
+and option `textContent` BEFORE invoking `el.click()`. The
+matcher accepts a `cachedCtx` 4th argument and uses it when the
+DOM walk fails. Net effect: the matcher works for elements that
+get detached during their own click handler.
+
+### Section visibility on wide viewports (runtime)
+
+Pre-v1.6.5 behaviour: `NAC.go_to_section()` called
+`scrollIntoView()` and emitted `nac:section:reached`. On a wide
+desktop where every section is already visible, smooth-scroll
+is a no-op -- the agent tour produces zero visible feedback,
+just chat narration. Pablo: "no hace foco ni desplaza, no se ve
+efecto visible".
+
+Fix: `go_to_section()` now also sets
+`[data-nac-section-visited="1"]` on the target section for
+1500ms so the host CSS can paint a visible highlight (red
+border + glow ring) regardless of whether scroll moved the
+viewport. The reference demo's example.css ships the matching
+rule.
+
+### Per-element focus pulse CSS (demo)
+
+Companion change in the demo's `example.css` (not normative):
+adds a CSS rule for `[data-nac-focus-pulse="1"]` so EVERY
+NAC-driven element pulses red briefly when operated. Pre-v1.6.5
+the focus-pulse attribute was set by `_focusElement` for 600ms
+but had no styling, so only buttons that flipped to
+`data-nac-state="active"` (e.g. `Run NAC self-test`) showed
+visible feedback. Now click / fill / select / tab on any
+element produces a consistent red flash.
+
 ## [1.6.4] - 2026-05-07
 
 PATCH release. NAC.click resolves two real-world matcher gaps

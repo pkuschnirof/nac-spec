@@ -1,9 +1,27 @@
 /* =====================================================================
-   NAC v1.6.4 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.6.5 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.6.5 (2026-05-07) -- patch release closing two regressions
+   user found while voice-testing v1.6.4:
+   1. cities.option.3 still timed out because the host's click
+      handler detaches the LI from the DOM (cityList.innerHTML='')
+      BEFORE emitting nac:field:changed. v1.6.4's matcher walked
+      el.closest() on the detached element, got null, and
+      rejected the match. v1.6.5 caches the plugin slug, option
+      value and option textContent at click() time and threads a
+      cachedCtx into _eventMatchesElement so the matcher works
+      regardless of detachment.
+   2. NAC.go_to_section() called scrollIntoView() but on a wide
+      desktop where every section was already in viewport, the
+      tour produced zero visible feedback. v1.6.5 also sets
+      [data-nac-section-visited="1"] on the section for 1500ms
+      so the host CSS can highlight the section even when scroll
+      is a no-op.
+   Strict superset of v1.6.4; every v1.6.4 plugin remains valid.
 
    v1.6.4 (2026-05-07) -- patch release. NAC.click resolves two
    real-world matcher gaps that v1.6.3 left open. Both surfaced
@@ -705,6 +723,20 @@
       successEvents.push('nac:action:succeeded');
       failureEvents.push('nac:action:failed');
     }
+    /* v1.6.5: cache plugin slug + option value/text BEFORE el.click()
+       fires. The host's click handler may DETACH el from the DOM
+       (e.g. combobox option click does cityList.innerHTML='') BEFORE
+       emitting nac:field:changed. After detachment el.closest()
+       returns null, so the v1.6.4 matcher rejected legitimate match
+       attempts. Cache here, pass to _eventMatchesElement so it never
+       walks the DOM for a detached element. */
+    var pluginRoot = el.closest('[data-nac-plugin]');
+    const cachedCtx = {
+      plugin:   pluginRoot ? pluginRoot.getAttribute('data-nac-plugin') : null,
+      opt_value: el.getAttribute('data-nac-value'),
+      opt_text:  (el.textContent || '').trim(),
+      role:     role,
+    };
     const timeout_ms = (opts && opts.timeout) || 5000;
     const result = new Promise(function (resolve, reject) {
       let settled = false;
@@ -714,14 +746,14 @@
            event.target or detail.nac_id matching. Without this, a
            background nac:field:changed from another field would
            resolve our click prematurely. */
-        if (!_eventMatchesElement(e, el, nac_id)) return;
+        if (!_eventMatchesElement(e, el, nac_id, cachedCtx)) return;
         settled = true;
         cleanup();
         resolve({ ok: true, event: { event: e.type, detail: e.detail || null } });
       }
       function onFailed(e) {
         if (settled) return;
-        if (!_eventMatchesElement(e, el, nac_id)) return;
+        if (!_eventMatchesElement(e, el, nac_id, cachedCtx)) return;
         settled = true;
         cleanup();
         resolve({ ok: false, event: { event: e.type, detail: e.detail || null } });
@@ -788,7 +820,7 @@
      (or a descendant), OR when no nac_id appears in detail (defensive
      -- we take the event as a match rather than miss it on a sloppy
      emitter and time out). */
-  function _eventMatchesElement(e, el, nac_id) {
+  function _eventMatchesElement(e, el, nac_id, cached) {
     var d = e && e.detail;
     if (d && (d.nac_id === nac_id || d.from_nac_id === nac_id ||
               d.target_nac_id === nac_id || d.tab_id === nac_id ||
@@ -810,36 +842,43 @@
         '[data-nac-role="field"][data-nac-id="' + d.nac_id + '"], ' +
         '[data-nac-role="combobox"][data-nac-id="' + d.nac_id + '"]');
       if (fieldHost && fieldHost.contains(el)) return true;
-      /* v1.6.4: combobox option click. The host's option click
-         handler emits nac:field:changed on the parent field
+      /* v1.6.4-v1.6.5: combobox option click. The host's option
+         click handler emits nac:field:changed on the parent field
          (e.g. cities.search) with new_value matching the option's
          data-nac-value. The clicked option (e.g. cities.option.3)
-         lives in a separate <ul>, so el.closest() and
-         fieldHost.contains() both miss. Match by:
-         (a) clicked element's role is "option",
-         (b) parent plugins match (option and field belong to
-             the same data-nac-plugin scope),
-         (c) option's data-nac-value (or textContent) equals
-             event.detail.new_value.
-         Without this, NAC.click('cities.option.N') times out
-         at 5s even though the option was selected and the field
-         changed visibly -- the bug Pablo reported 2026-05-07. */
-      if (el.getAttribute('data-nac-role') === 'option' &&
+         lives in a separate <ul>; el.closest() and
+         fieldHost.contains() both miss because the option was
+         DETACHED from the DOM by cityList.innerHTML='' before the
+         event fired. v1.6.5 caches the plugin/optValue/optText at
+         click() time and uses them here -- the matcher works for
+         detached elements. */
+      var role = (cached && cached.role) || el.getAttribute('data-nac-role') || '';
+      if (role === 'option' &&
           d.new_value !== undefined && d.new_value !== null) {
-        var optPlugin = el.closest('[data-nac-plugin]');
+        var optPluginSlug;
+        if (cached && cached.plugin) {
+          optPluginSlug = cached.plugin;
+        } else {
+          var optPluginNode = el.closest('[data-nac-plugin]');
+          optPluginSlug = optPluginNode
+            ? optPluginNode.getAttribute('data-nac-plugin') : null;
+        }
         var fieldElForPlugin = document.querySelector(
           '[data-nac-id="' + d.nac_id + '"]');
-        var fieldPlugin = fieldElForPlugin
+        var fieldPluginNode = fieldElForPlugin
           ? fieldElForPlugin.closest('[data-nac-plugin]') : null;
-        var samePlugin = optPlugin && fieldPlugin &&
-          optPlugin.getAttribute('data-nac-plugin') ===
-          fieldPlugin.getAttribute('data-nac-plugin');
-        if (samePlugin) {
-          var optVal = el.getAttribute('data-nac-value');
+        var fieldPluginSlug = fieldPluginNode
+          ? fieldPluginNode.getAttribute('data-nac-plugin') : null;
+        if (optPluginSlug && fieldPluginSlug &&
+            optPluginSlug === fieldPluginSlug) {
+          var optVal = (cached && cached.opt_value !== undefined)
+            ? cached.opt_value : el.getAttribute('data-nac-value');
           if (optVal !== null && String(d.new_value) === String(optVal)) {
             return true;
           }
-          var optText = (el.textContent || '').trim();
+          var optText = (cached && cached.opt_text)
+            ? cached.opt_text
+            : (el.textContent || '').trim();
           if (optText && optText === String(d.new_value)) {
             return true;
           }
@@ -1911,6 +1950,14 @@
       }
     }
     sec.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+    /* v1.6.5: visible highlight on the section even when scroll
+       is a no-op (section already in viewport on a wide screen).
+       Pre-v1.6.5 the agent tour was invisible on desktop because
+       all 5 sections fit at once -- speak() called but nothing
+       moved on screen. Pair with CSS rule
+       [data-nac-section-visited="1"] for the red border + glow. */
+    sec.setAttribute('data-nac-section-visited', '1');
+    setTimeout(function () { sec.removeAttribute('data-nac-section-visited'); }, 1500);
     await new Promise(function (r) { setTimeout(r, 350); });
     document.dispatchEvent(new CustomEvent('nac:section:reached', {
       detail: {
@@ -2888,7 +2935,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.6.4',
+    version:      '1.6.5',
     spec_version: '1.6',
     /* registry */
     register:        register,

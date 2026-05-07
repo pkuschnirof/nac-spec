@@ -7,8 +7,16 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.6.1 (spec) / 1.6.4 (reference runtime). v1.6.4
-is a runtime-only patch (2026-05-07): NAC.click resolves two
+**Version**: 1.6.1 (spec) / 1.6.5 (reference runtime). v1.6.5
+is a runtime-only patch (2026-05-07): closes the
+detached-element matcher edge case where a host's click handler
+removes el from the DOM before emitting nac:field:changed
+(combobox-option case). Caches plugin/opt-value at click() time
+so the matcher works regardless of detachment. Also makes
+NAC.go_to_section() set [data-nac-section-visited="1"] on the
+target for 1500ms so an agent tour produces visible feedback
+even when the section is already in viewport. v1.6.4
+was a runtime-only patch (2026-05-07): NAC.click resolved two
 matcher gaps that v1.6.3 left open. (1) Combobox-option click:
 the matcher now accepts nac:field:changed when the clicked
 option's data-nac-value matches event.detail.new_value within
