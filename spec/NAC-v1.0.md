@@ -7,8 +7,16 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.6.1 (spec) / 1.6.3 (reference runtime). v1.6.3
-is a runtime-only patch (2026-05-07): NAC.click is now
+**Version**: 1.6.1 (spec) / 1.6.4 (reference runtime). v1.6.4
+is a runtime-only patch (2026-05-07): NAC.click resolves two
+matcher gaps that v1.6.3 left open. (1) Combobox-option click:
+the matcher now accepts nac:field:changed when the clicked
+option's data-nac-value matches event.detail.new_value within
+the same data-nac-plugin scope. (2) Toggle-class field click
+(checkbox / radio / toggle / switch): the runtime synthesises
+nac:field:changed after el.click() when the host did not emit
+one within ~32ms. v1.6.3
+was a runtime-only patch (2026-05-07): NAC.click was made
 role-aware on the success-event side. Pre-v1.6.3 click() only
 listened for nac:action:succeeded / :failed, so calling it on a
 combobox option (data-nac-role="option", emits

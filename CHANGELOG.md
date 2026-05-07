@@ -22,6 +22,71 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.6.4] - 2026-05-07
+
+PATCH release. NAC.click resolves two real-world matcher gaps
+that v1.6.3 left open. Both surfaced in voice-mode testing
+where the dispatched action ran correctly but the runtime threw
+timeout because no event matched the listener. Strict superset
+of v1.6.3.
+
+### Combobox option click
+
+Pre-v1.6.4 behaviour: `NAC.click('cities.option.3')` timed out
+at 5s even though the option was visibly selected and the
+field's value updated. Diagnosis: the host emits
+`nac:field:changed` on the parent field's nac_id (e.g.
+`cities.search`), not the option's. The clicked option lives
+in a sibling `<ul>` outside the field, so `el.closest()` and
+`fieldHost.contains()` both miss; the matcher rejected the
+event as belonging to a different field.
+
+`_eventMatchesElement` now accepts the match for combobox
+options when:
+
+1. Clicked element has `data-nac-role="option"`.
+2. Option and the field that fired share the same
+   `data-nac-plugin` scope.
+3. Option's `data-nac-value` (or trimmed `textContent`) equals
+   `event.detail.new_value`.
+
+The match is plugin-scoped so unrelated fields cannot
+accidentally resolve a click on an option in another widget.
+
+### Toggle-class field click (checkbox / radio / toggle / switch)
+
+Pre-v1.6.4 behaviour: `NAC.click('field.spread')` (a checkbox)
+timed out because the host wired only a native `change` handler
+and emitted no NAC event; the role-aware listener for
+`nac:action:succeeded` never resolved.
+
+The runtime now synthesises `nac:field:changed` itself after
+`el.click()` when:
+
+- Element role is `field`.
+- `data-nac-field-type` is `checkbox`, `radio`, `toggle`, or
+  `switch`.
+- The host did NOT itself emit `nac:field:changed` within
+  ~32ms (a brief listener detects this and skips the synthesis
+  to avoid double-emit on well-behaved hosts).
+
+The synthesised event carries the new boolean / value plus a
+`synthesised: true` marker so consumers that care can
+distinguish runtime-emitted from host-emitted signals.
+
+`field` is also added to `_CLICK_EVENT_FAMILY` so the matcher
+listens for `nac:field:changed` natively for this role.
+
+### Net effect
+
+After v1.6.4 deploys, the user-reported timeouts:
+- `cities.option.3: timeout` -> resolved on the
+  nac:field:changed event from the cities.search field.
+- `field.spread: timeout` -> resolved on the synthesised event.
+
+No host-side change required; both fixes live entirely in the
+runtime.
+
 ## [1.6.3] - 2026-05-07
 
 PATCH release. Two fixes shipped together because they were

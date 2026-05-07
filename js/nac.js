@@ -1,9 +1,41 @@
 /* =====================================================================
-   NAC v1.6.3 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.6.4 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.6.4 (2026-05-07) -- patch release. NAC.click resolves two
+   real-world matcher gaps that v1.6.3 left open. Both surfaced
+   in Pablo's voice-mode testing where the action executed
+   correctly but the runtime threw timeout because no event
+   matched the listener. Both are fixed in the runtime; no
+   host-side change required.
+
+   1. Combobox-option click. data-nac-role="option" + click():
+      the host's option click handler emits nac:field:changed on
+      the PARENT FIELD's nac_id (e.g. cities.search), but the
+      clicked element has the option's nac_id (e.g.
+      cities.option.3). Pre-v1.6.4 the matcher rejected the event
+      as "another field's signal" because closest() and
+      fieldHost.contains() both miss when the option lives in a
+      sibling <ul> outside the field. _eventMatchesElement now
+      accepts the match when (a) clicked role is "option",
+      (b) option and field belong to the same data-nac-plugin
+      scope, and (c) option's data-nac-value (or textContent)
+      equals event.detail.new_value.
+
+   2. Toggle-class field click. data-nac-role="field" with
+      data-nac-field-type in {checkbox, radio, toggle, switch}:
+      clicking flips the state but the host typically wires only
+      a native change handler (no NAC event emit). NAC.click now
+      synthesises nac:field:changed itself after el.click() with
+      the new boolean value AND a brief listen-window first to
+      avoid double-emit on well-behaved hosts that DO fire it.
+      Plus 'field' is added to _CLICK_EVENT_FAMILY so the matcher
+      listens for nac:field:changed natively.
+
+   Strict superset of v1.6.3; every v1.6.3 plugin remains valid.
 
    v1.6.3 (2026-05-07) -- patch release. NAC.click is now role-aware
    on the success-event side: it picks the right success / failure
@@ -629,7 +661,23 @@
     'step':             ['nac:step:advanced'],
     'pagination-item':  ['nac:table:page_changed'],
     'confirm-button':   ['nac:confirm:resolved', 'nac:confirm:cancelled'],
+    /* v1.6.4: field role for clickable fields (checkbox / radio /
+       toggle). Pre-v1.6.4, NAC.click on a checkbox timed out
+       because the click toggled the state but no event fired
+       and the action-contract listener never resolved. The
+       runtime now also synthesises nac:field:changed after
+       el.click() for these field types (see click() body). */
+    'field':            ['nac:field:changed'],
   };
+
+  /* v1.6.4: field types whose click() act on a value (toggle).
+     For these, the runtime synthesises nac:field:changed after
+     el.click() so an automation runner sees a deterministic
+     completion signal even when the host's own change-handler
+     does not emit one. Other field types (text, number, date)
+     are left alone -- click() on them just focuses; there is no
+     value change to signal. */
+  const _CLICK_TOGGLE_FIELD_TYPES = ['checkbox', 'radio', 'toggle', 'switch'];
 
   async function click(nac_id, opts) {
     /* v1.4.1: removed the 200ms phantom-success leg. Now click()
@@ -697,6 +745,41 @@
     });
     _focusElement(el);
     el.click();
+
+    /* v1.6.4: synthesize nac:field:changed after click() on a
+       toggle-class field (checkbox / radio / toggle / switch).
+       Pre-v1.6.4 a host that wired only a native change handler
+       (no NAC event emit) caused click() to time out at 5s even
+       though the field state did flip. The synthesised event
+       carries the new value so the matcher resolves immediately
+       and downstream listeners see the same shape they would
+       from NAC.fill. Only fires when the host itself did NOT
+       emit nac:field:changed within a microtask (we listen
+       briefly to avoid double-emit on well-behaved hosts). */
+    if (role === 'field') {
+      var ftype = (el.getAttribute('data-nac-field-type') || '').toLowerCase();
+      if (_CLICK_TOGGLE_FIELD_TYPES.indexOf(ftype) >= 0) {
+        var hostEmitted = false;
+        var hostListener = function (ev) {
+          if (_eventMatchesElement(ev, el, nac_id)) hostEmitted = true;
+        };
+        document.addEventListener('nac:field:changed', hostListener, true);
+        setTimeout(function () {
+          document.removeEventListener('nac:field:changed', hostListener, true);
+          if (hostEmitted) return;
+          var newVal = (ftype === 'checkbox' || ftype === 'switch' || ftype === 'toggle')
+            ? !!el.checked
+            : (ftype === 'radio' ? !!el.checked : el.value);
+          var pluginRoot = el.closest('[data-nac-plugin]');
+          _emit('nac:field:changed', {
+            nac_id:    nac_id,
+            new_value: newVal,
+            plugin:    pluginRoot ? pluginRoot.getAttribute('data-nac-plugin') : null,
+            synthesised: true,
+          });
+        }, 32);
+      }
+    }
     return result;
   }
 
@@ -727,6 +810,41 @@
         '[data-nac-role="field"][data-nac-id="' + d.nac_id + '"], ' +
         '[data-nac-role="combobox"][data-nac-id="' + d.nac_id + '"]');
       if (fieldHost && fieldHost.contains(el)) return true;
+      /* v1.6.4: combobox option click. The host's option click
+         handler emits nac:field:changed on the parent field
+         (e.g. cities.search) with new_value matching the option's
+         data-nac-value. The clicked option (e.g. cities.option.3)
+         lives in a separate <ul>, so el.closest() and
+         fieldHost.contains() both miss. Match by:
+         (a) clicked element's role is "option",
+         (b) parent plugins match (option and field belong to
+             the same data-nac-plugin scope),
+         (c) option's data-nac-value (or textContent) equals
+             event.detail.new_value.
+         Without this, NAC.click('cities.option.N') times out
+         at 5s even though the option was selected and the field
+         changed visibly -- the bug Pablo reported 2026-05-07. */
+      if (el.getAttribute('data-nac-role') === 'option' &&
+          d.new_value !== undefined && d.new_value !== null) {
+        var optPlugin = el.closest('[data-nac-plugin]');
+        var fieldElForPlugin = document.querySelector(
+          '[data-nac-id="' + d.nac_id + '"]');
+        var fieldPlugin = fieldElForPlugin
+          ? fieldElForPlugin.closest('[data-nac-plugin]') : null;
+        var samePlugin = optPlugin && fieldPlugin &&
+          optPlugin.getAttribute('data-nac-plugin') ===
+          fieldPlugin.getAttribute('data-nac-plugin');
+        if (samePlugin) {
+          var optVal = el.getAttribute('data-nac-value');
+          if (optVal !== null && String(d.new_value) === String(optVal)) {
+            return true;
+          }
+          var optText = (el.textContent || '').trim();
+          if (optText && optText === String(d.new_value)) {
+            return true;
+          }
+        }
+      }
     }
     return !d; /* defensive: emitter sloppy, no detail at all -> match */
   }
@@ -2770,7 +2888,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.6.3',
+    version:      '1.6.4',
     spec_version: '1.6',
     /* registry */
     register:        register,
