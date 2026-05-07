@@ -7,7 +7,15 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.6.1 (spec) / 1.6.1 (reference runtime). v1.6.1 is
+**Version**: 1.6.1 (spec) / 1.6.2 (reference runtime). v1.6.2 is
+a runtime-only patch (2026-05-07): implements `NAC.drag_drop`
+which spec sec 13.4 had declared since v1.1 but the runtime
+never landed. Discovered same-day by user-testing the v1.6.1
+demo: an agent asked to drag Alpha to the right list timed out
+because no programmatic drag entry point existed; the agent
+fell back to `NAC.click` on a draggable, which never resolves.
+v1.6.2 closes the loop without changing any spec contract.
+v1.6.1 is
 a patch release responding to AI peer review of v1.6.0
 (ChatGPT, Mistral Le Chat, Microsoft Copilot, Claude 4.7 Deep
 Thinking, DeepSeek, HuggingChat, Grok). Strict superset of
@@ -151,6 +159,25 @@ A compliant element in production typically carries both layers:
 Five NAC attributes for the autonomous operator, three ARIA
 attributes for the screen reader. No conflict, no duplication of
 concept.
+
+The downstream beneficiary of this complementarity is, more
+often than not, a human with a disability. ARIA targets the
+assistive tool that announces the UI; NAC targets the
+operator that drives it. Voice-control users (motor
+disabilities), screen-reader users (visual disabilities), and
+users who delegate multi-step UI work to an AI assistant
+(cognitive disabilities, chronic illness, ADHD, executive-
+function variation) all benefit from the same contract.
+NAC's `NAC.describe()` enriches what ARIA exposes with
+operable-state metadata; NAC's `data-nac-id` + `label_i18n`
+gives voice control deterministic identifiers across layouts
+and themes; the agentic loop pattern (sec 9.1, 9.2) makes
+delegation auditable via `NAC.snapshot_state()` +
+`nac:action:succeeded` event logs so the user keeps oversight.
+The longer treatment, including why agent infrastructure and
+accessibility infrastructure converge in the same contract, is
+in [`docs/PHILOSOPHY.md`](../docs/PHILOSOPHY.md) "What NAC
+does for people with disabilities".
 
 Once NAC has multiple production deployments and ports to other
 languages, a subset MAY be proposed to the ARIA WG as an
@@ -2182,9 +2209,16 @@ interface NAC {
          value: any | null /* null clears */): Promise<NacResult>;
   go_to_page(table_nac_id: string, page_n: number): Promise<NacResult>;
 
-  // Drag and drop
+  // Drag and drop. Source MUST be data-nac-role="draggable",
+  // target MUST be data-nac-role="drop-target". Reference runtime
+  // implementation landed in v1.6.2; signature was declared in
+  // v1.1 but the runtime never exposed it until then. Optional
+  // opts.to_index for ordered drop-targets, opts.value passed
+  // through to nac:drag:dropped.
   drag_drop(source_nac_id: string,
-            target_nac_id: string): Promise<NacResult>;
+            target_nac_id: string,
+            opts?: { to_index?: number; value?: any }
+            ): Promise<NacResult>;
 
   // File upload
   upload_file(dropzone_nac_id: string,

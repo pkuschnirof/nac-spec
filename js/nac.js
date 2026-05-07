@@ -1,9 +1,29 @@
 /* =====================================================================
-   NAC v1.6.1 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.6.2 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.6.2 (2026-05-07) -- patch release. Implements NAC.drag_drop
+   (spec sec 13.4), which had been declared in the spec since v1.1
+   but never landed in the runtime. Discovered by user-testing the
+   v1.6.1 demo: an agent asked to "drag Alpha to the right list"
+   timed out because the runtime had no way to invoke a cross-list
+   drag programmatically. The signature matches what the spec
+   already declared:
+     NAC.drag_drop(source_nac_id, target_nac_id, opts?)
+   Source MUST be data-nac-role="draggable", target MUST be
+   data-nac-role="drop-target". Emits the canonical drag event
+   sequence (started -> over -> dropped) with v1.6.1's default-on
+   per-plugin bus + plugin_instance_id payload. Optional opts
+   accept to_index (for ordered drop-targets) and value (passed
+   through to nac:drag:dropped).
+   Strict superset of v1.6.1; every v1.6.1 plugin remains valid
+   (the new method is additive). Demo backend yjNacDemo gains a
+   drag_drop action kind in its allowedKinds + system prompt;
+   demo frontend dispatchAgenticAction routes drag_drop actions
+   through the new runtime method.
 
    v1.6.1 (2026-05-07) -- patch release responding to AI peer review of
    v1.6.0 (ChatGPT, Mistral Le Chat, Microsoft Copilot, Claude 4.7 Deep
@@ -2552,11 +2572,107 @@
     return Promise.resolve({ ok: true });
   }
 
+  /* ---------- v1.6.2: drag_drop (implements spec sec 13.4) -------- */
+
+  /* NAC.drag_drop(source_nac_id, target_nac_id, opts?)
+     Programmatic drag-and-drop. Spec sec 13.4 declared this signature
+     since v1.1 but the runtime never implemented it -- a user testing
+     the v1.6.1 demo discovered the gap when the agent tried to invoke
+     it via NAC.click on a draggable (which timed out). v1.6.2 closes
+     the loop.
+
+     Contract:
+     - source MUST have data-nac-role="draggable".
+     - target MUST have data-nac-role="drop-target".
+     - Emits nac:drag:started immediately, nac:drag:over after the
+       focus barrier, nac:drag:dropped after the DOM move settles.
+       Each event carries plugin + plugin_instance_id per sec 7.4.
+     - Honors v1.6.1 default-on per-plugin bus: events fire on both
+       the plugin root and document.
+     - Resolves on success { ok: true, source, target } or rejects
+       with NacError('not_found' | 'invalid' | 'role_mismatch'). */
+  function drag_drop(source_nac_id, target_nac_id, opts) {
+    opts = opts || {};
+    var source = _byId(source_nac_id);
+    if (!source) {
+      return Promise.reject(new NacError('not_found',
+        'draggable not found: ' + source_nac_id));
+    }
+    var target = _byId(target_nac_id);
+    if (!target) {
+      return Promise.reject(new NacError('not_found',
+        'drop-target not found: ' + target_nac_id));
+    }
+    if (source.getAttribute('data-nac-role') !== 'draggable') {
+      return Promise.reject(new NacError('role_mismatch',
+        'source must have data-nac-role="draggable", got: ' +
+        (source.getAttribute('data-nac-role') || 'null')));
+    }
+    if (target.getAttribute('data-nac-role') !== 'drop-target') {
+      return Promise.reject(new NacError('role_mismatch',
+        'target must have data-nac-role="drop-target", got: ' +
+        (target.getAttribute('data-nac-role') || 'null')));
+    }
+
+    /* v1.4.1 focus barrier: scroll source into view + visual pulse
+       so a human reviewer sees what the agent is doing. */
+    _focusElement(source);
+
+    source.setAttribute('data-nac-state', 'dragging');
+    _emit('nac:drag:started', { from_nac_id: source_nac_id });
+
+    /* Tiny delay so the focus pulse is observable before the DOM
+       move settles. Mirrors the demo's existing UX. */
+    return new Promise(function (resolve, reject) {
+      setTimeout(function () {
+        try {
+          target.setAttribute('data-nac-state', 'drop-target-over');
+          _emit('nac:drag:over', {
+            from_nac_id: source_nac_id,
+            over_nac_id: target_nac_id,
+          });
+          /* Remove any "drop here" placeholder the demo stages. */
+          var empty = target.querySelector('.ne-drag-empty');
+          if (empty) empty.parentNode.removeChild(empty);
+          /* Optional to_index for ordered drop-targets; otherwise
+             append at end. */
+          if (typeof opts.to_index === 'number') {
+            var siblings = Array.prototype.slice.call(
+              target.querySelectorAll('[data-nac-role="draggable"]'));
+            var bounded = Math.max(0, Math.min(opts.to_index, siblings.length));
+            var ref = siblings[bounded] || null;
+            if (ref) target.insertBefore(source, ref);
+            else target.appendChild(source);
+          } else {
+            target.appendChild(source);
+          }
+          source.setAttribute('data-nac-state', 'idle');
+          target.setAttribute('data-nac-state', 'idle');
+          _emit('nac:drag:dropped', {
+            from_nac_id:   source_nac_id,
+            target_nac_id: target_nac_id,
+            value:         opts.value !== undefined ? opts.value : null,
+          });
+          resolve({ ok: true, source: source_nac_id, target: target_nac_id });
+        } catch (err) {
+          source.setAttribute('data-nac-state', 'idle');
+          target.setAttribute('data-nac-state', 'idle');
+          _emit('nac:drag:cancelled', {
+            from_nac_id: source_nac_id,
+            error:       err && err.message ? err.message : String(err),
+          });
+          reject(err instanceof Error ? err :
+            new NacError('invalid', String(err)));
+        }
+      }, 80);
+    });
+  }
+
   /* ---------- Install -------------------------------------------- */
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.6.1',
+    version:      '1.6.2',
     spec_version: '1.6',
     /* registry */
     register:        register,
@@ -2671,6 +2787,8 @@
     timeline_load_newer:         timeline_load_newer,
     /* v1.4 -- reorder (in-list) */
     reorder:                     reorder,
+    /* v1.6.2 -- drag_drop (cross-list, implements spec sec 13.4) */
+    drag_drop:                   drag_drop,
     /* v1.2 -- error codes */
     errors: {
       RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',

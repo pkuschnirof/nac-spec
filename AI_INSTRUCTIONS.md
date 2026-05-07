@@ -279,7 +279,7 @@ NAC is MIT. Free to use, fork, port. Citation requested:
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.6.1 / runtime v1.6.1. 2026. MIT License.
+Spec v1.6.1 / runtime v1.6.2. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```

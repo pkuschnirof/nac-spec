@@ -6,13 +6,13 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.6.1](https://img.shields.io/badge/NAC-v1.6.1-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.6.2](https://img.shields.io/badge/NAC-v1.6.2-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
 **Spec version:** v1.6.1 (2026-05-07).
-**Reference runtime:** v1.6.1 (`NAC.version === '1.6.1'`).
+**Reference runtime:** v1.6.2 (`NAC.version === '1.6.2'`).
 **Strict superset of:** v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
 **What v1.6.1 adds (patch responding to v1.6 AI peer review):**
 - `NAC.is_blocked()` -- canonical "is the UI accepting input?"
@@ -191,6 +191,35 @@ provider authoring") exist specifically to defuse these three.
 - **Future-proof**: the same UI that a human uses today is what an
   agent will use tomorrow. No bespoke API to expose; the UI itself
   is the API.
+- **Accessibility for people with disabilities**: NAC is positioned
+  as agent infrastructure, but its real-world beneficiaries are
+  humans whose access to the UI depends on assistive tools.
+  - **Motor disabilities** -- voice control software (Talon, Voice
+    Access, Dragon, browser voice modes) needs stable semantic IDs
+    to map "click apply" to a button. NAC's `data-nac-id` +
+    `label_i18n` is exactly that contract, deterministic across
+    layouts and themes.
+  - **Visual disabilities** -- ARIA exposes structure to screen
+    readers; `NAC.describe()` adds a manifest-grade snapshot of
+    every operable element with current state, localised label
+    and pending confirms. Screen-reader users can navigate by
+    intent instead of widget taxonomy.
+  - **Cognitive disabilities + chronic illness** -- the agentic
+    loop pattern (spec sec 9.1, 9.2) lets a user delegate
+    multi-step work to an AI assistant in plain language. For
+    users whose capacity varies day-to-day (chronic pain,
+    fatigue, executive-function variation, ADHD, cognitive
+    impairment), agentic delegation IS an accommodation.
+  - **Auditability and agency** -- whatever an agent does via
+    NAC, the user can also do via the same UI buttons +
+    manifest. `NAC.snapshot_state()` plus the
+    `nac:action:succeeded` event log makes every agent action
+    auditable. There is no privileged backdoor; the agent is a
+    proxy, not a substitute.
+
+  See [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md#what-nac-does-for-people-with-disabilities)
+  for the longer treatment of why agent infrastructure and
+  accessibility infrastructure converge in the same contract.
 
 ## What v1.4 adds (May 2026)
 

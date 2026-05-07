@@ -22,6 +22,74 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.6.2] - 2026-05-07
+
+PATCH release. Implements `NAC.drag_drop` (spec sec 13.4),
+which had been declared in the spec since v1.1 but never landed
+in the runtime. Discovered same-day by user-testing the v1.6.1
+demo: an agent asked to "drag Alpha to the right list" timed
+out because the runtime had no programmatic way to invoke a
+cross-list drag. The agent fell back to `NAC.click` on the
+draggable, which had `data-nac-role="draggable"` (not
+`"action"`), so no `nac:action:succeeded` event ever fired and
+the awaitable-write contract timed out at 5s. Symptom for the
+user: bot says "Voy a arrastrar Alpha", then two timeout
+errors. Strict superset of v1.6.1; every v1.6.1 plugin remains
+valid.
+
+### Runtime additions
+
+- **`NAC.drag_drop(source_nac_id, target_nac_id, opts?)` (NEW)**.
+  Signature matches what spec sec 13.4 declared in v1.1:
+  - `source_nac_id` MUST resolve to an element with
+    `data-nac-role="draggable"`.
+  - `target_nac_id` MUST resolve to an element with
+    `data-nac-role="drop-target"`.
+  - `opts.to_index` (optional) for ordered drop-targets.
+  - `opts.value` (optional) passed through to
+    `nac:drag:dropped`.
+  - Returns `Promise<{ok, source, target}>` or rejects with
+    `NacError('not_found' | 'role_mismatch' | 'invalid')`.
+  - Honors v1.4.1 focus barrier on the source (scroll into
+    view + visual pulse).
+  - Emits the canonical drag event sequence with v1.6.1's
+    default-on per-plugin bus + plugin_instance_id payload:
+    `nac:drag:started` -> `nac:drag:over` -> `nac:drag:dropped`.
+    On failure: `nac:drag:cancelled`.
+  - Removes any `.ne-drag-empty` placeholder in the target
+    (matches the demo's existing UX).
+
+### Demo backend additions
+
+- **`yjNacDemo` allowedKinds += `drag_drop`** (with extra fields
+  `target_nac_id` + optional `to_index`).
+- **System prompt teaches the model** when to use `drag_drop`
+  vs `click`, with an explicit warning: "NEVER use 'click' on a
+  draggable" (the precise mistake that caused the user-reported
+  bug).
+
+### Demo frontend additions
+
+- **`dispatchAgenticAction case 'drag_drop'`** routes to
+  `NAC.drag_drop()`. Cache bump v25 -> v26.
+
+### Why the gap existed
+
+The spec's sec 13.4 has declared `NAC.drag_drop` since v1.1
+(2026-04). The runtime focused on the in-list `reorder` verb
+(v1.4) and never circled back. The yujin.app demo wired HTML5
+drag-and-drop directly so humans could use the demo, but no
+programmatic invocation path existed. The seven v1.6 reviewers
+did not catch it because none of them tried drag-and-drop
+through the agent. v1.6.2 closes the loop.
+
+### Implication for NAC consumers
+
+Any UI that ships `data-nac-role="draggable"` /
+`data-nac-role="drop-target"` is now operable end-to-end via
+the documented contract. Test runners + voice + RPA + agentic
+chat all converge on the same `NAC.drag_drop` entry point.
+
 ## [1.6.1] - 2026-05-07
 
 PATCH release responding to AI peer review of v1.6.0. Seven

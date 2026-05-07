@@ -184,6 +184,119 @@ audited against this rule before merging.
   (their own `data-vendor-*` namespace), not pollute NAC's
   vocabulary.
 
+## What NAC does for people with disabilities
+
+> Added 2026-05-07. Until v1.6.2 this document framed NAC almost
+> exclusively in terms of "agents and tools" -- AI assistants,
+> RPA bots, test runners. That framing is correct but
+> incomplete. The downstream beneficiary of every NAC primitive
+> is, more often than not, a human who could not reach the
+> system any other way.
+
+### NAC complements ARIA, but the consequence is human
+
+ARIA targets assistive technologies that present the UI to
+people with disabilities (screen readers, refreshable Braille,
+switch access). ARIA describes structure. NAC adds operability
+on top: a contract for *driving* the UI, not just *announcing*
+it. That distinction matters because the population it serves
+overlaps almost entirely with the population ARIA serves.
+Examples, by disability type:
+
+- **Motor disabilities** (limited dexterity, tremor, paralysis,
+  RSI). Voice control software like Talon, Voice Access,
+  Dragon, or browser voice modes already operates UIs by name,
+  but their reliability collapses on UIs without stable
+  semantic IDs. NAC's `data-nac-id` + `label_i18n` is exactly
+  the contract those tools need: "click apply", "open patch
+  manager", "drag Alpha to the right list" all become
+  deterministic regardless of layout, theme, or rendering
+  framework. The user's intent maps to one nac_id; the runtime
+  drives the UI; the user never has to memorise pixel
+  positions or DOM structure.
+- **Visual disabilities** (blindness, low vision, dyschromatopsia,
+  cataract, photophobia). Screen readers consume ARIA, but
+  ARIA stops at structure. `NAC.describe()` returns a
+  manifest-grade snapshot of every operable element with its
+  current state, label in the user's preferred locale,
+  feedback messages, and pending confirms -- a richer model
+  than the accessibility tree alone. A screen reader plus
+  `NAC.describe()` produces a narration the user can navigate
+  by intent ("what can I do here?") instead of by widget
+  taxonomy.
+- **Cognitive disabilities** (dyslexia, autism spectrum,
+  ADHD, executive-function variation, chronic fatigue). NAC's
+  agentic loop pattern (spec sec 9.1, 9.2) lets a user
+  delegate multi-step UI work to an AI assistant in plain
+  language: "extract last quarter's sales report and email it
+  to the team." For a user who finds 10-step UI navigation
+  exhausting or impossible to plan, the agent becomes the
+  prosthetic. The 10-locale demo at yujin.app/nac-spec
+  shows this concretely: the bot accepts "tocate un Do" /
+  "play a C" / "弹一个 Do" and the agent dispatches the click
+  for the user.
+- **Hearing disabilities** (deafness, hard of hearing). NAC
+  itself does not produce audio, but its event model lets
+  custom UAs build consistent visual confirmations for every
+  action: `nac:action:succeeded` is a deterministic signal a
+  visual notification system can subscribe to without parsing
+  app-specific DOM. The contract removes the per-app
+  engineering tax that currently keeps assistive notification
+  layers limited to a small set of supported sites.
+- **Disabilities that vary day to day** (chronic illness, pain
+  flares, medication side effects, mental health). On a hard
+  day, the same person who navigates the UI fluently on a
+  good day can delegate the work to an agent through NAC and
+  not lose access to the system. A contract that supports
+  agentic operation IS an accessibility feature for users
+  whose capabilities are not stable across sessions.
+
+### Why this is not just "AI accessibility"
+
+Disability advocacy correctly distrusts framings that reduce
+accessibility to "let an AI do it for you" -- agency matters,
+and over-reliance on opaque AI is a real risk. NAC's design
+mitigates that risk because the contract is the same whether
+the operator is the user, an assistive tool the user
+controls, an AI the user delegates to, or a test runner the
+user inspects:
+
+- **The user keeps the surface.** Whatever an agent can do via
+  NAC, the user can also do via the same UI buttons +
+  manifest. There is no privileged backdoor; the agent is a
+  proxy, not a substitute.
+- **The contract is auditable.** `NAC.snapshot_state()` +
+  `audit log of nac:action:succeeded` events let a user (or
+  their advocate) verify what an agent did. ARIA cannot do
+  this; backend APIs cannot do this; only a UI-surface
+  contract can.
+- **The contract is portable.** A user who relies on a
+  specific assistive tool (voice control, switch access,
+  agentic chat, eye tracker) is not locked to a vendor: any
+  NAC consumer reads the same `data-nac-*` attributes. If
+  one tool stops being maintained, another can replace it
+  without re-instrumenting the apps.
+
+### The operational consequence
+
+Every spec change that lowers the cost of NAC adoption is, in
+practice, an accessibility change. The v1.6.1 hard-error drift
+gate forces design-system layers to emit ARIA + NAC atomically,
+which means the screen reader and the agent see the same
+state in lockstep. The v1.6.1 design-system pattern in
+[`MANUAL.md`](MANUAL.md) is also the cheapest path for a team
+that wants to ship accessible UIs at scale -- the same
+primitive that makes the agent reliable makes the screen
+reader reliable. The two needs converge.
+
+NAC's stated audience ("AI agents, voice assistants, RPA bots,
+test runners") is the *technical surface*. The audience that
+benefits in practice is broader: it includes everyone for whom
+the human-default UI is a barrier, and a deterministic
+operable contract is an accommodation.
+
+---
+
 ## Closing thought
 
 The deepest reason NAC exists is simple:
@@ -192,6 +305,13 @@ The deepest reason NAC exists is simple:
 > enough for any operator. If it is not good enough for any
 > operator, it is probably not good enough for the human
 > either.
+
+The corollary, which v1.6.2 makes explicit:
+
+> "Any human" includes humans whose access to the UI depends
+> on assistive tools, voice, agents, or whatever they need.
+> NAC is the contract that keeps the system reachable for all
+> of them.
 
 A system that disappears for the human is the same system that
 disappears for the agent. NAC is the contract that makes that
