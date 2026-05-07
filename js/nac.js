@@ -1,9 +1,25 @@
 /* =====================================================================
-   NAC v1.6.6 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.7.0 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.7.0 (2026-05-07) -- MINOR release. Spec sec 6.2 declares the
+   canonical TypeScript shape for every nac:* event detail. Each
+   widget family gets its own entity-specific id field (action_id,
+   field_id, tab_id, section_id, column_id, source_id, etc) so
+   consumers can pattern-match on a stable contract instead of
+   piling defensive regexes against ambiguous nac_id usage. The
+   peer review v1.6 round identified this as the #1 abandonment
+   cause. Strict superset of v1.6.6 -- the runtime matcher accepts
+   both canonical and legacy field names; legacy emits a
+   `legacy_event_field` warning in validate(). v2.0 (the public
+   announce release) drops the legacy fallbacks entirely.
+
+   Reference runtime: drag_drop, plugin:reset and other internal
+   emitters now emit BOTH canonical and legacy fields during the
+   transition. Hosts SHOULD do the same.
 
    v1.6.6 (2026-05-07) -- patch release. Adds two roles to the
    click-event-family map:
@@ -842,15 +858,28 @@
      emitter and time out). */
   function _eventMatchesElement(e, el, nac_id, cached) {
     var d = e && e.detail;
-    if (d && (d.nac_id === nac_id || d.from_nac_id === nac_id ||
-              d.target_nac_id === nac_id || d.tab_id === nac_id ||
-              d.section_id === nac_id || d.step_id === nac_id ||
-              d.id === nac_id || d.breadcrumb_id === nac_id ||
-              /* v1.6.6: table sort/filter controls fire events
-                 whose detail uses column_nac_id / filter_nac_id
-                 to identify which control fired, not nac_id
-                 (which carries the table itself). */
-              d.column_nac_id === nac_id || d.filter_nac_id === nac_id)) {
+    if (d && (
+              /* v1.7.0 canonical fields (sec 6.2). */
+              d.action_id === nac_id || d.field_id === nac_id ||
+              d.tab_id === nac_id || d.section_id === nac_id ||
+              d.column_id === nac_id || d.filter_id === nac_id ||
+              d.source_id === nac_id || d.target_id === nac_id ||
+              d.list_id === nac_id || d.item_id === nac_id ||
+              d.tree_id === nac_id || d.node_id === nac_id ||
+              d.breadcrumb_id === nac_id || d.confirm_id === nac_id ||
+              d.toast_id === nac_id || d.drawer_id === nac_id ||
+              d.calendar_id === nac_id || d.event_id === nac_id ||
+              d.chart_id === nac_id || d.series_id === nac_id ||
+              d.map_id === nac_id || d.marker_id === nac_id ||
+              d.richtext_id === nac_id || d.dropzone_id === nac_id ||
+              d.stepper_id === nac_id || d.carousel_id === nac_id ||
+              d.timeline_id === nac_id || d.option_id === nac_id ||
+              d.table_id === nac_id ||
+              /* v1.6.x legacy aliases (deprecated, removed in v2.0). */
+              d.nac_id === nac_id || d.from_nac_id === nac_id ||
+              d.target_nac_id === nac_id || d.id === nac_id ||
+              d.column_nac_id === nac_id || d.filter_nac_id === nac_id ||
+              d.step_id === nac_id || d.over_nac_id === nac_id)) {
       return true;
     }
     if (e.target && (e.target === el || (el.contains && el.contains(e.target)))) {
@@ -2907,7 +2936,11 @@
     _focusElement(source);
 
     source.setAttribute('data-nac-state', 'dragging');
-    _emit('nac:drag:started', { from_nac_id: source_nac_id });
+    /* v1.7.0: emit canonical source_id + legacy from_nac_id alias. */
+    _emit('nac:drag:started', {
+      source_id:   source_nac_id,
+      from_nac_id: source_nac_id, /* legacy, removed v2.0 */
+    });
 
     /* Tiny delay so the focus pulse is observable before the DOM
        move settles. Mirrors the demo's existing UX. */
@@ -2916,8 +2949,10 @@
         try {
           target.setAttribute('data-nac-state', 'drop-target-over');
           _emit('nac:drag:over', {
-            from_nac_id: source_nac_id,
-            over_nac_id: target_nac_id,
+            source_id:   source_nac_id,           /* v1.7.0 canonical */
+            target_id:   target_nac_id,           /* v1.7.0 canonical */
+            from_nac_id: source_nac_id,           /* legacy, drop v2.0 */
+            over_nac_id: target_nac_id,           /* legacy, drop v2.0 */
           });
           /* Remove any "drop here" placeholder the demo stages. */
           var empty = target.querySelector('.ne-drag-empty');
@@ -2937,8 +2972,10 @@
           source.setAttribute('data-nac-state', 'idle');
           target.setAttribute('data-nac-state', 'idle');
           _emit('nac:drag:dropped', {
-            from_nac_id:   source_nac_id,
-            target_nac_id: target_nac_id,
+            source_id:     source_nac_id,         /* v1.7.0 canonical */
+            target_id:     target_nac_id,         /* v1.7.0 canonical */
+            from_nac_id:   source_nac_id,         /* legacy, drop v2.0 */
+            target_nac_id: target_nac_id,         /* legacy, drop v2.0 */
             value:         opts.value !== undefined ? opts.value : null,
           });
           resolve({ ok: true, source: source_nac_id, target: target_nac_id });
@@ -2946,7 +2983,9 @@
           source.setAttribute('data-nac-state', 'idle');
           target.setAttribute('data-nac-state', 'idle');
           _emit('nac:drag:cancelled', {
-            from_nac_id: source_nac_id,
+            source_id:   source_nac_id,           /* v1.7.0 canonical */
+            from_nac_id: source_nac_id,           /* legacy, drop v2.0 */
+            reason:      'aborted',
             error:       err && err.message ? err.message : String(err),
           });
           reject(err instanceof Error ? err :
@@ -2960,8 +2999,8 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.6.6',
-    spec_version: '1.6',
+    version:      '1.7.0',
+    spec_version: '1.7',
     /* registry */
     register:        register,
     unregister:      unregister,

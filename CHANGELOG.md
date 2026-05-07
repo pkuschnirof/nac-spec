@@ -22,6 +22,104 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.7.0] - 2026-05-07
+
+MINOR release. Closes the v1.6 peer review's #1 abandonment
+cause: "the validator is reactive, not preventive". Pre-v1.7,
+the spec normativised event NAMES but left detail FIELD NAMES
+under-specified, so consumer-side validators (wizards, test
+runners, dashboards) had to write defensive regex matches
+against ambiguous nac_id fields that meant different things in
+different events. v1.7.0 fixes this with normative section 6.2
+"Canonical event detail shapes": every nac:* event family now
+has a TypeScript-style interface declaring its required +
+optional fields, with each widget family getting its own
+entity-specific id (action_id, field_id, tab_id, section_id,
+column_id, source_id, target_id, list_id, item_id, ...).
+
+Strict superset of v1.6.6. Legacy field names (e.g. nac_id in
+action / field / tab events, column_nac_id, from_nac_id,
+target_nac_id, etc) stay accepted by the runtime matcher with
+a `legacy_event_field` validator finding (warn at NAC-2, warn
+at NAC-3 with hard-error opt-in). v2.0 drops legacy entirely.
+
+### Spec additions (normative)
+
+- **Section 6.2 Canonical event detail shapes** (NEW). 27
+  subsections covering ~45 events across every widget family
+  declared in sec 6.1. Each subsection lists the canonical
+  TypeScript interface plus migration note.
+
+  Sec 6.2.28 ships the legacy -> canonical migration table:
+
+  | Legacy field | Canonical |
+  |---|---|
+  | `nac_id` (in action / field / tab / accordion / section / table events) | per-family entity id |
+  | `column_nac_id` | `column_id` |
+  | `filter_nac_id` | `filter_id` |
+  | `from_nac_id` | `source_id` |
+  | `over_nac_id` | `target_id` |
+  | `target_nac_id` (drag) | `target_id` |
+  | `plugin_slug` | `plugin` |
+
+- **Section 6.2.27 Validator behaviour at NAC-3**. New findings:
+  `legacy_event_field` (warn / opt-in error),
+  `missing_required_event_field` (error at NAC-3),
+  `unknown_event_family` (warn).
+
+### Runtime additions (js/nac.js v1.7.0)
+
+- `_eventMatchesElement` now matches against ~30 canonical
+  field-name aliases plus the v1.6.x legacy aliases, all
+  treated as equally valid match targets.
+- Reference runtime emitters (`drag_drop`, `plugin:reset`,
+  etc) emit BOTH canonical and legacy fields for the
+  transition window. Hosts SHOULD do the same.
+- `global.NAC.version === '1.7.0'`,
+  `global.NAC.spec_version === '1.7'`.
+
+### Demo additions
+
+The reference demo at yujin.app/nac-spec/example.php gained
+11 new widget cards covering every event family in sec 6.2
+that wasn't already exercised:
+
+| Card | Plugin slug | Events covered |
+|---|---|---|
+| Stepper | stepper_demo | step:advanced, step:back |
+| Tree | tree_demo | tree:expanded, :collapsed, :selected |
+| Toast | toast_demo | toast:shown, toast:dismissed |
+| Drawer | drawer_demo | drawer:opened, drawer:closed |
+| Calendar | calendar_demo | calendar:view_changed, :event_selected |
+| Chart | chart_demo | chart:data_loaded, :series_toggled |
+| Map | map_demo | map:focused, map:marker_selected |
+| Richtext | richtext_demo | richtext:formatted, :link_inserted |
+| Breadcrumb | breadcrumb_demo | breadcrumb:navigated |
+| Carousel | carousel_demo | carousel:advanced |
+| Timeline | timeline_demo | timeline:loaded |
+
+Each emits canonical detail shapes per sec 6.2.
+
+### Self-test additions
+
+New `selftest.event_conformance` button (next to "Run NAC
+self-test") + global `window.runEventConformance()`. It:
+
+1. Subscribes to every `nac:*` event family in sec 6.2.
+2. Programmatically clicks the trigger of every showcase
+   widget.
+3. Captures every event emitted.
+4. Verifies each canonical event has its required fields
+   (per sec 6.2 interfaces) plus the universal `plugin` +
+   `plugin_instance_id`.
+5. Reports per family `[PASS] / [FAIL] / [MISS]` plus a
+   total event count, written into `selftest.output`.
+
+A v1.7-conformant page passes every PASS check; a partially
+compliant page sees FAIL for the event families it ships but
+emits with non-canonical shape; a page lacking a family sees
+MISS for events it never fires.
+
 ## [1.6.6] - 2026-05-07
 
 PATCH release. Two role-event-family additions for table

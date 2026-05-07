@@ -1166,7 +1166,7 @@ MIT. See [LICENSE](../LICENSE).
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.6.1 / runtime v1.6.6. 2026. MIT License.
+Spec v1.7.0 / runtime v1.7.0. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```

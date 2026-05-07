@@ -7,12 +7,28 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.6.1 (spec) / 1.6.6 (reference runtime). v1.6.6
-adds 'sort-control' and 'filter-control' to the role-event
+**Version**: 1.7.0 (spec) / 1.7.0 (reference runtime). v1.7.0
+adds normative section 6.2 declaring the canonical TypeScript
+shape for every nac:* event detail. Each widget family gets
+its own entity-specific id field (action_id, field_id, tab_id,
+section_id, column_id, source_id, target_id, etc) instead of
+the ambiguous nac_id. Closes the v1.6 peer-review #1
+abandonment cause: "the validator is reactive, not preventive".
+Strict superset of v1.6.6 -- legacy field names (e.g. nac_id
+in action events) stay accepted by the runtime matcher with a
+legacy_event_field validator warning; v2.0 (the public-announce
+release) drops them entirely. The reference demo at
+yujin.app/nac-spec/example.php gained 11 new widget cards
+covering every event family in sec 6.2 (stepper, tree, toast,
+drawer, calendar, chart, map, richtext, breadcrumb, carousel,
+timeline) and a new "v1.7 event conformance" self-test that
+programmatically exercises each widget and asserts the emitted
+event matches its canonical shape. v1.6.6
+added 'sort-control' and 'filter-control' to the role-event
 family map (so NAC.click on table column headers + filter
 inputs resolves on nac:table:sort_changed /
 nac:table:filter_changed instead of timing out). The matcher
-also accepts column_nac_id and filter_nac_id as nac_id-equal
+also accepted column_nac_id and filter_nac_id as nac_id-equal
 detail fields for those events. v1.6.5
 was a runtime-only patch (2026-05-07): closes the
 detached-element matcher edge case where a host's click handler
@@ -1161,6 +1177,477 @@ explicit so a plugin author who ships only the v1.0 base + a
 single tablist + a confirm dialog does NOT accidentally lose
 NAC-3 by failing to emit `nac:accordion:expanded` for an
 accordion the plugin never uses.
+
+---
+
+## 6.2. Canonical event detail shapes (normative, added v1.7.0)
+
+> Added in v1.7.0 in response to the v1.6 AI peer review's #1
+> abandonment cause -- "the validator is reactive, not
+> preventive". v1.4..v1.6.6 had the runtime accumulate matcher
+> tolerances (accept `nac_id` here, `column_nac_id` there,
+> `from_nac_id` elsewhere) so consumers could cope with hosts
+> that emitted events with divergent detail shapes. v1.7.0
+> closes the loop by declaring the canonical shape for every
+> NAC event, with each event family having its own
+> entity-specific id field (`action_id`, `field_id`, `tab_id`,
+> `column_id`, `section_id`, etc) instead of the ambiguous
+> `nac_id`. The runtime keeps legacy field names (e.g.
+> `nac_id`) accepted for one major version with a
+> `legacy_event_field` warning emitted by the validator;
+> v2.0 will drop them.
+
+### 6.2.1. Universal base
+
+Every `nac:*` event detail extends:
+
+```typescript
+interface NacEventBase {
+  // From data-nac-plugin on the originating root. Required.
+  plugin: string;
+  // From data-nac-plugin-id on the originating root, when
+  // the host mounts multiple instances of the same plugin.
+  // null when only one instance exists. Required field; may
+  // be null. See sec 7.4.
+  plugin_instance_id: string | null;
+  // Optional wall-clock timestamp the runtime SHOULD set when
+  // it emits an event itself; hosts MAY set it. Useful for
+  // telemetry consumers ordering events across plugin buses.
+  ts?: number;
+}
+```
+
+The legacy field `plugin_slug` (used in v1.0..v1.3 emitters as
+the plugin id) is deprecated; v1.4.1+ runtimes MUST alias it
+to `plugin`. Implementations MAY emit both for compatibility.
+
+### 6.2.2. Plugin lifecycle (4+1 events)
+
+```typescript
+interface NacPluginOpeningDetail extends NacEventBase {}
+interface NacPluginOpenedDetail extends NacEventBase {
+  version: string;     // from manifest.version, required
+}
+interface NacPluginClosingDetail extends NacEventBase {}
+interface NacPluginClosedDetail extends NacEventBase {}
+interface NacPluginResetDetail extends NacEventBase {
+  source: 'custom' | 'generic' | 'custom+generic';
+  reason?: string;
+}
+```
+
+### 6.2.3. Action lifecycle (3 events)
+
+```typescript
+interface NacActionDispatchingDetail extends NacEventBase {
+  action_id: string;   // canonical (was nac_id in v1.0..v1.6)
+  verb: string;        // from manifest.actions[].verb
+}
+interface NacActionSucceededDetail extends NacEventBase {
+  action_id: string;
+  verb: string;
+  result?: any;        // action-specific payload
+  duration_ms?: number;
+}
+interface NacActionFailedDetail extends NacEventBase {
+  action_id: string;
+  verb: string;
+  error: string;       // human-readable
+  error_code?: string; // machine-readable, e.g. 'timeout'
+}
+```
+
+Legacy alias: `nac_id` maps to `action_id`.
+
+### 6.2.4. Field changed (1 event)
+
+```typescript
+interface NacFieldChangedDetail extends NacEventBase {
+  field_id: string;        // canonical (was nac_id)
+  field_type?: string;     // 'text'|'select'|'checkbox'|...
+  new_value: any;          // primitive or object
+  old_value?: any;         // optional
+  // For combobox option clicks: id of the chosen option.
+  // Pre-v1.7 was implicit (matcher used data-nac-value).
+  option_id?: string | null;
+  synthesised?: boolean;   // set by runtime when click() on a
+                           // toggle field synthesised the event
+                           // (see v1.6.4 runtime patch).
+}
+```
+
+Legacy alias: `nac_id` maps to `field_id`.
+
+### 6.2.5. Tab changed (1 event)
+
+```typescript
+interface NacTabChangedDetail extends NacEventBase {
+  tab_id: string;          // canonical (was nac_id or tab_id)
+  tabset_id?: string;      // optional, the tablist container
+  prior_tab_id?: string | null;
+}
+```
+
+### 6.2.6. Accordion (2 events)
+
+```typescript
+interface NacAccordionExpandedDetail extends NacEventBase {
+  section_id: string;      // canonical (was nac_id)
+}
+interface NacAccordionCollapsedDetail extends NacEventBase {
+  section_id: string;
+}
+```
+
+Legacy alias: `nac:section:expanded` (used by some v1.0..v1.6
+hosts) is deprecated; emitters MUST switch to
+`nac:accordion:expanded` for accordion-section widgets. The
+generic `nac:section:reached` (sec 6.2.18) is for SECTION
+LANDMARKS, NOT for accordion sections -- different role.
+
+### 6.2.7. Confirm-dialog (3 events)
+
+```typescript
+interface NacConfirmRequestedDetail extends NacEventBase {
+  confirm_id: string;
+  message: string;
+}
+interface NacConfirmResolvedDetail extends NacEventBase {
+  confirm_id: string;
+  choice: string;          // 'confirm' | 'cancel' | <custom>
+}
+interface NacConfirmCancelledDetail extends NacEventBase {
+  confirm_id: string;
+}
+```
+
+### 6.2.8. Stepper (2 events)
+
+```typescript
+interface NacStepAdvancedDetail extends NacEventBase {
+  stepper_id: string;
+  from_index: number;
+  to_index: number;
+  total: number;
+}
+interface NacStepBackDetail extends NacEventBase {
+  stepper_id: string;
+  from_index: number;
+  to_index: number;
+}
+```
+
+### 6.2.9. Tree (3 events)
+
+```typescript
+interface NacTreeExpandedDetail extends NacEventBase {
+  tree_id: string;
+  node_id: string;
+}
+interface NacTreeCollapsedDetail extends NacEventBase {
+  tree_id: string;
+  node_id: string;
+}
+interface NacTreeSelectedDetail extends NacEventBase {
+  tree_id: string;
+  node_id: string;
+  prior_node_id?: string | null;
+}
+```
+
+### 6.2.10. Toast / banner (2 events)
+
+```typescript
+interface NacToastShownDetail extends NacEventBase {
+  toast_id: string;
+  severity: 'info' | 'warn' | 'error' | 'success';
+  message: string;
+}
+interface NacToastDismissedDetail extends NacEventBase {
+  toast_id: string;
+  by: 'user' | 'timeout' | 'programmatic';
+}
+```
+
+### 6.2.11. Drawer / bottom-sheet (3 events)
+
+```typescript
+interface NacDrawerOpenedDetail extends NacEventBase {
+  drawer_id: string;
+}
+interface NacDrawerClosedDetail extends NacEventBase {
+  drawer_id: string;
+}
+interface NacDrawerPeekedDetail extends NacEventBase {
+  drawer_id: string;
+}
+```
+
+### 6.2.12. Calendar (2 events)
+
+```typescript
+interface NacCalendarViewChangedDetail extends NacEventBase {
+  calendar_id: string;
+  view: 'month' | 'week' | 'day' | 'agenda' | string;
+  range_start?: string;    // ISO 8601
+  range_end?: string;
+}
+interface NacCalendarEventSelectedDetail extends NacEventBase {
+  calendar_id: string;
+  event_id: string;
+}
+```
+
+### 6.2.13. Chart (2 events)
+
+```typescript
+interface NacChartDataLoadedDetail extends NacEventBase {
+  chart_id: string;
+  series_count: number;
+  point_count?: number;
+}
+interface NacChartSeriesToggledDetail extends NacEventBase {
+  chart_id: string;
+  series_id: string;
+  visible: boolean;
+}
+```
+
+### 6.2.14. Map (2 events)
+
+```typescript
+interface NacMapFocusedDetail extends NacEventBase {
+  map_id: string;
+  center?: { lat: number; lng: number };
+  zoom?: number;
+}
+interface NacMapMarkerSelectedDetail extends NacEventBase {
+  map_id: string;
+  marker_id: string;
+}
+```
+
+### 6.2.15. Richtext (2 events)
+
+```typescript
+interface NacRichtextFormattedDetail extends NacEventBase {
+  richtext_id: string;
+  format: string;          // 'bold'|'italic'|'h1'|...
+}
+interface NacRichtextLinkInsertedDetail extends NacEventBase {
+  richtext_id: string;
+  href: string;
+}
+```
+
+### 6.2.16. Breadcrumb (1 event)
+
+```typescript
+interface NacBreadcrumbNavigatedDetail extends NacEventBase {
+  breadcrumb_id: string;
+  to_index: number;
+  to_label?: string;
+}
+```
+
+### 6.2.17. Carousel (1 event)
+
+```typescript
+interface NacCarouselAdvancedDetail extends NacEventBase {
+  carousel_id: string;
+  index: number;
+  total: number;
+  direction: 'forward' | 'backward';
+}
+```
+
+### 6.2.18. Timeline (1 event)
+
+```typescript
+interface NacTimelineLoadedDetail extends NacEventBase {
+  timeline_id: string;
+  loaded_count: number;
+  direction: 'older' | 'newer';
+}
+```
+
+### 6.2.19. Reorder list (2 events)
+
+```typescript
+interface NacReorderAppliedDetail extends NacEventBase {
+  list_id: string;         // canonical
+  item_id: string;         // canonical
+  from_index: number;
+  to_index: number;
+}
+interface NacListReorderedDetail extends NacEventBase {
+  list_id: string;
+  item_id: string;
+  from_index: number;
+  to_index: number;
+}
+```
+
+### 6.2.20. Table (3 events)
+
+```typescript
+interface NacTableSortChangedDetail extends NacEventBase {
+  table_id: string;        // canonical (was nac_id)
+  column_id: string;       // canonical (was column_nac_id)
+  direction: 'asc' | 'desc' | 'none';
+}
+interface NacTableFilterChangedDetail extends NacEventBase {
+  table_id: string;
+  filter_id: string;       // canonical (was filter_nac_id)
+  value: any;
+  cleared: boolean;
+}
+interface NacTablePageChangedDetail extends NacEventBase {
+  table_id: string;
+  page_n: number;
+  page_size: number;
+}
+```
+
+### 6.2.21. Slider (1 event)
+
+```typescript
+interface NacSliderValueChangedDetail extends NacEventBase {
+  field_id: string;        // slider is a field role
+  value: number;
+  min?: number;
+  max?: number;
+}
+```
+
+### 6.2.22. Drag (4 events)
+
+```typescript
+interface NacDragStartedDetail extends NacEventBase {
+  source_id: string;       // canonical (was from_nac_id)
+}
+interface NacDragOverDetail extends NacEventBase {
+  source_id: string;
+  target_id: string;       // canonical (was over_nac_id)
+}
+interface NacDragDroppedDetail extends NacEventBase {
+  source_id: string;
+  target_id: string;       // canonical (was target_nac_id)
+  value?: any;
+}
+interface NacDragCancelledDetail extends NacEventBase {
+  source_id: string;
+  reason?: 'esc' | 'invalid_target' | 'aborted';
+}
+```
+
+### 6.2.23. Dropzone / file upload (5 events)
+
+```typescript
+interface NacDropzoneDroppedDetail extends NacEventBase {
+  dropzone_id: string;
+  file: { name: string; size: number; type: string };
+}
+interface NacDropzoneDragOverDetail extends NacEventBase {
+  dropzone_id: string;
+}
+interface NacFileAddedDetail extends NacEventBase {
+  dropzone_id: string;
+  file: { name: string; size: number; type: string };
+}
+interface NacFileUploadProgressDetail extends NacEventBase {
+  dropzone_id: string;
+  bytes_sent: number;
+  bytes_total: number;
+  pct: number;
+}
+interface NacFileUploadCompletedDetail extends NacEventBase {
+  dropzone_id: string;
+  file: { name: string; size: number };
+  file_id: string;
+}
+```
+
+### 6.2.24. Section reached (1 event)
+
+```typescript
+interface NacSectionReachedDetail extends NacEventBase {
+  section_id: string;      // canonical (was nac_id)
+  label?: string;
+}
+```
+
+### 6.2.25. Generic state changed (1 informative event)
+
+```typescript
+interface NacStateChangedDetail extends NacEventBase {
+  // The element that changed. nac_id is correct here because
+  // this generic event covers ANY data-nac-id'd element with
+  // a custom state (not a typed widget event); there is no
+  // entity-specific id naming.
+  nac_id: string;
+  state: string;           // current data-nac-state value
+  prior_state?: string;
+}
+```
+
+### 6.2.26. Focus moved (1 informative, runtime-emitted)
+
+```typescript
+interface NacFocusMovedDetail extends NacEventBase {
+  nac_id: string;          // the element receiving focus
+  via: 'click' | 'fill' | 'select' | 'tab' | 'keyboard' |
+       'programmatic';
+}
+```
+
+### 6.2.27. Validator behaviour at NAC-3
+
+`NAC.validate(slug)` and `NAC.validate_global()` MUST inspect
+emitted events (during a CI dry-run that exercises the plugin's
+actions and fields) and report:
+
+- `legacy_event_field` (severity `warn` at NAC-2, `warn` at
+  NAC-3 with hard-error opt-in via
+  `set_validation_tolerance({legacy_fields:'error'})`).
+  Triggered when an event detail uses a deprecated alias
+  (e.g. `nac_id` for an action event instead of `action_id`).
+- `missing_required_event_field` (severity `error` at NAC-3).
+  Triggered when an event detail omits a field this section
+  declares as required.
+- `unknown_event_family` (severity `warn`). Triggered when a
+  plugin emits a `nac:*` event whose family is not declared
+  in this section AND the plugin's manifest does not declare
+  it as a custom event.
+
+### 6.2.28. Migration from v1.6.x
+
+Pre-v1.7 hosts may emit:
+
+| Legacy field | Canonical (v1.7+) |
+|---|---|
+| `nac_id` (in action / field / tab / accordion / section / table events) | per-family entity id (`action_id`, `field_id`, `tab_id`, `section_id`, `table_id`) |
+| `column_nac_id` | `column_id` |
+| `filter_nac_id` | `filter_id` |
+| `from_nac_id` | `source_id` |
+| `over_nac_id` | `target_id` |
+| `target_nac_id` (drag) | `target_id` |
+| `tab_id` (when used as legacy generic in non-tab events) | per-family canonical |
+| `plugin_slug` | `plugin` |
+
+Hosts SHOULD emit both legacy AND canonical fields during the
+v1.7 transition window so consumers on either side keep working.
+The reference runtime emits both. v2.0 drops legacy fields
+entirely; hosts MUST canonicalise before that release.
+
+### 6.2.29. Why this is a strict superset
+
+Existing v1.6.x plugins continue to validate at NAC-3 because
+the runtime matcher accepts legacy field names with a warn-level
+finding. The hard-error path is opt-in. Net effect: no plugin
+breaks; new plugins write against the canonical spec from
+day one; the matcher tolerance code has a documented sunset
+(v2.0).
 
 ---
 
