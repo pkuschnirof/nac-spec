@@ -4,11 +4,11 @@ A hands-on guide to making a UI navigable by AI, voice and RPA.
 Read [spec/NAC-v1.0.md](../spec/NAC-v1.0.md) first for the formal
 contract; this manual focuses on day-to-day patterns.
 
-> **Version**: this manual tracks NAC spec v1.6 (runtime v1.6.0).
-> Every version since v1.0 is a strict superset, so the v1.0
-> patterns shown here keep working unchanged. New primitives
-> introduced in v1.1..v1.6 are documented in their own sections;
-> follow the spec links for the normative contract.
+> **Version**: this manual tracks NAC spec v1.6.1 (runtime
+> v1.6.1). Every version since v1.0 is a strict superset, so the
+> v1.0 patterns shown here keep working unchanged. New primitives
+> introduced in v1.1..v1.6.1 are documented in their own
+> sections; follow the spec links for the normative contract.
 
 > **What v1.6 adds**: the `NAC.reset()` plugin reset primitive.
 > An operator can ask any plugin -- or the whole page -- to
@@ -701,6 +701,258 @@ framework-specific guards: `useEffect` is client-only in React,
 
 ---
 
+## Design-system layer pattern
+
+> Added in v1.6.1 in response to AI peer review of v1.6.0. **Five
+> of seven reviewers (Mistral, Copilot, Claude 4.7, DeepSeek,
+> HuggingChat) flagged the ARIA dual-source-of-truth tax as the #1
+> abandonment cause** when adopting NAC alongside an existing
+> ARIA-instrumented codebase. Claude 4.7 wrote: "Once a team sees
+> the validator block CI on every drift between data-nac-state and
+> the corresponding aria-*, internal pressure builds either to
+> drop NAC or to build a design-system abstraction that emits
+> both." This chapter is that design-system abstraction, written
+> out concretely.
+
+If your project already has a Button / Input / Toggle / Modal
+component library, the cheapest place to absorb the NAC + ARIA
+dual-attribute discipline is **inside those primitives**. Every
+consumer that uses `<Button>` automatically gets both layers
+without touching their own code. Drift is then a property of the
+component library (one place to fix) instead of a property of
+every screen (where teams get tired and skip).
+
+### Goal
+
+A single internal primitive that:
+
+- accepts an action verb + state as props,
+- emits `data-nac-id` / `data-nac-role` / `data-nac-state` and the
+  corresponding `aria-*` attributes in the SAME render commit,
+- fires `nac:action:dispatching` / `succeeded` / `failed` with
+  correct timing (see "Event correctness" below),
+- is the only component in the codebase allowed to write
+  `data-nac-*` directly.
+
+Hand-rolled `<button data-nac-id="...">` becomes a code-review
+violation: every interactive element goes through the primitive.
+
+### React reference (TypeScript)
+
+```tsx
+type NacButtonProps = {
+  nacId: string;                    // canonical, plugin-namespaced
+  verb: string;                     // 'apply' | 'submit' | 'refresh' | ...
+  label: string;                    // localised
+  onClick: () => Promise<unknown>;
+  disabled?: boolean;
+  pluginInstanceId?: string;        // for multi-mount plugins
+  children?: React.ReactNode;
+};
+
+export function NacButton(props: NacButtonProps) {
+  const [state, setState] = React.useState<'ready' | 'loading' | 'error'>('ready');
+
+  const handle = React.useCallback(async () => {
+    if (state !== 'ready' || props.disabled) return;
+
+    /* React 18 batches state updates across handlers. The ARIA
+       mirror MUST land in the same DOM commit as data-nac-state
+       so the validator never observes drift. flushSync forces
+       the synchronous commit before we emit the dispatching
+       event. Without it, a fast follow-up read of aria-busy
+       would be stale. */
+    ReactDOM.flushSync(() => setState('loading'));
+
+    emitNacEvent('nac:action:dispatching', {
+      plugin: pluginSlug, plugin_instance_id: props.pluginInstanceId,
+      nac_id: props.nacId, verb: props.verb,
+    });
+
+    try {
+      const result = await props.onClick();
+      ReactDOM.flushSync(() => setState('ready'));
+      emitNacEvent('nac:action:succeeded', {
+        plugin: pluginSlug, plugin_instance_id: props.pluginInstanceId,
+        nac_id: props.nacId, verb: props.verb, result,
+      });
+    } catch (err) {
+      ReactDOM.flushSync(() => setState('error'));
+      emitNacEvent('nac:action:failed', {
+        plugin: pluginSlug, plugin_instance_id: props.pluginInstanceId,
+        nac_id: props.nacId, verb: props.verb,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }, [state, props]);
+
+  return (
+    <button
+      type="button"
+      onClick={handle}
+      disabled={props.disabled || state === 'loading'}
+      data-nac-id={props.nacId}
+      data-nac-role="action"
+      data-nac-action={props.verb}
+      data-nac-state={state}
+      data-nac-plugin-instance-id={props.pluginInstanceId || null}
+      aria-label={props.label}
+      aria-busy={state === 'loading' ? 'true' : undefined}
+      aria-disabled={props.disabled ? 'true' : undefined}
+    >
+      {props.children ?? props.label}
+    </button>
+  );
+}
+```
+
+Two dual-attribute pairs land atomically: `data-nac-state="loading"`
++ `aria-busy="true"`, and `data-nac-state` (when ready) +
+absence of `aria-busy`. The validator's `aria_nac_state_mismatch`
+finding can never fire on this primitive because the JSX template
+only allows mirrored values.
+
+### Vue 3 reference (Composition API)
+
+```vue
+<script setup lang="ts">
+const props = defineProps<{
+  nacId: string;
+  verb: string;
+  label: string;
+  pluginInstanceId?: string;
+  disabled?: boolean;
+}>();
+const emit = defineEmits<{ click: [] }>();
+
+const state = ref<'ready' | 'loading' | 'error'>('ready');
+
+async function handle() {
+  if (state.value !== 'ready' || props.disabled) return;
+  state.value = 'loading';
+  /* Vue 3 reactivity is synchronous on a single commit; nextTick
+     flushes the DOM mutation before we emit, mirroring React's
+     flushSync. */
+  await nextTick();
+  emitNacEvent('nac:action:dispatching', {
+    plugin: pluginSlug, plugin_instance_id: props.pluginInstanceId,
+    nac_id: props.nacId, verb: props.verb,
+  });
+  try {
+    const result = await onClick();
+    state.value = 'ready';
+    await nextTick();
+    emitNacEvent('nac:action:succeeded', { /* ... */ });
+  } catch (err) {
+    state.value = 'error';
+    await nextTick();
+    emitNacEvent('nac:action:failed', { /* ... */ error: String(err) });
+  }
+}
+</script>
+
+<template>
+  <button
+    type="button"
+    @click="handle"
+    :disabled="disabled || state === 'loading'"
+    :data-nac-id="nacId"
+    data-nac-role="action"
+    :data-nac-action="verb"
+    :data-nac-state="state"
+    :data-nac-plugin-instance-id="pluginInstanceId || null"
+    :aria-label="label"
+    :aria-busy="state === 'loading' ? 'true' : null"
+    :aria-disabled="disabled ? 'true' : null"
+  >
+    <slot>{{ label }}</slot>
+  </button>
+</template>
+```
+
+### Svelte 5 reference
+
+```svelte
+<script lang="ts">
+  let { nacId, verb, label, pluginInstanceId, disabled, onClick } = $props();
+  let state = $state<'ready' | 'loading' | 'error'>('ready');
+
+  async function handle() {
+    if (state !== 'ready' || disabled) return;
+    state = 'loading';
+    /* Svelte 5 effects flush before the next microtask; await
+       Promise.resolve() lets the DOM commit settle before we
+       emit, the same shape as flushSync / nextTick. */
+    await Promise.resolve();
+    emitNacEvent('nac:action:dispatching', {
+      plugin: pluginSlug, plugin_instance_id: pluginInstanceId,
+      nac_id: nacId, verb,
+    });
+    try {
+      const result = await onClick();
+      state = 'ready';
+      await Promise.resolve();
+      emitNacEvent('nac:action:succeeded', { /* ... */ });
+    } catch (err) {
+      state = 'error';
+      await Promise.resolve();
+      emitNacEvent('nac:action:failed', { /* ... */ error: String(err) });
+    }
+  }
+</script>
+
+<button
+  type="button"
+  onclick={handle}
+  disabled={disabled || state === 'loading'}
+  data-nac-id={nacId}
+  data-nac-role="action"
+  data-nac-action={verb}
+  data-nac-state={state}
+  data-nac-plugin-instance-id={pluginInstanceId || null}
+  aria-label={label}
+  aria-busy={state === 'loading' ? 'true' : null}
+  aria-disabled={disabled ? 'true' : null}
+>
+  {label}
+</button>
+```
+
+### Why each example uses a framework-specific commit barrier
+
+The validator's drift findings (sec 7.3.2 hard-error from v1.6.1)
+reject any state where `data-nac-state` and the mirrored
+`aria-*` are inconsistent at the moment of observation. React
+18's concurrent mode, Vue's queued reactivity, and Svelte 5's
+effect scheduler all batch DOM mutations across microtasks
+unless explicitly flushed. **Without the commit barrier, a fast
+agent or test runner can observe a torn state for one tick.**
+The barrier is the single most important pattern in the
+design-system layer: every state mutation that crosses the
+data-nac-state vs aria-* boundary MUST be committed before the
+event fires.
+
+### Cost amortisation
+
+The up-front investment is roughly:
+
+- 1 day to extract the primitive(s) for the 5-10 most-used
+  components in your library (Button, Input, Toggle, Select,
+  Modal, Tabs, Accordion).
+- 1-2 days to refactor existing usages to consume the new
+  primitives instead of raw `<button>` / `<input>`.
+- An ESLint rule that forbids raw `data-nac-*` attributes
+  outside the design-system package (1 hour to write, prevents
+  the next 100 violations).
+
+Once that is done, every new screen automatically meets the
+v1.6.1 hard-error gate. **Teams that skip this layer are the
+teams that abandon NAC mid-rollout.** Teams that build it
+amortise the cost across every interactive element in their
+product.
+
+---
+
 ## Event correctness
 
 > Added in v1.4.2 in response to AI peer review action item 3.5-I.
@@ -869,6 +1121,43 @@ verify:
 - [ ] Cancellation produces `failed` with `error: 'aborted'`.
 - [ ] Double-fire prevention via `data-nac-state="loading"` gate.
 
+### Framework-specific timing (v1.6.1)
+
+> Added in v1.6.1 in response to AI peer review of v1.6.0
+> (HuggingChat, Claude 4.7). HuggingChat: "In React 18 with
+> concurrent features, useTransition or useDeferredValue batch
+> and defer DOM commits by design ... yet the reference runtime
+> does not enforce atomicity, it only validates after the fact."
+> The fix lives in the design-system layer (see chapter above);
+> this section names the precise barrier per framework.
+
+The patterns above show the verb's lifecycle in vanilla JS. In
+real frameworks the DOM mutation that flips `data-nac-state` is
+batched. The `succeeded` / `failed` event MUST fire **after** the
+DOM has actually committed the new state, not after the JS state
+variable has been assigned.
+
+| Framework | Commit barrier | Pitfall |
+|---|---|---|
+| React 18 | `ReactDOM.flushSync(() => setState('loading'))` before `emit('nac:action:dispatching', ...)`. Same before `succeeded` / `failed`. | `useTransition`, `useDeferredValue`, Suspense fallbacks all defer commit -- the bare `setState` is NOT enough. |
+| Vue 3   | `await nextTick()` between mutating the ref and emitting the event. | Async components inside `<Suspense>` produce two render passes; nextTick once is fine, but the `await` is mandatory. |
+| Svelte 5 | `await Promise.resolve()` after assigning to `$state` so the effect runs before the event fires. Or `await tick()` from `svelte`. | Bare assignment under `$effect.pre` does not commit before the next microtask. |
+| Angular 17+ | `cdr.detectChanges()` after the host writes the input; or run inside `runInInjectionContext` + `effect()` and await `afterRender`. | `OnPush` change detection batches across event loops. |
+| Qwik | `await sync$()` after the signal write. | Resumability defers DOM hydration; signal updates are not always synchronous to DOM. |
+
+If you are not using a framework on this list, the safe portable
+shape is `await Promise.resolve()` after the state mutation and
+before the `emit` call. Most frameworks resolve their commit
+queue inside that microtask boundary.
+
+The validator does not enforce the barrier itself (that would
+require framework introspection), but its `aria_nac_state_mismatch`
+finding (hard-error at NAC-3 from v1.6.1, see spec sec 7.3.2)
+reliably catches the symptom -- a stale `aria-busy` paired with
+the new `data-nac-state`. If your CI fires that finding and the
+DOM looks correct on inspection, the missing commit barrier is
+the fix.
+
 ---
 
 ## License and citation
@@ -877,7 +1166,7 @@ MIT. See [LICENSE](../LICENSE).
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.6 / runtime v1.6.0. 2026. MIT License.
+Spec v1.6.1 / runtime v1.6.1. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```

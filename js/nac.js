@@ -1,9 +1,48 @@
 /* =====================================================================
-   NAC v1.6.0 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.6.1 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.6.1 (2026-05-07) -- patch release responding to AI peer review of
+   v1.6.0 (ChatGPT, Mistral Le Chat, Microsoft Copilot, Claude 4.7 Deep
+   Thinking, DeepSeek, HuggingChat, Grok). Strict superset of v1.6.0;
+   every v1.6.0 plugin remains valid.
+
+   - NAC.is_blocked() canonical "is the UI accepting input?" probe.
+     Replaces the v1.6 antipattern of inferring blocking state from
+     feedback[].severity. Returns {blocked, reasons[]} so callers can
+     branch on confirm-dialog / modal / busy-action.
+     Driven by ChatGPT, DeepSeek, Mistral peer reviews.
+   - NAC.set_validation_tolerance() / get_validation_tolerance().
+     Hosts retiring historic findings incrementally can register a
+     tolerated_violations payload that demotes specific
+     (kind, nac_id) pairs out of the .ok / .has_errors gate while
+     keeping them visible in .tolerated[] for audit. Driven by
+     Mistral, Claude 4.7: "register-time console.warn is ignored;
+     50+ plugin first run sea of red".
+   - validate_global() now also exposes .has_errors as an explicit CI
+     boolean so build scripts do not need to introspect .duplicates
+     length.
+   - Spec sec 7.3.2 (new): aria/nac drift findings are hard-errors at
+     NAC-3 by default; opt-in demote via set_validation_tolerance
+     drift_findings='warn'. Driven by 5 of 7 v1.6 reviewers.
+   - Spec sec 7.4 (tightened): per-plugin event buses are default-on,
+     not opt-in; both root-level and document-level dispatch are
+     mandatory in v1.6.1+. Driven by Claude 4.7's "data-nac-plugin-bus
+     should arguably be the default" plus Mistral / Copilot /
+     HuggingChat raising the same finding under different wording.
+   - Spec sec 7.4 (clarified): closed shadow roots are explicitly out
+     of scope; the only canonical pattern is bridge-via-public-method
+     + manifest "shadow_root":"closed" so validators skip the
+     unreachable DOM checks. Every reviewer raised this.
+   - Docs: README pitch rewritten to "1 day per screen + 1 day for
+     the design-system layer", removing the stale "1 hour" claim that
+     three reviewers (Copilot, Claude 4.7, HuggingChat) flagged as
+     no longer matching the surface size. New MANUAL.md chapters
+     "Design-system layer pattern" and "Event emission patterns" hit
+     the two #1 abandonment causes head-on.
 
    v1.6.0 (2026-05-06) -- MINOR release. Adds NAC.reset(slug?)
    plugin reset primitive (spec section 9.3) + companion
@@ -1156,8 +1195,69 @@
       }
     }
 
+    /* v1.6.1: tolerated_violations support. Hosts retiring historic
+       findings incrementally can register a tolerated set via
+       NAC.set_validation_tolerance({tolerated:[...]}); each finding
+       still appears in the report under .tolerated[] but is excluded
+       from the .ok / .has_errors gate so CI does not block on
+       known-tracked debt. Flagged by Mistral, Claude 4.7 v1.6
+       review: "register-time console.warn is ignored; 50+ plugin
+       first run sea of red; teams need a tolerated-violations
+       file". */
+    out.tolerated = [];
+    const tol = _validationTolerance || { tolerated: [] };
+    if (Array.isArray(tol.tolerated) && tol.tolerated.length > 0) {
+      const tolSet = Object.create(null);
+      tol.tolerated.forEach(function (t) {
+        const k = String(t.kind || '') + '::' + String(t.nac_id || '');
+        tolSet[k] = t.until || true;
+      });
+      ['duplicates', 'orphans', 'unmounted', 'convention_violations'].forEach(function (kind) {
+        const kept = [];
+        out[kind].forEach(function (item) {
+          const k = kind + '::' + item.nac_id;
+          if (tolSet[k]) {
+            out.tolerated.push({
+              kind: kind, nac_id: item.nac_id, until: tolSet[k],
+              original: item
+            });
+          } else {
+            kept.push(item);
+          }
+        });
+        out[kind] = kept;
+      });
+    }
+
     out.ok = !out.duplicates.length;
+    /* v1.6.1: explicit has_errors flag for CI integration. Drift
+       findings (duplicates) are hard-errors per spec sec 7.3.2;
+       orphans + unmounted + convention_violations stay informative
+       unless the host explicitly opts in via tolerance config. */
+    out.has_errors = out.duplicates.length > 0;
     return out;
+  }
+
+  /* v1.6.1: tolerance config storage + setter. The shape:
+       {
+         tolerated: [
+           { kind: 'duplicates'|'orphans'|'unmounted'
+                  |'convention_violations',
+             nac_id: 'plugin.slug',
+             until: '2026-12-31'   // optional informative
+           }, ...
+         ],
+         drift_findings: 'warn' | 'error'   // for sec 7.3.2 demote
+       }
+     Hosts typically load this from a tolerated_violations.json
+     committed alongside the codebase, so what gets silenced is
+     auditable in version control. */
+  let _validationTolerance = null;
+  function set_validation_tolerance(cfg) {
+    _validationTolerance = cfg && typeof cfg === 'object' ? cfg : null;
+  }
+  function get_validation_tolerance() {
+    return _validationTolerance;
   }
 
   /* ---------- v1.2: dynamic options ------------------------------- */
@@ -1800,6 +1900,63 @@
     return out;
   }
 
+  /* v1.6.1: NAC.is_blocked() -- canonical "is the UI accepting
+     operator input right now?" probe. Replaces the v1.6 antipattern
+     of inferring blocking state from feedback[].severity (flagged
+     by ChatGPT, DeepSeek, Mistral peer reviews of v1.6.0).
+
+     Returns:
+       { blocked: boolean,
+         reasons: [
+           { kind: 'confirm-dialog' | 'modal' | 'busy-action',
+             nac_id: string,
+             severity: 'block' | 'soft' }
+         ] }
+
+     blocked === true when ANY reason is severity 'block'. Soft-
+     reasons (transient busy states under 1s) are surfaced for
+     telemetry but do not flip the boolean. Operators that just
+     want the boolean read .blocked; operators that need to react
+     differently per kind iterate .reasons. */
+  function is_blocked() {
+    const reasons = [];
+    /* Pending confirm dialogs are always blocking. */
+    list_pending_confirms().forEach(function (c) {
+      reasons.push({
+        kind: 'confirm-dialog',
+        nac_id: c.id,
+        severity: 'block'
+      });
+    });
+    /* Open modals (data-nac-role="modal" with state open|opening)
+       gate the surface beneath. data-nac-soft="true" opts out for
+       non-blocking sheets / popovers. */
+    document.querySelectorAll('[data-nac-role="modal"]')
+      .forEach(function (el) {
+        const state = el.getAttribute('data-nac-state') || '';
+        if (state !== 'open' && state !== 'opening') return;
+        const soft = el.getAttribute('data-nac-soft') === 'true';
+        reasons.push({
+          kind: 'modal',
+          nac_id: el.getAttribute('data-nac-id') || '',
+          severity: soft ? 'soft' : 'block'
+        });
+      });
+    /* Actions in flight (data-nac-state="busy" or "loading") are
+       surfaced as soft reasons so callers can choose to wait. */
+    document.querySelectorAll('[data-nac-role="action"][data-nac-state="busy"], ' +
+                              '[data-nac-role="action"][data-nac-state="loading"]')
+      .forEach(function (el) {
+        reasons.push({
+          kind: 'busy-action',
+          nac_id: el.getAttribute('data-nac-id') || '',
+          severity: 'soft'
+        });
+      });
+    const blocked = reasons.some(function (r) { return r.severity === 'block'; });
+    return { blocked: blocked, reasons: reasons };
+  }
+
   /* ---------- v1.3: stepper -------------------------------------- */
 
   function _stepperRoot(stepper_id) {
@@ -2399,7 +2556,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.6.0',
+    version:      '1.6.1',
     spec_version: '1.6',
     /* registry */
     register:        register,
@@ -2426,6 +2583,11 @@
     validate:        validate,
     /* v1.5.1 -- cross-plugin validator */
     validate_global: validate_global,
+    /* v1.6.1 -- tolerance config for retiring historic findings */
+    set_validation_tolerance: set_validation_tolerance,
+    get_validation_tolerance: get_validation_tolerance,
+    /* v1.6.1 -- canonical "is the UI blocked?" probe */
+    is_blocked:      is_blocked,
     /* v1.2 -- dynamic options */
     options:                 options,
     search_options:          search_options,

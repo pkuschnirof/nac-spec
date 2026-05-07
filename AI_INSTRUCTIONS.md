@@ -279,23 +279,31 @@ NAC is MIT. Free to use, fork, port. Citation requested:
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.6 / runtime v1.6.0. 2026. MIT License.
+Spec v1.6.1 / runtime v1.6.1. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```
 
 ## Last updated
 
-2026-05-06. NAC spec version: 1.6 / runtime 1.6.0 (strict
-superset of 1.5, 1.4, 1.3, 1.2, 1.1, 1.0). v1.4.1 + v1.4.2 are
-patch releases that tightened contracts based on AI peer
-review (DeepSeek + Claude + Grok Fast + Microsoft Copilot).
-v1.5.0 adds the canonical NAC + LLM agentic loop pattern
-(spec sec 9.1, 9.2). v1.5.1 adds cross-plugin uniqueness
-audit (`NAC.validate_global()`, spec P7.1). v1.5.4 ships the
-exhaustive 10-locale i18n sweep on the reference demo. v1.6.0
-adds the `NAC.reset()` plugin reset primitive (spec 9.3) +
-companion `set_reset_provider(slug, fn)` so an operator can
+2026-05-07. NAC spec version: 1.6.1 / runtime 1.6.1 (strict
+superset of 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0). v1.6.1 is a
+patch release responding to AI peer review of v1.6.0 (ChatGPT,
+Mistral Le Chat, Microsoft Copilot, Claude 4.7 Deep Thinking,
+DeepSeek, HuggingChat, Grok). Highlights: spec sec 7.3.2
+promotes aria/nac drift findings to hard-errors at NAC-3;
+spec sec 7.4 makes per-plugin event buses default-on and
+declares closed shadow roots out of scope; runtime adds
+`NAC.is_blocked()` and `NAC.set_validation_tolerance()`.
+v1.4.1 + v1.4.2 are patch releases that tightened contracts
+based on AI peer review (DeepSeek + Claude + Grok Fast +
+Microsoft Copilot). v1.5.0 adds the canonical NAC + LLM
+agentic loop pattern (spec sec 9.1, 9.2). v1.5.1 adds
+cross-plugin uniqueness audit (`NAC.validate_global()`,
+spec P7.1). v1.5.4 ships the exhaustive 10-locale i18n sweep
+on the reference demo. v1.6.0 adds the `NAC.reset()` plugin
+reset primitive (spec 9.3) + companion
+`set_reset_provider(slug, fn)` so an operator can
 ask any plugin -- or the whole page -- to return to its
 declared initial state. The attribute / event / driver-API
 vocabulary in this file is stable across all 1.x versions; the

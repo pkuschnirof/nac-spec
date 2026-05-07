@@ -22,6 +22,148 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.6.1] - 2026-05-07
+
+PATCH release responding to AI peer review of v1.6.0. Seven
+reviewers (ChatGPT, Mistral Le Chat, Microsoft Copilot, Claude
+4.7 Deep Thinking, DeepSeek, HuggingChat, Grok) evaluated the
+spec, runtime, manual, API reference, philosophy doc, and the
+public demo. The full reviews are pasted into
+`docs/AI_REVIEWS_OF_NAC_SPEC_v1.6.md`; this CHANGELOG entry
+records what shipped in response. Strict superset of v1.6.0;
+every v1.6.0 plugin remains valid.
+
+### Headline finding from the v1.6 review
+
+Five of seven reviewers raised the same root cause: the
+ARIA dual-source-of-truth tax. Keeping `data-nac-state` and
+`aria-*` in sync inside batched frameworks (React 18 concurrent,
+Vue Suspense, Svelte 5 effects) is non-trivial; the validator
+catches drift only ex-post; teams hit a CI failure wall after
+the first 10 screens; abandonment follows. v1.6.1 attacks this
+on three fronts: spec hard-error, runtime tolerance config, and
+a written-out design-system layer pattern in MANUAL.md.
+
+### Spec additions (normative)
+
+- **Section 7.3.2 Drift findings are hard-errors at NAC-3
+  (NEW)**. `aria_nac_state_mismatch` and `aria_first_state` MUST
+  be emitted as `severity: 'error'` and MUST set
+  `report.has_errors === true` so CI blocks the build. Hosts
+  that need to retire historic violations incrementally MAY
+  demote to warn-level via
+  `NAC.set_validation_tolerance({drift_findings:'warn'})`,
+  making suppression an explicit, audited choice. Driven by
+  Mistral, Copilot, Claude 4.7, HuggingChat, DeepSeek.
+
+- **Section 7.4 Per-plugin event buses default-on (TIGHTENED)**.
+  `nac:*` events MUST be dispatched on the plugin root in
+  addition to `document`. v1.6.0 said hosts MAY opt in to the
+  per-plugin bus; v1.6.1 makes both dispatch surfaces mandatory.
+  Driven by Claude 4.7's "data-nac-plugin-bus should arguably be
+  the default", echoed by Mistral, Copilot, HuggingChat.
+
+- **Section 7.4 Closed shadow roots out of scope (CLARIFIED)**.
+  All seven reviewers raised this. v1.6.1 declares closed shadow
+  roots explicitly out of scope and documents the canonical
+  bridge pattern: composed-bubble + host-side public-method
+  driver + manifest field `"shadow_root":"closed"` so validators
+  skip the unreachable DOM checks. The spec does not attempt a
+  workaround that would either require WHATWG changes or break
+  the encapsulation guarantee the closed root provides.
+
+### Runtime additions
+
+- **`NAC.is_blocked()` (NEW)**. Canonical "is the UI accepting
+  operator input right now?" probe. Returns
+  `{blocked:bool, reasons:[{kind,nac_id,severity}]}`. Replaces
+  the v1.6 antipattern of inferring blocking state from
+  `feedback[].severity`. Wraps `list_pending_confirms()` +
+  open-modal detection + busy-action detection. Driven by
+  ChatGPT, DeepSeek, Mistral.
+
+- **`NAC.set_validation_tolerance(cfg)` (NEW)** and
+  **`NAC.get_validation_tolerance()` (NEW)**. Hosts retiring
+  historic findings incrementally can register a
+  `tolerated_violations` payload that excludes specific
+  `(kind, nac_id)` pairs from `.ok` / `.has_errors` while
+  surfacing them in `.tolerated[]` for audit. Typically loaded
+  from a `tolerated_violations.json` committed alongside the
+  codebase. Driven by Mistral, Claude 4.7's "register-time
+  console.warn is ignored; 50+ plugin first run sea of red".
+
+- **`validate_global().has_errors` (NEW)**. Explicit boolean for
+  CI integration so build scripts do not need to introspect
+  `.duplicates.length`.
+
+### Documentation additions
+
+- **MANUAL.md Design-system layer pattern (NEW chapter)**.
+  Concrete React 18 + Vue 3 + Svelte 5 primitives that emit NAC
+  + ARIA atomically using `flushSync` / `nextTick` /
+  `Promise.resolve` commit barriers. Five of seven reviewers
+  identified the lack of this pattern as the #1 abandonment
+  cause; the chapter writes out the answer.
+
+- **MANUAL.md Event correctness, framework-specific timing
+  (NEW section)**. Per-framework commit-barrier table
+  (React/Vue/Svelte/Angular/Qwik) for the `data-nac-state` ↔
+  `aria-*` boundary. Driven by HuggingChat: "React 18 with
+  concurrent features, useTransition or useDeferredValue batch
+  and defer DOM commits by design".
+
+- **README.md Honest expectations (NEW section)**. Replaces the
+  stale "1 hour" pitch with a realistic cost frame (~1 day per
+  screen with AI agent + 1-2 days to build the design-system
+  layer up front). Adds a best-fit / worst-fit table so teams
+  self-select before adopting. Driven by Copilot, Claude 4.7,
+  HuggingChat: "the surface no longer matches the 'one hour'
+  claim".
+
+### Demo + backend fixes
+
+- **NAC + Yujin demo (yujin.app/nac-spec/example.php)**: when
+  the AI fallback chain (Claude → DeepSeek → Groq) exhausts and
+  lands on the canned tier, the backend now short-circuits BEFORE
+  attempting JSON parse. Returns the localised "AI temporarily
+  unavailable" apology with `unavailable: true` flag instead of
+  the previous misleading "could not understand the model
+  response" parse-error path. Frontend shows a distinct
+  `unavailable` badge state and skips the local-matcher
+  degradation (the chain already exhausted every provider).
+
+- **`AiClient::cannedResponse` (rpaforce CRM)**: returned dict
+  now includes `last_error` so callers can log which tier failed
+  last. Diagnoses prod-config drift (e.g. missing per-tenant
+  Groq key) from server logs without manual debugging.
+
+### Score deltas v1.4 -> v1.6 (recorded for reference)
+
+| Axis | v1.4 baseline | v1.6 (7 reviewers) |
+|---|---|---|
+| Clarity | 7.25 | 7.71 |
+| Usefulness | 8.75 | 8.79 |
+| Ease of adoption | 5.50 | 5.57 |
+| Ambition vs feasibility | 7.75 | 7.71 |
+
+Ease-of-adoption staying flat at 5.57 is the gap v1.6.1 is
+designed to close in v1.7+, once the design-system layer
+pattern has had time to absorb the dual-attribute tax in real
+codebases.
+
+### Deferred to v1.7
+
+The following items from the v1.6 review action list were
+captured but NOT shipped in v1.6.1: A1 default timeout
+normative, A2 emit-template snippets, A5 reset-completion
+semantics, A6 discoverable verbs, A7 NacElement.value
+semantics, R1 set_default_timeout, R3 parallel/lazy
+validate_global, R5 bridge_shadow_root helper, R6 reset
+provider context, D4 out-of-scope state doc, D5
+vendor-extension namespace. They are tracked for v1.7 once
+v1.6.1 has had at least two weeks of adoption signal in the
+field.
+
 ## [1.6.0] - 2026-05-06
 
 MINOR release. Adds the **`NAC.reset()` plugin reset primitive**,

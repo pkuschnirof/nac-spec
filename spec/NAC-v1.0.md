@@ -7,9 +7,22 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.6 (spec) / 1.6.0 (reference runtime). v1.6.0 adds
-the `NAC.reset()` plugin-reset primitive (normative section 9.3
-+ a new `nac:plugin:reset` event), so an operator can ask any
+**Version**: 1.6.1 (spec) / 1.6.1 (reference runtime). v1.6.1 is
+a patch release responding to AI peer review of v1.6.0
+(ChatGPT, Mistral Le Chat, Microsoft Copilot, Claude 4.7 Deep
+Thinking, DeepSeek, HuggingChat, Grok). Strict superset of
+v1.6.0; every v1.6.0 plugin remains valid. Highlights:
+section 7.3.2 promotes `aria_nac_state_mismatch` and
+`aria_first_state` to hard-errors at NAC-3 (default-on, opt-out
+via `set_validation_tolerance`); section 7.4 makes per-plugin
+event buses default-on (root-level dispatch is now mandatory in
+addition to document-level); section 7.4 declares closed shadow
+roots explicitly out of scope with a canonical bridge pattern;
+runtime adds `NAC.is_blocked()` canonical block-detection probe
+and `NAC.set_validation_tolerance()` for incremental retirement
+of historic findings. v1.6.0 added the `NAC.reset()`
+plugin-reset primitive (normative section 9.3 + a new
+`nac:plugin:reset` event), so an operator can ask any
 NAC-compliant plugin (or the whole page) to return to its
 declared initial state. v1.5.4 was the previous release: a
 demo-only patch that shipped exhaustive 10-locale i18n on every
@@ -17,16 +30,13 @@ visible string of the reference demo. v1.5.1 added normative
 section P7.1 (cross-plugin uniqueness + `NAC.validate_global()`)
 and P7.2 (recommended nac_id grammar). v1.5.0 added the
 canonical NAC + LLM agentic loop pattern (informative sections
-9.1 and 9.2). v1.6 is a strict superset of v1.5.4; every
-v1.0..v1.5.4 plugin remains valid -- the new reset primitive is
-opt-in via `set_reset_provider`, with a generic fallback when
-no provider is registered. v1.4.2 normative additions on top of v1.4.1: P5.0 return
-shapes, 6.1 NAC-3 event-family scoping, 7.3.1 NAC-drives-
-ARIA-mirrors direction, 7.5 confirm-dialog contract, plus
-tightened plugin-id rule (sec 7.4) and click_by_verb tie-break
-+ tab_by_label matching rules (sec P5). See CHANGELOG.md for
-the full diff.
-**Date**: 2026-05-06.
+9.1 and 9.2). v1.4.2 normative additions on top of v1.4.1:
+P5.0 return shapes, 6.1 NAC-3 event-family scoping, 7.3.1
+NAC-drives-ARIA-mirrors direction, 7.5 confirm-dialog contract,
+plus tightened plugin-id rule (sec 7.4) and click_by_verb
+tie-break + tab_by_label matching rules (sec P5). See
+CHANGELOG.md for the full diff.
+**Date**: 2026-05-07.
 **Authors**: Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com> (lead), Sumi (collaboration).
 **License**: MIT.
 
@@ -1290,6 +1300,41 @@ attribute) on an element with `data-nac-id` whose
 appears in the manifest's `actions[]` / `fields[]` (i.e. it
 is a NAC-instrumented element, not a pure ARIA-only widget).
 
+### 7.3.2. Drift findings are hard-errors at NAC-3 (normative, added v1.6.1)
+
+> Added in v1.6.1 in response to AI peer review of v1.6.0
+> (Mistral, Copilot, Claude 4.7, HuggingChat, DeepSeek). v1.4.2
+> introduced the findings; multiple v1.6 reviewers noted that
+> "the validator's `aria_nac_state_mismatch` is reactive, not
+> preventive" and that warn-level delivery degrades to CI noise
+> in large SPAs. v1.6.1 promotes both findings to errors at
+> NAC-3 so they BLOCK the build instead of decorating it.
+
+At NAC-3 compliance both `aria_nac_state_mismatch` and
+`aria_first_state` MUST be emitted as `severity: 'error'` and
+MUST cause `NAC.validate()` / `NAC.validate_global()` to return
+a non-zero exit code (or set `report.has_errors === true` for
+JS callers). At NAC-1 and NAC-2 they MAY be downgraded to
+`severity: 'warn'`.
+
+Suppression: hosts that need to retire historic violations
+incrementally MAY use `NAC.set_validation_tolerance({
+  drift_findings: 'warn'
+})` to demote both findings to warn-level, OR maintain a
+`tolerated_violations.json` file that the runtime accepts (see
+section P7.1.1). The intent is that drift findings stay BLOCKING
+by default in v1.6.1+ and silencing them is an explicit, audited
+choice rather than the default behaviour.
+
+Why hard-error: every reviewer who flagged this finding wrote
+the same diagnosis -- when the validator only warns, teams
+ignore the warnings, drift accumulates, and ARIA stops being a
+reliable mirror. Making drift a build blocker forces the
+discipline NAC needs to deliver the per-consumer authority
+contract from section 7.2. The cost (one CI failure per drift
+on commit) is paid by whoever introduced the drift, which is
+where the cost belongs.
+
 ---
 
 ## 7.4. Event scoping (normative, added v1.4.1)
@@ -1376,21 +1421,31 @@ and therefore counts; React unmount + remount in the same
 tick does NOT count if no two are present in the validator's
 snapshot.
 
-### Per-plugin event buses (optional)
+### Per-plugin event buses (default-on from v1.6.1)
 
-Hosts MAY additionally dispatch `nac:*` events on the plugin
-root itself, in addition to `document`. Subscribers attached
-to the root receive only that plugin's events without needing
-to filter on payload. This is a SHOULD for hosts that mount
-many instances of the same plugin and want listener overhead
-to scale linearly with subscribed instances rather than
-quadratically.
+> Tightened in v1.6.1 in response to AI peer review of v1.6.0
+> (Claude 4.7 Deep Thinking, 2026-05-07): "data-nac-plugin-bus
+> should arguably be the default for any app with stacked
+> dialogs". Mistral, Copilot and HuggingChat raised the same
+> finding under different wording.
 
-When a host opts into per-plugin buses, the same event MUST
-fire on both the plugin root and `document`. Subscribers that
-attach to the root see the event first (capture phase) but
-the document-level subscriber still sees it via bubbling. A
-runtime that disables document-level dispatch is non-compliant.
+`nac:*` events MUST be dispatched on the plugin root **in
+addition to** `document`. Subscribers attached to the root
+receive only that plugin's events without needing to filter on
+payload, which scales listener overhead linearly with subscribed
+instances rather than quadratically.
+
+Subscribers that attach to the root see the event first (capture
+phase) and the document-level subscriber still sees it via
+bubbling. A runtime that disables document-level dispatch OR
+disables root-level dispatch is non-compliant in v1.6.1+.
+
+For backward compatibility, runtimes targeting NAC-3 against a
+v1.4..v1.6.0 host SHOULD treat the missing root-level dispatch
+as a SHOULD violation (warning), not an error. Hosts upgrading
+to v1.6.1 SHOULD audit subscribers that relied solely on
+document-level events to confirm they still fire (they do; the
+default-on bus is additive).
 
 ### Shadow DOM and iframe boundaries
 
@@ -1405,6 +1460,47 @@ an iframe SHOULD use `postMessage` to forward NAC events to the
 parent frame, then re-dispatch them on the parent's `document`.
 Or operate the iframe via its own `window.NAC.*` instance,
 which is the recommended pattern.
+
+### Closed shadow roots: out of scope (clarified v1.6.1)
+
+> Clarified in v1.6.1 in response to AI peer review of v1.6.0
+> (every reviewer raised this: ChatGPT, Mistral, Copilot, Claude
+> 4.7, DeepSeek, HuggingChat, Grok). v1.4.1 acknowledged that
+> `composed: true` does not pierce closed shadow roots; v1.6.1
+> states explicitly that **closed shadow roots are out of scope
+> for the NAC contract**.
+
+A closed shadow root by WHATWG definition has no host-side API
+to traverse it. NAC's manifest-and-events model assumes that an
+external operator (driver, validator, agent) can observe and
+operate on a plugin from outside. A plugin whose interactive
+surface lives inside a closed shadow root cannot meet that
+assumption.
+
+If a host needs to expose a closed-shadow-rooted component to
+NAC consumers, the canonical pattern is:
+
+1. The component (closed shadow root owner) MUST emit `nac:*`
+   events with `composed: true` so they bubble to the host
+   document. v1.6.1 refines: the host MUST re-dispatch the
+   bubbled event on its own plugin root so per-plugin buses
+   (default-on, see above) work without traversing the closed
+   boundary.
+2. The component MUST expose its driver surface via a public
+   method on the host element (`hostElement.nacDrive(verb,
+   args)`). The host element registers a custom reset / fill /
+   click bridge so `NAC.click('id')` resolves to a public
+   method call, not a DOM-internal click on the closed root.
+3. The component's manifest MUST declare
+   `"shadow_root": "closed"` on its plugin root (manifest
+   field new in v1.6.1) so validators can skip DOM-traversal
+   checks that would always fail for that plugin.
+
+Plugins that need full NAC-3 introspection MUST use open shadow
+roots. The spec does not attempt to define a workaround that
+makes closed roots first-class -- every reviewed alternative
+either requires WHATWG changes or breaks the encapsulation
+guarantee the closed root is there to provide.
 
 ---
 

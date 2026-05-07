@@ -6,27 +6,35 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.6](https://img.shields.io/badge/NAC-v1.6-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.6.1](https://img.shields.io/badge/NAC-v1.6.1-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v1.6 (2026-05-06).
-**Reference runtime:** v1.6.0 (`NAC.version === '1.6.0'`).
-**Strict superset of:** v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
-**What v1.6 adds (normative):** the `NAC.reset()` plugin reset
-primitive (spec section 9.3). An operator can ask any plugin --
-or the whole page -- to return to its declared initial state;
-plugins declare their custom reset semantics via
-`NAC.set_reset_provider(slug, fn)`. New `nac:plugin:reset`
-event on the lifecycle bus. Generic fallback walks the plugin
-root and clears every `[data-nac-role="field"]` /
-`[data-nac-default-state]` / `[data-nac-default-hidden]`.
-**v1.5.x recap:** v1.5.0 added the canonical NAC + LLM agentic
-loop pattern (spec sec 9.1, 9.2). v1.5.1 added cross-plugin
-uniqueness audit (`NAC.validate_global()`, spec P7.1). v1.5.4
-shipped the exhaustive 10-locale i18n sweep on the reference
-demo. Full diff in [`CHANGELOG.md`](CHANGELOG.md).
+**Spec version:** v1.6.1 (2026-05-07).
+**Reference runtime:** v1.6.1 (`NAC.version === '1.6.1'`).
+**Strict superset of:** v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
+**What v1.6.1 adds (patch responding to v1.6 AI peer review):**
+- `NAC.is_blocked()` -- canonical "is the UI accepting input?"
+  probe so consumers stop inferring blocking state from
+  `feedback[].severity`.
+- `NAC.set_validation_tolerance({tolerated:[...]})` so hosts can
+  retire historic findings incrementally without disabling CI.
+- Spec sec 7.3.2 (new): `aria_nac_state_mismatch` and
+  `aria_first_state` are hard-errors at NAC-3 by default.
+- Spec sec 7.4 (tightened): per-plugin event buses are
+  default-on; closed shadow roots declared explicitly out of
+  scope with a canonical bridge pattern.
+- Docs: `MANUAL.md` gains a "Design-system layer pattern" chapter
+  with React 18 / Vue 3 / Svelte 5 primitives that emit NAC +
+  ARIA atomically. The "Event correctness" chapter gains a
+  framework-specific timing table (flushSync / nextTick /
+  Promise.resolve commit barriers).
+**v1.6 recap:** `NAC.reset()` plugin reset primitive (spec sec
+9.3) + `NAC.set_reset_provider(slug, fn)` for custom semantics.
+**v1.5.x recap:** v1.5.0 NAC + LLM agentic loop. v1.5.1
+cross-plugin uniqueness audit. v1.5.4 10-locale i18n sweep on
+the reference demo. Full diff in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -90,12 +98,81 @@ NAC reverses the polarity: a UI that complies with NAC publishes
 its own contract -- semantic IDs, roles, states, events, and a
 programmatic API -- so any external operator can introspect,
 operate and verify it without privileged access. The current
-release line is v1.5; every spec version since v1.0 has been a
-strict superset (no breaking changes).
+release line is v1.6.1; every spec version since v1.0 has been
+a strict superset (no breaking changes).
 
 Compliant systems are testable end-to-end at near-100% coverage with
 auto-generated specs plus AI-guided exploration. Non-compliant
 systems are not.
+
+## Honest expectations
+
+> Added in v1.6.1 in response to the v1.6 AI peer review.
+> Five of seven reviewers (Copilot, Claude 4.7, HuggingChat,
+> Mistral, DeepSeek) flagged that the original "1 hour
+> onboarding / smaller than ARIA" pitch no longer matches the
+> v1.4..v1.6 surface. Pretending otherwise is the fastest way
+> to lose trust on first contact, so this section says what we
+> have learned.
+
+### Cost frame for NAC-3
+
+For a typical 30-screen SPA built on a modern framework with an
+existing component library:
+
+| Phase | Wall-clock with AI coding agent | Notes |
+|---|---|---|
+| Build the design-system layer (NAC + ARIA atomic primitives) | 1-2 days | One-time. Without this, every screen pays a per-element drift tax. See [`docs/MANUAL.md`](docs/MANUAL.md) "Design-system layer pattern". |
+| Annotate one screen end-to-end | ~1 day per screen | AI agent does the mechanical work; human reviews semantic IDs + verb naming. |
+| Wire the lifecycle events correctly | ~0.5 day per plugin | Underestimated. See "Event correctness" chapter. |
+| Set up `validate_global()` in CI + initial tolerated_violations file | 0.5 day | Runs every push, blocks on drift. |
+
+The original "1 hour" claim was written for vanilla HTML before
+the v1.4 widget vocabulary existed and before the ARIA mirror
+was normative. **Read it as obsolete.** What survives is the
+shape: NAC is still smaller than building a custom test
+framework or scripting RPA per app, and an AI coding agent
+genuinely compresses the per-screen work. The bottleneck moved
+from typing to design-system discipline.
+
+### Where NAC fits
+
+| Best fit | Worst fit |
+|---|---|
+| Internal admin / ops apps with one team owning the UI | Consumer marketing site where ARIA alone is sufficient |
+| AI-copiloted enterprise tools | Legacy app with deep ARIA + zero design-system layer |
+| Codebases retiring a non-ARIA selector strategy (`data-testid`, etc.) | Apps whose interactive surface lives in closed shadow roots |
+| Greenfield SaaS with selector-stable E2E testing as a product principle | Open-source component libraries that cannot impose a host-side primitive |
+
+If the project is in the right column, ARIA + thoughtful
+`data-testid` is a cheaper answer. NAC pays back when at least
+one of "AI agent operation", "voice control", "RPA without
+training" or "selector-free E2E" is a hard requirement.
+
+### What will cause a rollout to fail
+
+The v1.6 review converged on three abandonment causes, listed
+in the order a real team will hit them:
+
+1. **No design-system layer.** Every screen ends up wiring
+   `data-nac-*` and `aria-*` separately; drift accumulates;
+   CI starts blocking on known issues; team disables the
+   validator; NAC quietly stops being maintained.
+2. **Event timing wrong under async.** `nac:action:succeeded`
+   fires after the optimistic UI update instead of after the
+   server confirmation; agents observe a state that does not
+   exist; trust collapses; team blames the contract.
+3. **Reset provider treated as a one-liner.** Real plugins have
+   modal stacks, filters, websocket subscriptions, third-party
+   embeds. `NAC.reset()` with the generic fallback only clears
+   `data-nac-*` fields; everything else stays dirty between
+   runs; tests become flaky.
+
+The corresponding chapters in [`docs/MANUAL.md`](docs/MANUAL.md)
+("Design-system layer pattern", "Event correctness", "Reset
+provider authoring") exist specifically to defuse these three.
+
+---
 
 ## What NAC unlocks
 
