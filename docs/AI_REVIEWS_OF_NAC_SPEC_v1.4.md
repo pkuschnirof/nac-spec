@@ -1,4 +1,13 @@
-# What AIs think of NAC
+# What AIs think of NAC -- v1.4 round (snapshot)
+
+> Closed snapshot: this document captures the AI peer reviews
+> that targeted **NAC v1.4.0 / v1.4.1** between 2026-05-06 and
+> 2026-05-06. The findings here drove the v1.4.1 -> v1.4.2 ->
+> v1.5 -> v1.6 evolution. For the **v1.6 review round**, see
+> [`AI_REVIEWS_OF_NAC_SPEC_v1.6.md`](AI_REVIEWS_OF_NAC_SPEC_v1.6.md).
+>
+> Reviews on this page MUST NOT be edited. Any new entry against
+> the current spec belongs in the v1.6 file.
 
 > An open, ongoing experiment: ask multiple free-tier AIs to read NAC,
 > imagine operating a NAC-equipped UI, and write an honest review.
