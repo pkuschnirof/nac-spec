@@ -7,17 +7,43 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.7.0 (spec) / 1.7.0 (reference runtime). v1.7.0
-adds normative section 6.2 declaring the canonical TypeScript
-shape for every nac:* event detail. Each widget family gets
-its own entity-specific id field (action_id, field_id, tab_id,
-section_id, column_id, source_id, target_id, etc) instead of
-the ambiguous nac_id. Closes the v1.6 peer-review #1
-abandonment cause: "the validator is reactive, not preventive".
-Strict superset of v1.6.6 -- legacy field names (e.g. nac_id
-in action events) stay accepted by the runtime matcher with a
-legacy_event_field validator warning; v2.0 (the public-announce
-release) drops them entirely. The reference demo at
+**Version**: 1.8.0 (spec) / 1.8.0 (reference runtime). v1.8.0
+responds to the four-AI peer review panel of v1.7.0 (Microsoft
+Copilot, DeepSeek, Mistral Le Chat, Grok) and lands every
+agreed-upon action item in a single release. Highlights:
+ProvenanceBlock on every nac:* event (`source: { type: 'user' |
+'agent' | 'script', id?, tool? }`) closes the silent-failure
+gap reviewers identified for users delegating multi-step UI
+work to AI assistants -- the contract now records WHO drove
+each action. New `nac:command:rejected` and `nac:command:failed`
+event families (sec 6.2.30) close the case where a command
+preflight fails (target disabled / hidden / not_found /
+ambiguous / drag_type_mismatch) or an unexpected throw aborts
+execution -- previously these were silent and the AI could
+claim success based on no-event. New `data-nac-validate="skip"`
+attribute (sec 5) lets hosts wrap third-party widgets they
+cannot annotate while validate() emits a structured warning if
+the skipped subtree contains interactives. New
+`data-nac-a11y-hint` attribute lets `delete` buttons declare
+`irreversible|requires_confirmation` so voice tools and screen
+readers can warn users BEFORE invocation. Drag-drop type
+validation (`data-nac-drag-type` on source +
+`data-nac-drag-accept` on target). Migration tooling: public
+`NAC.emit_dual()` helper, runtime
+`NAC.validate_event_conformance()` (was demo-only in v1.7),
+`NAC.check_canonical_shape()` pure utility, and a codemod
+script in `tools/migrate-legacy-events.js`. Self-test promoted
+to NAC-3 normative requirement (sec 6.2.27). Stable persistent
+IDs required for paginated/virtualized lists (sec 6.2.31).
+Focus pulse CSS custom properties documented and configurable
+per attention/cognition need (sec 7.x). Strict superset of
+v1.7.0: every v1.7 plugin remains valid; every v1.6.x legacy
+alias still accepted by the matcher but `legacy_event_field`
+warnings are now deduplicated by (event, field) per session.
+Inherits v1.7.0's normative section 6.2 (canonical TypeScript
+shapes per event family with entity-specific id fields:
+action_id, field_id, tab_id, section_id, column_id, source_id,
+target_id, etc instead of the ambiguous nac_id). The reference demo at
 yujin.app/nac-spec/example.php gained 11 new widget cards
 covering every event family in sec 6.2 (stepper, tree, toast,
 drawer, calendar, chart, map, richtext, breadcrumb, carousel,
@@ -93,7 +119,7 @@ NAC-drives-ARIA-mirrors direction, 7.5 confirm-dialog contract,
 plus tightened plugin-id rule (sec 7.4) and click_by_verb
 tie-break + tab_by_label matching rules (sec P5). See
 CHANGELOG.md for the full diff.
-**Date**: 2026-05-07.
+**Date**: 2026-05-07 (v1.8.0).
 **Authors**: Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com> (lead), Sumi (collaboration).
 **License**: MIT.
 
@@ -1042,6 +1068,94 @@ interface NacRowDef {
 
 ---
 
+## 3.1. Additional declarative attributes (v1.8.0, normative)
+
+Two new declarative attributes land in v1.8.0. Both are
+optional; absence preserves the v1.7 contract verbatim.
+
+### data-nac-validate="skip"
+
+Marks an HTML subtree as **out of scope for NAC-3 validation**.
+Use it when the host wraps a third-party widget that emits its
+own ARIA / events but cannot be retrofitted with `data-nac-*`
+attributes. Examples: a date-picker from a vendor library, a
+WYSIWYG editor, a chat widget mounted from a CDN script.
+
+The runtime guarantees:
+
+1. `validate(slug)` and `validate_global()` MUST NOT raise
+   `missing_required_event_field`, `aria_nac_state_mismatch`
+   or `aria_first_state` findings on elements whose ancestor
+   carries `data-nac-validate="skip"`.
+2. The validator MUST emit a finding
+   `skip_subtree_contains_interactives` (severity: `warn`)
+   listing the count of `[data-nac-id]` and natively
+   interactive descendants in the skipped subtree, so authors
+   notice when they accidentally exclude operable surface.
+3. Drivers (`NAC.click`, `NAC.fill`, `NAC.drag_drop`)
+   continue to operate on elements inside the skipped subtree;
+   the marker affects validation only, not operability.
+
+```html
+<section data-nac-validate="skip" data-nac-id="vendor.datepicker">
+  <!-- vendor widget mounted here; not retrofitted with data-nac-* -->
+</section>
+```
+
+This attribute exists because reviewers (DeepSeek, Microsoft
+Copilot, Mistral Le Chat) flagged sec 7.3.2's hard-error gate
+as the most likely cause of brownfield abandonment without an
+escape hatch.
+
+### data-nac-a11y-hint
+
+Pipe-separated semantic tags declaring **what voice tools,
+screen readers and AI agents should warn about BEFORE
+invoking the action**. The runtime does not enforce
+behaviour; it surfaces the hints in `NAC.describe()` output
+as a parsed string array on the element so consumers can
+interpose a confirmation step.
+
+Recognised vocabulary (extensible by plugins):
+
+| Tag                       | Meaning                                              |
+|---------------------------|------------------------------------------------------|
+| `irreversible`            | Cannot be undone (delete, finalize).                 |
+| `requires_confirmation`   | UI flow expects a second confirm step.               |
+| `dangerous`               | Equivalent to "are you sure?" weight in HCI terms.   |
+| `long_running`            | Expected to take >2s; agent SHOULD inform user.      |
+| `costly`                  | Triggers a billable side effect (API call, doc gen). |
+| `external_side_effect`    | Touches systems outside this app (email, webhook).   |
+| `data_loss`               | Replaces data without preservation.                  |
+
+```html
+<button data-nac-id="invoice.delete"
+        data-nac-role="action" data-nac-action="delete"
+        data-nac-a11y-hint="irreversible|requires_confirmation|data_loss">
+  Delete invoice
+</button>
+```
+
+`describe()` output for the above:
+
+```javascript
+{
+  nac_id: 'invoice.delete',
+  role: 'action',
+  /* ... */
+  a11y_hint: ['irreversible', 'requires_confirmation', 'data_loss']
+}
+```
+
+This attribute exists because reviewers (Mistral Le Chat,
+DeepSeek) flagged that voice-control + agentic loops carry
+a real risk of users-with-cognitive-disability triggering
+irreversible actions without comprehension. The attribute is
+the contract through which assistive software earns the
+right to interpose.
+
+---
+
 ## 4. Lifecycle and cardinality
 
 A plugin in NAC has the following observable lifecycle:
@@ -1202,6 +1316,23 @@ accordion the plugin never uses.
 Every `nac:*` event detail extends:
 
 ```typescript
+interface ProvenanceBlock {
+  // Who triggered the event. Required at NAC-3 (v1.8+).
+  // - 'user'   : real DOM input (mouse, keyboard, touch).
+  // - 'agent'  : an autonomous AI / RPA / voice agent.
+  //              MUST set tool to identify itself.
+  // - 'script' : page script, runtime helper, or unidentified.
+  //              Default when the runtime emits without context.
+  type: 'user' | 'agent' | 'script';
+  // Stable identifier of the actor when available.
+  // For 'agent': session id, conversation id, etc.
+  // For 'user': may be a session correlator; SHOULD NOT be PII.
+  id?: string;
+  // For 'agent': name + version of the tool.
+  //   e.g. 'claude-code/0.2.4', 'voice-control/talon-1.6'.
+  tool?: string;
+}
+
 interface NacEventBase {
   // From data-nac-plugin on the originating root. Required.
   plugin: string;
@@ -1214,12 +1345,77 @@ interface NacEventBase {
   // it emits an event itself; hosts MAY set it. Useful for
   // telemetry consumers ordering events across plugin buses.
   ts?: number;
+  // Provenance of the action that produced this event. The
+  // runtime defaults to { type: 'script' } when no caller
+  // sets it. AI agents and voice tools MUST set { type:
+  // 'agent', tool: '...' } so audit pipelines can distinguish
+  // human from automated traffic. Required at NAC-3 (v1.8+).
+  source: ProvenanceBlock;
 }
 ```
 
 The legacy field `plugin_slug` (used in v1.0..v1.3 emitters as
 the plugin id) is deprecated; v1.4.1+ runtimes MUST alias it
 to `plugin`. Implementations MAY emit both for compatibility.
+
+#### Precedence between canonical and legacy fields
+
+When a detail carries both a canonical field (e.g. `field_id`)
+and its legacy alias (e.g. `nac_id`), the canonical field is
+authoritative. Consumers MUST read the canonical first and only
+fall back to the legacy alias if the canonical is absent. The
+runtime SHOULD emit a `legacy_event_field` warning the first
+time it observes a consumer reading a legacy alias on an event
+type+field combination; subsequent reads of the same combination
+in the same session are deduplicated. This avoids the "400
+identical warnings per user action" failure mode flagged in
+the v1.7 peer review.
+
+#### Emission order
+
+When a producer fires both a canonical event name and its
+legacy alias (e.g. `nac:accordion:expanded` AND
+`nac:section:expanded`), it MUST fire the canonical name FIRST
+in the same synchronous emission cycle (same task tick). The
+helper `NAC.emit_dual(canonical, legacy, detail)` enforces this.
+Listeners that subscribe to only the canonical name therefore
+receive the event on the same tick they would have received the
+legacy event, ensuring no migration latency.
+
+#### Provenance examples
+
+A real user click:
+
+```javascript
+// Runtime sees a real bubbling click event from the user.
+detail.source = { type: 'user' };
+```
+
+An AI agent invoking NAC.click via an RPA tool:
+
+```javascript
+await NAC.click('quotation.send', {
+  source: { type: 'agent', id: 'sess-9b2c', tool: 'claude-code/0.2.4' }
+});
+// detail.source = { type: 'agent', id: 'sess-9b2c', tool: 'claude-code/0.2.4' }
+```
+
+A page script firing a synthetic event:
+
+```javascript
+// Runtime defaults to script when no opts.source given.
+NAC.emit_dual('nac:field:changed', null, {
+  plugin: 'order_form', field_id: 'qty', new_value: 5
+});
+// detail.source = { type: 'script' }
+```
+
+Audit pipelines for users with cognitive disabilities who
+delegate to an AI MUST be able to distinguish `user` from
+`agent` traffic. A consent flow that asks "your AI assistant
+wants to send the quotation, approve?" requires this distinction
+to be a load-bearing primitive of the contract, not a guess
+from event timing.
 
 ### 6.2.2. Plugin lifecycle (4+1 events)
 
@@ -1612,6 +1808,10 @@ actions and fields) and report:
   `set_validation_tolerance({legacy_fields:'error'})`).
   Triggered when an event detail uses a deprecated alias
   (e.g. `nac_id` for an action event instead of `action_id`).
+  v1.8+ runtimes MUST deduplicate this warning by `(event_type,
+  field)` per session so a chatty page does not flood the
+  console with hundreds of identical warnings per single user
+  action.
 - `missing_required_event_field` (severity `error` at NAC-3).
   Triggered when an event detail omits a field this section
   declares as required.
@@ -1619,6 +1819,107 @@ actions and fields) and report:
   plugin emits a `nac:*` event whose family is not declared
   in this section AND the plugin's manifest does not declare
   it as a custom event.
+- `skip_subtree_contains_interactives` (severity `warn`).
+  Triggered when a `data-nac-validate="skip"` subtree (sec 5)
+  contains `[data-nac-id]` elements or interactive native
+  controls. The subtree is correctly excluded from NAC-3
+  enforcement, but the warning surfaces that operable surface
+  is being hidden from drivers, so authors notice when they
+  accidentally exclude live UI.
+
+#### Self-test as a normative requirement (v1.8+)
+
+A NAC-3 conformant runtime MUST expose
+`NAC.validate_event_conformance(driver, opts)` (sec 13.5).
+A NAC-3 conformant page MUST be drivable end-to-end such that
+the self-test reports `pass` for every event family the page
+declares in its manifests, with `fail` and `miss` both zero.
+CI gates SHOULD invoke this method during the same pass that
+runs `validate()`/`validate_global()` and treat a non-zero
+`fail` count as a hard error. v1.7 shipped the self-test as
+demo-only source; v1.8 promotes it to a runtime method and a
+required NAC-3 gate (Mistral peer-review action item).
+
+### 6.2.30. Command events (v1.8.0, normative)
+
+`nac:command:rejected` and `nac:command:failed` close the
+silent-failure gap reviewers identified for users delegating
+multi-step UI work to AI assistants. The runtime emits these
+events itself; plugins MAY emit them via the public helpers
+`NAC.command_rejected(detail)` and `NAC.command_failed(detail)`.
+
+```typescript
+interface NacCommandRejectedDetail {
+  command_method: 'click' | 'fill' | 'drag_drop' | 'expand' |
+                  'sort' | 'set_slider' | 'go_to_section' |
+                  'reset' | string;
+  command_target: string | null;     // the requested nac_id, if any
+  reason: 'not_found' | 'disabled' | 'hidden' | 'ambiguous' |
+          'role_mismatch' | 'drag_type_mismatch' | 'invalid' |
+          string;
+  message: string;                   // human-readable
+  // Drag-specific fields (only when reason='drag_type_mismatch'):
+  drag_type?: string;                // source's data-nac-drag-type
+  drag_accept?: string;              // target's data-nac-drag-accept
+  // Provenance is required (sec 6.2.1).
+  source: ProvenanceBlock;
+  ts?: number;
+}
+
+interface NacCommandFailedDetail {
+  command_method: string;
+  command_target: string | null;
+  reason: 'exception' | string;
+  message: string;
+  error_message?: string;
+  error_stack?: string;              // optional, runtime MAY redact
+  source: ProvenanceBlock;
+  ts?: number;
+}
+```
+
+**Distinction.** `rejected` covers preflight failures the runtime
+detects BEFORE invoking the host's handler (target not in DOM,
+disabled, hidden, ambiguous, drag-type mismatch). `failed` covers
+unexpected throws DURING invocation (host handler raised, network
+error, drag-drop DOM mutation failure). An AI assistant can act
+on these distinctly: `rejected` typically means "rephrase or pick
+another target"; `failed` typically means "retry with backoff or
+escalate to human".
+
+**Audit value.** Together they ensure every NAC-driven command
+emits exactly one terminal event: success on its role-specific
+event family, or `nac:command:rejected`, or `nac:command:failed`.
+A consumer that hears no event in the timeout window now has a
+genuine bug to chase, not a missing-emitter shrug.
+
+### 6.2.31. Stable persistent IDs for paginated and virtualized lists (v1.8.0, normative)
+
+For lists, tables, autocomplete results, tree nodes, calendar
+events, map markers, and any collection rendered with pagination
+or virtualization: the canonical id field (`item_id`, `node_id`,
+`event_id`, `marker_id`, `option_id`, `row_id`) MUST be **stable
+across pagination, scroll virtualization and re-renders**. Two
+load operations that fetch the same backing record MUST produce
+the same canonical id. The id MAY be opaque to the consumer (a
+ULID, UUID, or backend primary key) but MUST NOT be derived from
+visual position or list index.
+
+This requirement responds to peer-review findings (Grok,
+DeepSeek) that voice control + agentic delegation collapse on
+virtualized 5000-row autocompletes when "pick Berlin" is mapped
+to "click position 437" rather than "click option_id=opt-de-berlin".
+
+### 6.2.32. Why this remains a strict superset
+
+Existing v1.6.x and v1.7.x plugins continue to validate at NAC-3
+because the runtime matcher accepts legacy field names with a
+warn-level finding. The hard-error path is opt-in. v1.8.0's
+additions (`source` provenance, command events,
+`data-nac-validate="skip"`, drag types, a11y hints) are
+additive: a v1.7 plugin that does not set them simply does not
+benefit from the new audit primitives, but it does not break.
+The matcher tolerance code has a documented sunset (v2.0).
 
 ### 6.2.28. Migration from v1.6.x
 
@@ -2162,6 +2463,77 @@ condition only; second is host-tested).
   `data-nac-id`; lifecycle events not required.
 - NAC-3: full contract above MUST be implemented; validator
   errors are blockers.
+
+---
+
+## 7.6. Attention signals (informative, added v1.8.0)
+
+When the runtime drives a programmatic operation, it provides
+visual feedback so a human reviewer (sighted or low-vision)
+can SEE what the agent did. This matters most for users with
+attention or executive-function variation, who need explicit
+"the system did the thing you asked it to" cues to maintain
+trust in the delegation.
+
+Two signal channels:
+
+1. **Focus pulse**: a brief outline + glow on the element the
+   driver just clicked, filled, expanded, etc. Default
+   duration 700 ms.
+2. **Section visibility highlight**: a 1500 ms outline on the
+   landmark section the runtime navigated to via
+   `NAC.go_to_section`. Persists 1500 ms even when the
+   section was already in viewport so the user always sees
+   "the agent went to section X".
+
+Both signals are configurable through CSS custom properties
+the host can override. The reference runtime declares these
+defaults (the host MAY override per-tenant or per-user via
+the cascade):
+
+```css
+:root {
+  /* Focus pulse on every driver-initiated operation. */
+  --nac-focus-pulse-color:    #4f46e5;   /* indigo-500 */
+  --nac-focus-pulse-duration: 700ms;
+  --nac-focus-pulse-thickness: 3px;
+  --nac-focus-pulse-intensity: 1;        /* 0..1 opacity scale */
+
+  /* Section-visit highlight on go_to_section. */
+  --nac-section-visited-color:    #f59e0b;   /* amber-400 */
+  --nac-section-visited-duration: 1500ms;
+}
+
+[data-nac-focus-pulse="1"] {
+  outline: var(--nac-focus-pulse-thickness) solid
+           var(--nac-focus-pulse-color);
+  outline-offset: 2px;
+  animation: nac-focus-pulse var(--nac-focus-pulse-duration) ease-out;
+}
+
+@keyframes nac-focus-pulse {
+  0%   { outline-color: var(--nac-focus-pulse-color);
+         opacity: var(--nac-focus-pulse-intensity); }
+  100% { outline-color: transparent; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* MUST honour the user's reduced-motion preference. */
+  [data-nac-focus-pulse="1"] { animation: none; }
+}
+```
+
+A host targeting users with ADHD or chronic-pain
+variability MAY raise `--nac-focus-pulse-thickness` to `5px`
+and `--nac-focus-pulse-duration` to `1500ms` so the cue is
+more salient, OR add an audio cue via a manifest-declared
+plugin attention profile (informative; not yet normative).
+
+**Why this exists.** v1.7 peer reviewers (Mistral, Grok)
+flagged that the default pulse was too subtle to serve
+attention-sensitive populations. v1.8 makes the parameters
+public and configurable, with reduced-motion respect as a
+non-negotiable.
 
 ---
 
@@ -2734,10 +3106,22 @@ interface NAC {
   // implementation landed in v1.6.2; signature was declared in
   // v1.1 but the runtime never exposed it until then. Optional
   // opts.to_index for ordered drop-targets, opts.value passed
-  // through to nac:drag:dropped.
+  // through to nac:drag:dropped, opts.source overrides the
+  // ProvenanceBlock attached to every emitted drag event.
+  //
+  // v1.8.0 type validation: when source carries
+  // data-nac-drag-type and target carries data-nac-drag-accept
+  // (CSV list of accepted types or "*" for any), the runtime
+  // checks compatibility. Mismatches reject with
+  // NacError('drag_type_mismatch') and emit
+  // nac:command:rejected with reason='drag_type_mismatch',
+  // drag_type=<source's type>, drag_accept=<target's accept>.
+  // Untyped sources (no data-nac-drag-type) are treated as
+  // compatible with all targets, preserving v1.7 behaviour.
   drag_drop(source_nac_id: string,
             target_nac_id: string,
-            opts?: { to_index?: number; value?: any }
+            opts?: { to_index?: number; value?: any;
+                     source?: ProvenanceBlock }
             ): Promise<NacResult>;
 
   // File upload
@@ -2871,6 +3255,73 @@ removes or repurposes a v1.0 attribute, event, or function will
 require **MAJOR** (v2.0).
 
 End of NAC v1.1 normative document.
+
+### 13.9. Migration + audit helpers (v1.8.0, normative)
+
+The runtime exposes four helpers for migration ergonomics and
+executable audit. All four are required at NAC-3.
+
+```typescript
+interface NAC {
+  // ... v1.0..v1.7 functions unchanged.
+
+  // Fire BOTH the canonical event name and its legacy alias
+  // with the same detail object. Canonical is dispatched first,
+  // synchronously. Used by plugin authors who must support
+  // v1.6.x consumers AND v1.7+ consumers from the same emit-site.
+  emit_dual(
+    canonical_event: string,
+    legacy_event: string | null,
+    detail: object
+  ): void;
+
+  // Public wrappers around nac:command:rejected and
+  // nac:command:failed. Plugin authors use these to surface
+  // their own preflight rejections and execution failures
+  // through the same wire shape the runtime uses for click,
+  // fill, drag_drop, etc.
+  command_rejected(detail: NacCommandRejectedDetail): void;
+  command_failed(detail: NacCommandFailedDetail): void;
+
+  // Pure utility. Returns { ok, missing[] } for whether a given
+  // detail object satisfies the canonical shape required for
+  // the named event family per sec 6.2.
+  check_canonical_shape(
+    event_type: string,
+    detail: object
+  ): { ok: boolean; missing: string[]; unknown_event?: boolean };
+
+  // Runtime equivalent of the v1.7 demo's "event conformance
+  // self-test". Subscribes to every event family in sec 6.2,
+  // optionally invokes a driver function that exercises the
+  // page, then validates each captured event against its
+  // canonical shape. Required at NAC-3 (sec 6.2.27).
+  validate_event_conformance(
+    driver?: () => Promise<void> | void,
+    opts?: { timeout_ms?: number }
+  ): Promise<{
+    pass: number;
+    fail: number;
+    miss: number;
+    total_captured: number;
+    details: Array<{
+      event: string;
+      status: 'pass' | 'fail' | 'miss';
+      missing?: string[];
+      sample_detail?: object;
+      count?: number;
+    }>;
+  }>;
+}
+```
+
+**CI usage:** a NAC-3 conformant page integrates
+`validate_event_conformance` into its CI pipeline alongside
+`validate()`/`validate_global()`. A driver function exercises
+each manifest-declared action / field / tab. The CI gate fails
+when `pass` plus `miss` is less than the count of declared
+event families OR when `fail > 0`. The reference demo at
+`yujin.app/nac-spec/example.php` ships a worked example.
 
 ---
 
