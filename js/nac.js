@@ -286,6 +286,94 @@
     return e;
   }
 
+  /* ---------- v1.8.0: skip-validate, command-events, dedup ------- */
+
+  /* Spec sec 5: data-nac-validate="skip" marks a subtree (typically
+     a third-party widget) as out of scope for NAC-3 validation. The
+     validator must NOT raise hard errors on elements inside such
+     subtrees. The runtime walks ancestors looking for the marker.
+     If the skipped subtree contains [data-nac-id] elements, validate()
+     surfaces a structured warning (severity: 'warn', code:
+     'skip_subtree_contains_interactives') so authors notice that
+     they are excluding interactive surface. */
+  function _validateSkipAncestor(el) {
+    if (!el || typeof el.closest !== 'function') return null;
+    return el.closest('[data-nac-validate="skip"]');
+  }
+
+  /* Spec sec 6.2.28 nac:command:rejected and nac:command:failed.
+     Emitted by NAC.click/fill/expand/drag_drop/sort/etc when:
+       rejected = preflight check failed (target disabled, hidden,
+                  not_found, ambiguous, drag-type-mismatch).
+       failed   = unexpected throw during execution (host handler
+                  raised, network error during fetch, etc).
+     These close the silent-failure gap reviewers flagged in v1.7
+     for users delegating multi-step UI work to AI assistants. */
+  function _emitCommandRejected(detail) {
+    detail = detail || {};
+    /* command_method = 'click' | 'fill' | 'drag_drop' | ... */
+    /* command_target = nac_id string (or null if unresolvable) */
+    /* reason = 'disabled' | 'hidden' | 'not_found' | 'ambiguous' |
+                'drag_type_mismatch' | 'invalid' */
+    /* message = optional human-readable string */
+    _emit('nac:command:rejected', _withDefaultSource(detail, 'script'));
+  }
+  function _emitCommandFailed(detail) {
+    detail = detail || {};
+    /* Same shape as rejected, plus error_message + optional
+       error_stack snippet. */
+    _emit('nac:command:failed', _withDefaultSource(detail, 'script'));
+  }
+
+  /* Spec sec 6.2 ProvenanceBlock: every emitted event MAY carry
+     source: { type: 'user' | 'agent' | 'script', id?, tool? }.
+     The runtime defaults to {type:'script'} for events emitted
+     from NAC.click/fill/etc; callers can override by passing
+     opts.source. User-initiated events (real DOM clicks via the
+     mouse, real keyboard input) carry {type:'user'}. */
+  function _withDefaultSource(detail, defaultType) {
+    detail = detail || {};
+    if (!detail.source) {
+      detail.source = { type: defaultType || 'script' };
+    } else if (typeof detail.source === 'string') {
+      detail.source = { type: detail.source };
+    }
+    return detail;
+  }
+
+  /* Spec sec 6.2 legacy_event_field warning deduplication.
+     v1.7 emits a console.warn whenever a consumer reads a legacy
+     alias (e.g. detail.nac_id when the canonical is detail.field_id).
+     Without dedup, a chatty page can flood the console with 100s
+     of identical warnings per session. Key by (event_type, field).
+     Reset by calling NAC.__resetLegacyWarnDedup() (test-only). */
+  const _legacyWarnSeen = Object.create(null);
+  function _legacyWarn(eventType, field, canonical) {
+    const key = eventType + '::' + field;
+    if (_legacyWarnSeen[key]) return;
+    _legacyWarnSeen[key] = true;
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[NAC] legacy_event_field: ' + eventType +
+        ' detail.' + field + ' is a legacy alias. Use detail.' +
+        canonical + ' instead. Will be removed in v2.0.');
+    }
+  }
+
+  /* Spec sec 13.4 v1.8.0: drag_drop type validation.
+     Source declares data-nac-drag-type (e.g. "card", "row").
+     Target declares data-nac-drag-accept (CSV: "card,row,*"
+     or "*" for any). Mismatch -> nac:command:rejected with
+     reason: 'drag_type_mismatch'. Used by drag_drop() below. */
+  function _dragTypesCompatible(source_el, target_el) {
+    if (!source_el || !target_el) return false;
+    const stype = (source_el.getAttribute('data-nac-drag-type') || '').trim();
+    const accept = (target_el.getAttribute('data-nac-drag-accept') || '*').trim();
+    if (!stype) return true; /* untyped source: assume compatible */
+    if (accept === '*' || accept === '') return true;
+    const types = accept.split(',').map(function (s) { return s.trim(); });
+    return types.indexOf(stype) >= 0 || types.indexOf('*') >= 0;
+  }
+
   /* ---------- Registry -------------------------------------------- */
 
   const _manifests = Object.create(null);
@@ -462,6 +550,18 @@
       value:      _readElementValue(el),
       visible:    _isVisible(el),
       disabled:   el.disabled === true || el.getAttribute('aria-disabled') === 'true',
+      /* v1.8.0: surface data-nac-a11y-hint as a structured array.
+         Hints are pipe-separated semantic tags (e.g.
+         "irreversible|requires_confirmation|long_running") that let
+         voice tools, screen readers and AI agents warn users about
+         dangerous actions BEFORE invoking them. Sec 5 attributes
+         table; sec 6.2 ProvenanceBlock context. */
+      a11y_hint:  (function () {
+        const raw = el.getAttribute('data-nac-a11y-hint');
+        if (!raw) return null;
+        return raw.split('|').map(function (s) { return s.trim(); })
+                  .filter(function (s) { return s.length > 0; });
+      })(),
     };
   }
 
@@ -740,9 +840,49 @@
        Default timeout 5000ms; override via opts.timeout.
        v1.6.3: success-event family is role-aware (see _CLICK_EVENT_FAMILY). */
     const el = _findElement(nac_id, opts);
-    if (!el) throw NacError('not_found', 'No element with nac_id=' + nac_id);
+    if (!el) {
+      /* v1.8.0: emit nac:command:rejected so an AI agent or audit
+         pipeline can hear about every silent miss instead of just
+         catching the throw. */
+      _emitCommandRejected({
+        command_method: 'click',
+        command_target: nac_id,
+        reason: 'not_found',
+        message: 'No element with nac_id=' + nac_id,
+        source: (opts && opts.source) || undefined,
+      });
+      throw NacError('not_found', 'No element with nac_id=' + nac_id);
+    }
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') {
+      _emitCommandRejected({
+        command_method: 'click',
+        command_target: nac_id,
+        reason: 'disabled',
+        message: 'Element ' + nac_id + ' is disabled',
+        source: (opts && opts.source) || undefined,
+      });
       throw NacError('disabled', 'Element ' + nac_id + ' is disabled');
+    }
+    /* v1.8.0: hidden-target rejection. A button inside display:none
+       or aria-hidden="true" is not a click target a user could reach;
+       sec 6.2.28 requires us to surface this rather than fire silently.
+       We use rect dimensions + aria-hidden so position:fixed elements
+       (legitimate offsetParent=null) are NOT misclassified. */
+    var hiddenByAria = el.getAttribute('aria-hidden') === 'true';
+    var hiddenByLayout = false;
+    if (typeof el.getBoundingClientRect === 'function') {
+      var rect = el.getBoundingClientRect();
+      hiddenByLayout = (rect.width === 0 && rect.height === 0);
+    }
+    if (hiddenByAria || hiddenByLayout) {
+      _emitCommandRejected({
+        command_method: 'click',
+        command_target: nac_id,
+        reason: 'hidden',
+        message: 'Element ' + nac_id + ' is not visible',
+        source: (opts && opts.source) || undefined,
+      });
+      throw NacError('hidden', 'Element ' + nac_id + ' is not visible');
     }
     const role = el.getAttribute('data-nac-role') || 'action';
     const family = _CLICK_EVENT_FAMILY[role] || _CLICK_EVENT_FAMILY['action'];
@@ -944,8 +1084,26 @@
 
   async function fill(nac_id, value, opts) {
     const el = _findElement(nac_id, opts);
-    if (!el) throw NacError('not_found', 'No field with nac_id=' + nac_id);
-    if (el.disabled) throw NacError('disabled', 'Field ' + nac_id + ' is disabled');
+    if (!el) {
+      _emitCommandRejected({
+        command_method: 'fill',
+        command_target: nac_id,
+        reason: 'not_found',
+        message: 'No field with nac_id=' + nac_id,
+        source: (opts && opts.source) || undefined,
+      });
+      throw NacError('not_found', 'No field with nac_id=' + nac_id);
+    }
+    if (el.disabled) {
+      _emitCommandRejected({
+        command_method: 'fill',
+        command_target: nac_id,
+        reason: 'disabled',
+        message: 'Field ' + nac_id + ' is disabled',
+        source: (opts && opts.source) || undefined,
+      });
+      throw NacError('disabled', 'Field ' + nac_id + ' is disabled');
+    }
     _focusElement(el);
     const ft = el.getAttribute('data-nac-field-type');
 
@@ -1170,6 +1328,14 @@
     Array.prototype.forEach.call(
       root.querySelectorAll('[data-nac-id]'),
       function (el) {
+        /* v1.8.0: skip elements inside a data-nac-validate="skip"
+           subtree. The marker exists for third-party widgets the
+           host cannot annotate. We do NOT register them as found
+           and we do NOT raise findings against them. We DO emit
+           a separate warning if such a subtree contains
+           interactives, so authors notice they are excluding
+           operable surface. */
+        if (_validateSkipAncestor(el)) return;
         const id = el.getAttribute('data-nac-id');
         found[id] = true;
         elemByNacId[id] = el;
@@ -1182,6 +1348,28 @@
       if (extra) for (const k in extra) e[k] = extra[k];
       errors.push(e);
     }
+    /* v1.8.0: surface skip-validate regions that contain interactive
+       elements as a structured warning (not an error). Authors who
+       legitimately wrap a third-party widget can ignore it; authors
+       who accidentally hid live UI behind the marker get a nudge. */
+    Array.prototype.forEach.call(
+      root.querySelectorAll('[data-nac-validate="skip"]'),
+      function (skipEl) {
+        const interactives = skipEl.querySelectorAll(
+          '[data-nac-id], [data-nac-role="action"], ' +
+          '[data-nac-role="field"], [data-nac-role="tab"], ' +
+          '[data-nac-role="draggable"], button:not([disabled]), ' +
+          'input:not([disabled]), select:not([disabled])');
+        if (interactives.length > 0) {
+          pushErr('warn', 'skip_subtree_contains_interactives',
+            skipEl.getAttribute('data-nac-id'),
+            'data-nac-validate="skip" region contains ' +
+            interactives.length + ' interactive descendant(s); ' +
+            'these will not be operable by NAC drivers',
+            { interactive_count: interactives.length });
+        }
+      }
+    );
     /* 1. Presence (legacy check). */
     function checkPresence(arr, kind) {
       (arr || []).forEach(function (e) {
@@ -2082,6 +2270,15 @@
   }
   function _emit(name, detail) {
     detail = _normalizeDetail(detail);
+    /* v1.8.0: apply default source provenance when caller did not
+       set one. Lifecycle events (nac:plugin:opened, etc.) emitted at
+       boot before any user action default to {type:'script'} so a
+       downstream auditor never sees an event without provenance. */
+    if (!detail.source) {
+      detail.source = { type: 'script' };
+    } else if (typeof detail.source === 'string') {
+      detail.source = { type: detail.source };
+    }
     document.dispatchEvent(new CustomEvent(name, {
       detail: detail, bubbles: true, composed: true,
     }));
@@ -2912,23 +3109,72 @@
     opts = opts || {};
     var source = _byId(source_nac_id);
     if (!source) {
+      _emitCommandRejected({
+        command_method: 'drag_drop',
+        command_target: source_nac_id,
+        reason: 'not_found',
+        message: 'draggable not found: ' + source_nac_id,
+        source: opts.source,
+      });
       return Promise.reject(new NacError('not_found',
         'draggable not found: ' + source_nac_id));
     }
     var target = _byId(target_nac_id);
     if (!target) {
+      _emitCommandRejected({
+        command_method: 'drag_drop',
+        command_target: target_nac_id,
+        reason: 'not_found',
+        message: 'drop-target not found: ' + target_nac_id,
+        source: opts.source,
+      });
       return Promise.reject(new NacError('not_found',
         'drop-target not found: ' + target_nac_id));
     }
     if (source.getAttribute('data-nac-role') !== 'draggable') {
+      _emitCommandRejected({
+        command_method: 'drag_drop',
+        command_target: source_nac_id,
+        reason: 'role_mismatch',
+        message: 'source must have data-nac-role="draggable"',
+        source: opts.source,
+      });
       return Promise.reject(new NacError('role_mismatch',
         'source must have data-nac-role="draggable", got: ' +
         (source.getAttribute('data-nac-role') || 'null')));
     }
     if (target.getAttribute('data-nac-role') !== 'drop-target') {
+      _emitCommandRejected({
+        command_method: 'drag_drop',
+        command_target: target_nac_id,
+        reason: 'role_mismatch',
+        message: 'target must have data-nac-role="drop-target"',
+        source: opts.source,
+      });
       return Promise.reject(new NacError('role_mismatch',
         'target must have data-nac-role="drop-target", got: ' +
         (target.getAttribute('data-nac-role') || 'null')));
+    }
+    /* v1.8.0: drag-type validation (spec sec 13.4 v1.8 addition).
+       Source declares its own kind via data-nac-drag-type; target
+       declares an accept list via data-nac-drag-accept (CSV or "*").
+       Mismatch -> nac:command:rejected with reason=drag_type_mismatch
+       so an automated agent that picked the wrong target hears about
+       it instead of silently mutating the DOM. */
+    if (!_dragTypesCompatible(source, target)) {
+      var stype = source.getAttribute('data-nac-drag-type') || '';
+      var accept = target.getAttribute('data-nac-drag-accept') || '*';
+      _emitCommandRejected({
+        command_method: 'drag_drop',
+        command_target: target_nac_id,
+        reason: 'drag_type_mismatch',
+        message: 'source type "' + stype + '" not in target accept "' + accept + '"',
+        drag_type: stype,
+        drag_accept: accept,
+        source: opts.source,
+      });
+      return Promise.reject(new NacError('drag_type_mismatch',
+        'source type "' + stype + '" not in target accept "' + accept + '"'));
     }
 
     /* v1.4.1 focus barrier: scroll source into view + visual pulse
@@ -2998,6 +3244,17 @@
             reason:      'aborted',
             error:       err && err.message ? err.message : String(err),
           }));
+          /* v1.8.0: emit nac:command:failed so an audit pipeline
+             sees unexpected throws as separate from preflight
+             rejections (which are nac:command:rejected). */
+          _emitCommandFailed({
+            command_method: 'drag_drop',
+            command_target: target_nac_id,
+            reason: 'exception',
+            message: err && err.message ? err.message : String(err),
+            error_message: err && err.message ? err.message : String(err),
+            source: opts.source,
+          });
           reject(err instanceof Error ? err :
             new NacError('invalid', String(err)));
         }
@@ -3005,12 +3262,185 @@
     });
   }
 
+  /* ---------- v1.8.0: public emit_dual + canonical shape check
+                + runtime validate_event_conformance --------------- */
+
+  /* NAC.emit_dual(canonical, legacy, detail)
+     Fires both the canonical and legacy event names with the same
+     normalized detail so plugins migrating to v1.7+ shapes do not
+     have to maintain two emit-sites. The runtime guarantees the
+     canonical fires synchronously BEFORE the legacy alias, same
+     macrotask, so subscribers that listen only to the canonical
+     name see it first (sec 6.2 emission order). */
+  function emit_dual(canonical_name, legacy_name, detail) {
+    detail = detail || {};
+    _emit(canonical_name, detail);
+    if (legacy_name && legacy_name !== canonical_name) {
+      _emit(legacy_name, detail);
+    }
+  }
+
+  /* NAC.command_rejected(detail) / NAC.command_failed(detail)
+     Public wrappers around the internal helpers so plugin authors
+     can surface their own preflight rejections + execution failures
+     using the same wire shape the runtime uses for click/fill/etc.
+     Detail keys: command_method (string), command_target (nac_id |
+     null), reason (enum), message (string), source (ProvenanceBlock). */
+  function command_rejected(detail) { _emitCommandRejected(detail); }
+  function command_failed(detail) { _emitCommandFailed(detail); }
+
+  /* Canonical shape registry for each nac:* event family per sec 6.2.
+     Required fields the runtime guarantees in v1.8+. Used by
+     NAC.check_canonical_shape() and validate_event_conformance(). */
+  const _CANONICAL_SHAPES = {
+    'nac:plugin:opened':         { required: ['plugin'] },
+    'nac:plugin:closed':         { required: ['plugin'] },
+    'nac:plugin:minimized':      { required: ['plugin'] },
+    'nac:plugin:maximized':      { required: ['plugin'] },
+    'nac:plugin:restored':       { required: ['plugin'] },
+    'nac:plugin:reset':          { required: ['plugin'] },
+    'nac:action:dispatching':    { required: ['plugin', 'action_id'] },
+    'nac:action:succeeded':      { required: ['plugin', 'action_id'] },
+    'nac:action:failed':         { required: ['plugin', 'action_id'] },
+    'nac:field:changed':         { required: ['plugin', 'field_id'] },
+    'nac:tab:changed':           { required: ['plugin', 'tab_id'] },
+    'nac:section:expanded':      { required: ['plugin', 'section_id'] },
+    'nac:section:collapsed':     { required: ['plugin', 'section_id'] },
+    'nac:accordion:expanded':    { required: ['plugin', 'section_id'] },
+    'nac:accordion:collapsed':   { required: ['plugin', 'section_id'] },
+    'nac:slider:value_changed':  { required: ['plugin', 'field_id', 'value'] },
+    'nac:table:sort_changed':    { required: ['plugin', 'column_id'] },
+    'nac:table:filter_changed':  { required: ['plugin', 'filter_id'] },
+    'nac:list:reordered':        { required: ['list_id', 'item_id'] },
+    'nac:drag:started':          { required: ['plugin', 'source_id'] },
+    'nac:drag:over':             { required: ['plugin', 'source_id', 'target_id'] },
+    'nac:drag:dropped':          { required: ['plugin', 'source_id', 'target_id'] },
+    'nac:drag:cancelled':        { required: ['plugin', 'source_id'] },
+    'nac:state:changed':         { required: [] },
+    'nac:step:advanced':         { required: ['plugin', 'stepper_id'] },
+    'nac:step:back':             { required: ['plugin', 'stepper_id'] },
+    'nac:tree:expanded':         { required: ['plugin', 'tree_id', 'node_id'] },
+    'nac:tree:collapsed':        { required: ['plugin', 'tree_id', 'node_id'] },
+    'nac:tree:selected':         { required: ['plugin', 'tree_id', 'node_id'] },
+    'nac:toast:shown':           { required: ['plugin', 'toast_id'] },
+    'nac:toast:dismissed':       { required: ['plugin', 'toast_id'] },
+    'nac:drawer:opened':         { required: ['plugin', 'drawer_id'] },
+    'nac:drawer:closed':         { required: ['plugin', 'drawer_id'] },
+    'nac:calendar:view_changed': { required: ['plugin', 'calendar_id'] },
+    'nac:calendar:event_selected': { required: ['plugin', 'calendar_id', 'event_id'] },
+    'nac:chart:data_loaded':     { required: ['plugin', 'chart_id'] },
+    'nac:chart:series_toggled':  { required: ['plugin', 'chart_id', 'series_id'] },
+    'nac:map:focused':           { required: ['plugin', 'map_id'] },
+    'nac:map:marker_selected':   { required: ['plugin', 'map_id', 'marker_id'] },
+    'nac:richtext:formatted':    { required: ['plugin', 'richtext_id'] },
+    'nac:richtext:link_inserted':{ required: ['plugin', 'richtext_id'] },
+    'nac:breadcrumb:navigated':  { required: ['plugin', 'breadcrumb_id'] },
+    'nac:carousel:advanced':     { required: ['plugin', 'carousel_id'] },
+    'nac:timeline:loaded':       { required: ['plugin', 'timeline_id'] },
+    'nac:command:rejected':      { required: ['command_method', 'reason'] },
+    'nac:command:failed':        { required: ['command_method'] },
+  };
+
+  /* NAC.check_canonical_shape(eventType, detail) -> { ok, missing }
+     Pure utility. Returns { ok: true, missing: [] } if the detail
+     carries every required field for that event family. Otherwise
+     ok=false and missing=[...] lists the absent canonical fields.
+     Plugin authors can call this in their own tests; CI gates can
+     fail builds when ok=false. */
+  function check_canonical_shape(eventType, detail) {
+    const shape = _CANONICAL_SHAPES[eventType];
+    if (!shape) {
+      return { ok: false, missing: [], unknown_event: true };
+    }
+    const missing = [];
+    detail = detail || {};
+    for (let i = 0; i < shape.required.length; i++) {
+      const f = shape.required[i];
+      if (detail[f] === undefined || detail[f] === null) {
+        missing.push(f);
+      }
+    }
+    return { ok: missing.length === 0, missing: missing };
+  }
+
+  /* NAC.validate_event_conformance(driver, opts)
+     Runtime equivalent of the demo's "v1.7 event conformance"
+     self-test (Mistral review action item: the self-test should
+     live in the runtime, not in demo source). Subscribes to every
+     event family in _CANONICAL_SHAPES, optionally invokes a driver
+     to drive the page, then validates each captured event against
+     its canonical shape. Returns:
+       {
+         pass: number,         // events that satisfied canonical shape
+         fail: number,         // events that violated canonical shape
+         miss: number,         // event families never observed
+         total_captured: number,
+         details: [
+           { event, ok|fail|miss, missing?, sample_detail? },
+           ...
+         ]
+       }
+     opts.timeout_ms (default 4000) caps how long we listen. */
+  async function validate_event_conformance(driver, opts) {
+    opts = opts || {};
+    const timeout_ms = opts.timeout_ms || 4000;
+    const expected = Object.keys(_CANONICAL_SHAPES);
+    const captured = Object.create(null); /* event -> [details] */
+    const handlers = Object.create(null);
+    expected.forEach(function (ev) {
+      captured[ev] = [];
+      handlers[ev] = function (e) { captured[ev].push(e.detail || {}); };
+      document.addEventListener(ev, handlers[ev]);
+    });
+    function cleanup() {
+      expected.forEach(function (ev) {
+        document.removeEventListener(ev, handlers[ev]);
+      });
+    }
+    try {
+      if (typeof driver === 'function') {
+        await driver();
+      }
+      /* Give async emits a tick to settle. */
+      await new Promise(function (r) { setTimeout(r, Math.min(timeout_ms, 500)); });
+    } finally {
+      cleanup();
+    }
+    let pass = 0, fail = 0, miss = 0, total = 0;
+    const details = [];
+    expected.forEach(function (ev) {
+      const seen = captured[ev];
+      if (!seen.length) {
+        miss++;
+        details.push({ event: ev, status: 'miss' });
+        return;
+      }
+      total += seen.length;
+      const probe = seen[0];
+      const r = check_canonical_shape(ev, probe);
+      if (r.ok) {
+        pass++;
+        details.push({ event: ev, status: 'pass', count: seen.length });
+      } else {
+        fail++;
+        details.push({
+          event: ev, status: 'fail',
+          missing: r.missing, sample_detail: probe, count: seen.length,
+        });
+      }
+    });
+    return {
+      pass: pass, fail: fail, miss: miss,
+      total_captured: total, details: details,
+    };
+  }
+
   /* ---------- Install -------------------------------------------- */
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.7.0',
-    spec_version: '1.7',
+    version:      '1.8.0',
+    spec_version: '1.8',
     /* registry */
     register:        register,
     unregister:      unregister,
@@ -3126,6 +3556,12 @@
     reorder:                     reorder,
     /* v1.6.2 -- drag_drop (cross-list, implements spec sec 13.4) */
     drag_drop:                   drag_drop,
+    /* v1.8.0 -- emit helpers + canonical shape utilities */
+    emit_dual:                   emit_dual,
+    command_rejected:            command_rejected,
+    command_failed:              command_failed,
+    check_canonical_shape:       check_canonical_shape,
+    validate_event_conformance:  validate_event_conformance,
     /* v1.2 -- error codes */
     errors: {
       RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',
