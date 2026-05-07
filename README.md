@@ -6,36 +6,63 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.8.0](https://img.shields.io/badge/NAC-v1.7.0-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.8.0](https://img.shields.io/badge/NAC-v1.8.0-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v1.7.0 (2026-05-07).
-**Reference runtime:** v1.7.0 (`NAC.version === '1.8.0'`).
-**Strict superset of:** v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
-**What v1.7.0 adds:**
-- **Spec sec 6.2 Canonical event detail shapes** -- every
-  `nac:*` event family gets a TypeScript-style interface
-  declaring required + optional fields, with each widget
-  family using its own entity-specific id (`action_id`,
-  `field_id`, `tab_id`, `section_id`, `column_id`, `source_id`,
-  `target_id`, `list_id`, `tree_id`, `node_id`, etc.) instead
-  of the ambiguous `nac_id`. Closes the v1.6 peer review's
-  #1 abandonment cause: "the validator is reactive, not
-  preventive".
-- **Strict-superset migration**: legacy field names stay
-  accepted by the runtime matcher with a `legacy_event_field`
-  warning; v2.0 (the public-announce release) drops legacy
-  entirely.
-- **Reference demo** gains 11 new widget cards (stepper,
-  tree, toast, drawer, calendar, chart, map, richtext,
-  breadcrumb, carousel, timeline) covering every event family
-  in sec 6.1.
-- **Self-test "v1.7 event conformance"** programmatically
-  drives every widget and asserts the emitted event detail
-  matches its canonical shape -- the first time NAC ships an
-  executable specification check.
+**Spec version:** v1.8.0 (2026-05-07).
+**Reference runtime:** v1.8.0 (`NAC.version === '1.8.0'`).
+**Strict superset of:** v1.7, v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
+**What v1.8.0 adds:**
+- **ProvenanceBlock on every event** (sec 6.2.1) --
+  `source: { type: 'user' | 'agent' | 'script', id?, tool? }`.
+  Audit pipelines for users delegating UI work to AI assistants
+  can finally distinguish human from automated traffic.
+- **`nac:command:rejected` + `nac:command:failed`** event
+  families (sec 6.2.30) close the silent-failure gap (target
+  disabled / hidden / not_found / ambiguous, or unexpected
+  throw during execution).
+- **`data-nac-validate="skip"`** declarative attribute (sec
+  3.1) -- third-party widget escape hatch that does NOT fail
+  validate() but emits a warning if the region contains
+  operable surface.
+- **`data-nac-a11y-hint`** (sec 3.1) -- `irreversible |
+  requires_confirmation | dangerous | long_running | costly |
+  external_side_effect | data_loss` for voice + screen-reader
+  + AI-agent interposition before invocation.
+- **Drag-drop type validation** (sec 13.4) --
+  `data-nac-drag-type` on source + `data-nac-drag-accept` on
+  target, mismatches reject cleanly.
+- **Self-test promoted to runtime** (sec 13.9 +
+  sec 6.2.27) -- `NAC.validate_event_conformance()` is now a
+  normative NAC-3 requirement, not a demo-only helper.
+- **Migration helpers** (sec 13.9) -- `NAC.emit_dual()`,
+  `NAC.command_rejected()`, `NAC.command_failed()`,
+  `NAC.check_canonical_shape()`. Codemod at
+  `tools/migrate-legacy-events.js`. Migration guide at
+  `docs/MIGRATION_v1_to_v2.md`.
+- **Public CSS custom properties** (sec 7.6) --
+  `--nac-focus-pulse-color/duration/thickness/intensity` and
+  `--nac-section-visited-color/duration` so attention-sensitive
+  populations can crank the cue intensity without forking.
+- All seven additions land in response to the four-AI peer
+  review of v1.7.0 (Microsoft Copilot, DeepSeek, Mistral
+  Le Chat, Grok). Strict superset of v1.7 -- every v1.7
+  plugin remains valid; v1.8 primitives are additive, opt-in.
+
+**v1.7.0 recap:**
+- Spec sec 6.2 canonical event detail shapes with per-family
+  entity-id fields (action_id, field_id, tab_id, section_id,
+  column_id, source_id, target_id, list_id, tree_id, etc.)
+  closing the v1.6 review's "validator is reactive, not
+  preventive" abandonment cause.
+- 11 new widget cards in the demo (stepper, tree, toast,
+  drawer, calendar, chart, map, richtext, breadcrumb, carousel,
+  timeline) covering every event family in sec 6.1.
+- "v1.7 event conformance" self-test that programmatically
+  asserts canonical shape per emitted event -- the first
+  executable specification check NAC ships.
 **v1.6.x recap:** `NAC.is_blocked()`,
 `NAC.set_validation_tolerance()`, sec 7.3.2 aria/nac drift as
 hard-error at NAC-3, per-plugin event buses default-on,
@@ -112,7 +139,7 @@ NAC reverses the polarity: a UI that complies with NAC publishes
 its own contract -- semantic IDs, roles, states, events, and a
 programmatic API -- so any external operator can introspect,
 operate and verify it without privileged access. The current
-release line is v1.7.0; every spec version since v1.0 has been
+release line is v1.8.0; every spec version since v1.0 has been
 a strict superset (no breaking changes).
 
 Compliant systems are testable end-to-end at near-100% coverage with
@@ -734,7 +761,7 @@ python nac_runner.py --target http://localhost:3000 --plugin contact_form
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.7.0 / runtime v1.7.0. 2026. MIT License.
+Spec v1.8.0 / runtime v1.8.0. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```
