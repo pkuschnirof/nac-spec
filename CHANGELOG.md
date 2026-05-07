@@ -22,6 +22,47 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.6.6] - 2026-05-07
+
+PATCH release. Two role-event-family additions for table
+controls plus matcher detail-field aliases. Strict superset of
+v1.6.5.
+
+### sort-control + filter-control roles
+
+Pre-v1.6.6: `NAC.click('table.demo.sort.city')` timed out at
+5s because the sort-button has `data-nac-role="sort-control"`
+and emits `nac:table:sort_changed` when clicked, while the
+runtime listened only for the action-contract events.
+
+`_CLICK_EVENT_FAMILY` now includes:
+
+| role | success event |
+|---|---|
+| `sort-control` | `nac:table:sort_changed` |
+| `filter-control` | `nac:table:filter_changed` |
+
+Both events identify which control fired via `column_nac_id`
+or `filter_nac_id` in `event.detail`, not the generic `nac_id`
+field (which carries the table itself). The matcher's
+nac_id-equality check is widened to accept these aliases.
+
+### What's NOT in the runtime (companion changes ship in
+the rpaforce repo demo)
+
+Two related fixes that deal with model behaviour rather than
+runtime contracts ship in the demo's backend + frontend
+(`crm_desa/api/v1/yujin.php` + `yujin.app/nac-spec/js/example.js`):
+
+- yjNacDemo drops `say` actions whose text duplicates the
+  `message` field (Claude has a habit of restating the
+  message as a say action which produced duplicate chat
+  bubbles + duplicate TTS reads).
+- The agent tour falls back to a DOM scan of `[data-nac-plugin]`
+  roots when `NAC.system_map()` returns 0 views (demos that
+  never call `NAC.register()` still have visible plugin
+  cards; "Encontre 0 plugins" was misleading).
+
 ## [1.6.5] - 2026-05-07
 
 PATCH release. Closes two regressions discovered by Pablo while

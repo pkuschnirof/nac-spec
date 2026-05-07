@@ -6,13 +6,13 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.6.5](https://img.shields.io/badge/NAC-v1.6.5-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.6.6](https://img.shields.io/badge/NAC-v1.6.6-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
 **Spec version:** v1.6.1 (2026-05-07).
-**Reference runtime:** v1.6.5 (`NAC.version === '1.6.5'`).
+**Reference runtime:** v1.6.6 (`NAC.version === '1.6.6'`).
 **Strict superset of:** v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
 **What v1.6.1 adds (patch responding to v1.6 AI peer review):**
 - `NAC.is_blocked()` -- canonical "is the UI accepting input?"

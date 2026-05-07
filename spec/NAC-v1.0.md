@@ -7,8 +7,14 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.6.1 (spec) / 1.6.5 (reference runtime). v1.6.5
-is a runtime-only patch (2026-05-07): closes the
+**Version**: 1.6.1 (spec) / 1.6.6 (reference runtime). v1.6.6
+adds 'sort-control' and 'filter-control' to the role-event
+family map (so NAC.click on table column headers + filter
+inputs resolves on nac:table:sort_changed /
+nac:table:filter_changed instead of timing out). The matcher
+also accepts column_nac_id and filter_nac_id as nac_id-equal
+detail fields for those events. v1.6.5
+was a runtime-only patch (2026-05-07): closes the
 detached-element matcher edge case where a host's click handler
 removes el from the DOM before emitting nac:field:changed
 (combobox-option case). Caches plugin/opt-value at click() time

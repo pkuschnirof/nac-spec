@@ -1,9 +1,21 @@
 /* =====================================================================
-   NAC v1.6.5 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.6.6 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.6.6 (2026-05-07) -- patch release. Adds two roles to the
+   click-event-family map:
+     'sort-control'   -> nac:table:sort_changed
+     'filter-control' -> nac:table:filter_changed
+   Pre-v1.6.6 NAC.click on a sortable column header timed out
+   because the runtime listened only for nac:action:succeeded
+   while the host emitted nac:table:sort_changed. Plus the
+   matcher's nac_id-field equality check now accepts
+   column_nac_id and filter_nac_id (the canonical detail
+   fields for these table events).
+   Strict superset of v1.6.5; every v1.6.5 plugin remains valid.
 
    v1.6.5 (2026-05-07) -- patch release closing two regressions
    user found while voice-testing v1.6.4:
@@ -686,6 +698,14 @@
        runtime now also synthesises nac:field:changed after
        el.click() for these field types (see click() body). */
     'field':            ['nac:field:changed'],
+    /* v1.6.6: table sort + filter controls. Pre-v1.6.6
+       NAC.click('table.demo.sort.city') timed out because the
+       column header has data-nac-role="sort-control" and emits
+       nac:table:sort_changed (not nac:action:succeeded). The
+       matcher is extended below to accept event detail fields
+       column_nac_id and filter_nac_id as nac_id matches. */
+    'sort-control':     ['nac:table:sort_changed'],
+    'filter-control':   ['nac:table:filter_changed'],
   };
 
   /* v1.6.4: field types whose click() act on a value (toggle).
@@ -825,7 +845,12 @@
     if (d && (d.nac_id === nac_id || d.from_nac_id === nac_id ||
               d.target_nac_id === nac_id || d.tab_id === nac_id ||
               d.section_id === nac_id || d.step_id === nac_id ||
-              d.id === nac_id || d.breadcrumb_id === nac_id)) {
+              d.id === nac_id || d.breadcrumb_id === nac_id ||
+              /* v1.6.6: table sort/filter controls fire events
+                 whose detail uses column_nac_id / filter_nac_id
+                 to identify which control fired, not nac_id
+                 (which carries the table itself). */
+              d.column_nac_id === nac_id || d.filter_nac_id === nac_id)) {
       return true;
     }
     if (e.target && (e.target === el || (el.contains && el.contains(e.target)))) {
@@ -2935,7 +2960,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.6.5',
+    version:      '1.6.6',
     spec_version: '1.6',
     /* registry */
     register:        register,
