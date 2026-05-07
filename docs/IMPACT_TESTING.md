@@ -317,7 +317,7 @@ entire ask.
   factories.
 - `docs/MANUAL.md` -- how to author a NAC-compliant view.
 - `spec/NAC-v1.0.md` -- the normative document, current spec
-  version v1.6, including the v1.1 widget extensions (tabs,
+  version v1.7.0, including the v1.1 widget extensions (tabs,
   accordion, combobox, slider, table, drag-drop, file upload,
   tooltip, popover, notifications), v1.2 discovery + dynamic
   options + window chrome, v1.3 sixteen common UI primitives,

@@ -11,27 +11,41 @@
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v1.6.1 (2026-05-07).
+**Spec version:** v1.7.0 (2026-05-07).
 **Reference runtime:** v1.7.0 (`NAC.version === '1.7.0'`).
 **Strict superset of:** v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
-**What v1.6.1 adds (patch responding to v1.6 AI peer review):**
-- `NAC.is_blocked()` -- canonical "is the UI accepting input?"
-  probe so consumers stop inferring blocking state from
-  `feedback[].severity`.
-- `NAC.set_validation_tolerance({tolerated:[...]})` so hosts can
-  retire historic findings incrementally without disabling CI.
-- Spec sec 7.3.2 (new): `aria_nac_state_mismatch` and
-  `aria_first_state` are hard-errors at NAC-3 by default.
-- Spec sec 7.4 (tightened): per-plugin event buses are
-  default-on; closed shadow roots declared explicitly out of
-  scope with a canonical bridge pattern.
-- Docs: `MANUAL.md` gains a "Design-system layer pattern" chapter
-  with React 18 / Vue 3 / Svelte 5 primitives that emit NAC +
-  ARIA atomically. The "Event correctness" chapter gains a
-  framework-specific timing table (flushSync / nextTick /
-  Promise.resolve commit barriers).
-**v1.6 recap:** `NAC.reset()` plugin reset primitive (spec sec
-9.3) + `NAC.set_reset_provider(slug, fn)` for custom semantics.
+**What v1.7.0 adds:**
+- **Spec sec 6.2 Canonical event detail shapes** -- every
+  `nac:*` event family gets a TypeScript-style interface
+  declaring required + optional fields, with each widget
+  family using its own entity-specific id (`action_id`,
+  `field_id`, `tab_id`, `section_id`, `column_id`, `source_id`,
+  `target_id`, `list_id`, `tree_id`, `node_id`, etc.) instead
+  of the ambiguous `nac_id`. Closes the v1.6 peer review's
+  #1 abandonment cause: "the validator is reactive, not
+  preventive".
+- **Strict-superset migration**: legacy field names stay
+  accepted by the runtime matcher with a `legacy_event_field`
+  warning; v2.0 (the public-announce release) drops legacy
+  entirely.
+- **Reference demo** gains 11 new widget cards (stepper,
+  tree, toast, drawer, calendar, chart, map, richtext,
+  breadcrumb, carousel, timeline) covering every event family
+  in sec 6.1.
+- **Self-test "v1.7 event conformance"** programmatically
+  drives every widget and asserts the emitted event detail
+  matches its canonical shape -- the first time NAC ships an
+  executable specification check.
+**v1.6.x recap:** `NAC.is_blocked()`,
+`NAC.set_validation_tolerance()`, sec 7.3.2 aria/nac drift as
+hard-error at NAC-3, per-plugin event buses default-on,
+closed shadow roots out of scope, NAC.drag_drop runtime,
+role-aware NAC.click, section-visibility highlight,
+sort-control + filter-control role family. `MANUAL.md`
+"Design-system layer pattern" chapter (React 18 / Vue 3 /
+Svelte 5 atomic NAC + ARIA primitives).
+**v1.6.0 recap:** `NAC.reset()` plugin reset primitive (spec
+sec 9.3) + `NAC.set_reset_provider(slug, fn)`.
 **v1.5.x recap:** v1.5.0 NAC + LLM agentic loop. v1.5.1
 cross-plugin uniqueness audit. v1.5.4 10-locale i18n sweep on
 the reference demo. Full diff in [`CHANGELOG.md`](CHANGELOG.md).
@@ -98,7 +112,7 @@ NAC reverses the polarity: a UI that complies with NAC publishes
 its own contract -- semantic IDs, roles, states, events, and a
 programmatic API -- so any external operator can introspect,
 operate and verify it without privileged access. The current
-release line is v1.6.1; every spec version since v1.0 has been
+release line is v1.7.0; every spec version since v1.0 has been
 a strict superset (no breaking changes).
 
 Compliant systems are testable end-to-end at near-100% coverage with
@@ -720,14 +734,14 @@ python nac_runner.py --target http://localhost:3000 --plugin contact_form
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.6 / runtime v1.6.0. 2026. MIT License.
+Spec v1.7.0 / runtime v1.7.0. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```
 
 ## Status
 
-NAC v1.6 is **stable**. The first production deployment ships
+NAC v1.7 is **stable**. The first production deployment ships
 with the Yujin CRM (yujin.app) Control Center plugins; the
 public reference demo at https://yujin.app/nac-spec/example.php
 exercises every primitive in the spec (v1.0 piano + modal +

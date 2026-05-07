@@ -286,24 +286,37 @@ https://github.com/pkuschnirof/nac-spec
 
 ## Last updated
 
-2026-05-07. NAC spec version: 1.6.1 / runtime 1.6.1 (strict
-superset of 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0). v1.6.1 is a
-patch release responding to AI peer review of v1.6.0 (ChatGPT,
-Mistral Le Chat, Microsoft Copilot, Claude 4.7 Deep Thinking,
-DeepSeek, HuggingChat, Grok). Highlights: spec sec 7.3.2
-promotes aria/nac drift findings to hard-errors at NAC-3;
-spec sec 7.4 makes per-plugin event buses default-on and
-declares closed shadow roots out of scope; runtime adds
-`NAC.is_blocked()` and `NAC.set_validation_tolerance()`.
-v1.4.1 + v1.4.2 are patch releases that tightened contracts
-based on AI peer review (DeepSeek + Claude + Grok Fast +
-Microsoft Copilot). v1.5.0 adds the canonical NAC + LLM
-agentic loop pattern (spec sec 9.1, 9.2). v1.5.1 adds
-cross-plugin uniqueness audit (`NAC.validate_global()`,
-spec P7.1). v1.5.4 ships the exhaustive 10-locale i18n sweep
-on the reference demo. v1.6.0 adds the `NAC.reset()` plugin
-reset primitive (spec 9.3) + companion
-`set_reset_provider(slug, fn)` so an operator can
+2026-05-07. NAC spec version: 1.7.0 / runtime 1.7.0 (strict
+superset of 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0). v1.7.0 is a
+MINOR release adding spec sec 6.2 "Canonical event detail
+shapes": every nac:* event family declares a TypeScript-style
+detail shape with per-family entity-id fields (action_id,
+field_id, tab_id, section_id, column_id, source_id,
+target_id, list_id, tree_id, node_id, etc.) instead of the
+ambiguous nac_id. Closes the v1.6 peer review's #1
+abandonment cause. Strict superset of v1.6.6 -- legacy field
+names stay accepted by the runtime matcher with a
+`legacy_event_field` warning; v2.0 (the public-announce
+release) drops legacy entirely. Reference demo gained 11 new
+widget cards covering every event family in sec 6.1, plus a
+"v1.7 event conformance" self-test that programmatically
+asserts canonical shape. v1.6.x patch series (2026-05-07):
+v1.6.1 promotes aria/nac drift to hard-error at NAC-3 (sec
+7.3.2), per-plugin event buses default-on, closed shadow
+roots out of scope, runtime gains NAC.is_blocked() +
+set_validation_tolerance(); v1.6.2 lands NAC.drag_drop
+runtime impl; v1.6.3 role-aware NAC.click; v1.6.4
+detached-element matcher fix; v1.6.5 section-visibility
+highlight + click context cache; v1.6.6 sort-control +
+filter-control role family. v1.4.1 + v1.4.2 are patch
+releases that tightened contracts based on AI peer review
+(DeepSeek + Claude + Grok Fast + Microsoft Copilot). v1.5.0
+adds the canonical NAC + LLM agentic loop pattern (spec sec
+9.1, 9.2). v1.5.1 adds cross-plugin uniqueness audit
+(`NAC.validate_global()`, spec P7.1). v1.5.4 ships the
+exhaustive 10-locale i18n sweep on the reference demo. v1.6.0
+adds the `NAC.reset()` plugin reset primitive (spec 9.3) +
+companion `set_reset_provider(slug, fn)` so an operator can
 ask any plugin -- or the whole page -- to return to its
 declared initial state. The attribute / event / driver-API
 vocabulary in this file is stable across all 1.x versions; the

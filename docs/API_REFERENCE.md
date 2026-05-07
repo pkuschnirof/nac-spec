@@ -10,12 +10,30 @@ short description, error throws, and the spec section that
 formalises it. AI coding agents implementing NAC can use this
 table as the canonical lookup.
 
-Current runtime version: **`NAC.version === '1.6.0'`** (spec
-`1.6`). The runtime exposes `NAC.version` and
+Current runtime version: **`NAC.version === '1.7.0'`** (spec
+`1.7`). The runtime exposes `NAC.version` and
 `NAC.spec_version` as strings; check them at boot if you need
 feature gating.
 
 Version history (most recent first):
+- **1.7.0** (2026-05-07) -- MINOR release. Adds spec sec 6.2
+  "Canonical event detail shapes": every `nac:*` event family
+  gets a TypeScript-style interface with per-family entity-id
+  fields (`action_id`, `field_id`, `tab_id`, `section_id`,
+  `column_id`, `source_id`, `target_id`, ...) instead of the
+  ambiguous `nac_id`. Strict superset of v1.6.6; legacy field
+  names stay accepted with a `legacy_event_field` warning,
+  removed in v2.0. Reference demo gained 11 new widget cards
+  + a "v1.7 event conformance" self-test that asserts
+  canonical shape.
+- **1.6.x** patch series (2026-05-07) -- v1.6.1 hard-error
+  drift findings + per-plugin event buses default-on +
+  closed shadow roots out of scope. v1.6.2 NAC.drag_drop
+  runtime impl. v1.6.3 role-aware NAC.click. v1.6.4
+  detached-element matcher fix. v1.6.5 section-visibility
+  highlight + click context cache. v1.6.6 sort-control +
+  filter-control role family. Runtime + demo work; no spec
+  contract change beyond v1.6.1's sec 7.3.2.
 - **1.6.0** (2026-05-06) -- MINOR release. Adds
   `NAC.reset(plugin_slug?)` plugin reset primitive (spec
   section 9.3) + companion `set_reset_provider(slug, fn)` for

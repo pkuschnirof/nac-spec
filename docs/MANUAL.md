@@ -4,11 +4,25 @@ A hands-on guide to making a UI navigable by AI, voice and RPA.
 Read [spec/NAC-v1.0.md](../spec/NAC-v1.0.md) first for the formal
 contract; this manual focuses on day-to-day patterns.
 
-> **Version**: this manual tracks NAC spec v1.6.1 (runtime
-> v1.6.1). Every version since v1.0 is a strict superset, so the
+> **Version**: this manual tracks NAC spec v1.7.0 (runtime
+> v1.7.0). Every version since v1.0 is a strict superset, so the
 > v1.0 patterns shown here keep working unchanged. New primitives
-> introduced in v1.1..v1.6.1 are documented in their own
+> introduced in v1.1..v1.7.0 are documented in their own
 > sections; follow the spec links for the normative contract.
+
+> **What v1.7.0 adds**: spec sec 6.2 declares the canonical
+> TypeScript-style detail shape for every `nac:*` event family,
+> with each widget owning its own entity-specific id field
+> (`action_id`, `field_id`, `tab_id`, `section_id`, `column_id`,
+> `source_id`, `target_id`, etc.) instead of the ambiguous
+> `nac_id`. Strict superset of v1.6.6 -- legacy field names
+> stay accepted by the runtime matcher with a
+> `legacy_event_field` warning; v2.0 will drop legacy entirely.
+> The reference demo gained 11 new widget cards (stepper, tree,
+> toast, drawer, calendar, chart, map, richtext, breadcrumb,
+> carousel, timeline) covering every event family in sec 6.1,
+> and a new "v1.7 event conformance" self-test that
+> programmatically asserts canonical shape.
 
 > **What v1.6 adds**: the `NAC.reset()` plugin reset primitive.
 > An operator can ask any plugin -- or the whole page -- to
