@@ -6,13 +6,13 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.7.0](https://img.shields.io/badge/NAC-v1.7.0-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.8.0](https://img.shields.io/badge/NAC-v1.7.0-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
 **Spec version:** v1.7.0 (2026-05-07).
-**Reference runtime:** v1.7.0 (`NAC.version === '1.7.0'`).
+**Reference runtime:** v1.7.0 (`NAC.version === '1.8.0'`).
 **Strict superset of:** v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
 **What v1.7.0 adds:**
 - **Spec sec 6.2 Canonical event detail shapes** -- every
@@ -741,7 +741,7 @@ https://github.com/pkuschnirof/nac-spec
 
 ## Status
 
-NAC v1.7 is **stable**. The first production deployment ships
+NAC v1.8 is **stable**. The first production deployment ships
 with the Yujin CRM (yujin.app) Control Center plugins; the
 public reference demo at https://yujin.app/nac-spec/example.php
 exercises every primitive in the spec (v1.0 piano + modal +

@@ -304,5 +304,7 @@ call. The RPA win is a side effect.
   v1.1 widget extensions, v1.2 discovery + window chrome,
   v1.3 sixteen common UI primitives, v1.4 navigation +
   ordering primitives, v1.5 NAC + LLM agentic loop,
-  v1.6 plugin reset primitive, and v1.7 canonical event
-  detail shapes (sec 6.2).
+  v1.6 plugin reset primitive, v1.7 canonical event detail
+  shapes (sec 6.2), and v1.8 ProvenanceBlock + command events
+  + skip-validate + a11y-hint + drag types + migration
+  helpers (sec 6.2.30, sec 3.1, sec 13.9).

@@ -4,13 +4,39 @@ A hands-on guide to making a UI navigable by AI, voice and RPA.
 Read [spec/NAC-v1.0.md](../spec/NAC-v1.0.md) first for the formal
 contract; this manual focuses on day-to-day patterns.
 
-> **Version**: this manual tracks NAC spec v1.7.0 (runtime
-> v1.7.0). Every version since v1.0 is a strict superset, so the
+> **Version**: this manual tracks NAC spec v1.8.0 (runtime
+> v1.8.0). Every version since v1.0 is a strict superset, so the
 > v1.0 patterns shown here keep working unchanged. New primitives
-> introduced in v1.1..v1.7.0 are documented in their own
+> introduced in v1.1..v1.8.0 are documented in their own
 > sections; follow the spec links for the normative contract.
 
-> **What v1.7.0 adds**: spec sec 6.2 declares the canonical
+> **What v1.8.0 adds**: every action item from the four-AI peer
+> review of v1.7.0 lands here. ProvenanceBlock
+> (`source: { type: 'user' | 'agent' | 'script', id?, tool? }`)
+> on every emitted event so audit pipelines for users delegating
+> UI work to AI assistants can distinguish human from automated
+> traffic. New `nac:command:rejected` and `nac:command:failed`
+> event families close the silent-failure gap (target disabled
+> / hidden / not_found / ambiguous, or unexpected throw during
+> execution). Two new declarative attributes:
+> `data-nac-validate="skip"` (third-party widget escape hatch
+> that does NOT fail validate() but emits a warning if the
+> region contains operable surface) and `data-nac-a11y-hint`
+> (`irreversible | requires_confirmation | dangerous |
+> long_running | costly | external_side_effect | data_loss`)
+> so voice + screen readers + AI agents can interpose
+> confirmations BEFORE invoking dangerous actions. Drag-drop
+> type validation (`data-nac-drag-type` + `data-nac-drag-accept`).
+> Public CSS custom properties for the focus pulse +
+> section-visited highlight (sec 7.6). Migration ergonomics:
+> `NAC.emit_dual()`, `NAC.command_rejected()`, `NAC.command_failed()`,
+> `NAC.check_canonical_shape()`, and `NAC.validate_event_conformance()`
+> -- the demo's self-test promoted to a runtime API and a
+> normative NAC-3 requirement. `tools/migrate-legacy-events.js`
+> codemod for projects migrating from v1.6.x event field names.
+> See `docs/MIGRATION_v1_to_v2.md` for the v2 hard-break path.
+
+> **What v1.7.0 added**: spec sec 6.2 declares the canonical
 > TypeScript-style detail shape for every `nac:*` event family,
 > with each widget owning its own entity-specific id field
 > (`action_id`, `field_id`, `tab_id`, `section_id`, `column_id`,
@@ -1180,7 +1206,7 @@ MIT. See [LICENSE](../LICENSE).
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.7.0 / runtime v1.7.0. 2026. MIT License.
+Spec v1.8.0 / runtime v1.8.0. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```

@@ -10,7 +10,7 @@ short description, error throws, and the spec section that
 formalises it. AI coding agents implementing NAC can use this
 table as the canonical lookup.
 
-Current runtime version: **`NAC.version === '1.7.0'`** (spec
+Current runtime version: **`NAC.version === '1.8.0'`** (spec
 `1.7`). The runtime exposes `NAC.version` and
 `NAC.spec_version` as strings; check them at boot if you need
 feature gating.

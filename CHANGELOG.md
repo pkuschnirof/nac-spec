@@ -22,6 +22,138 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.8.0] - 2026-05-07
+
+MINOR release. Lands every action item from the four-AI peer
+review of v1.7.0 (Microsoft Copilot, DeepSeek, Mistral Le Chat,
+Grok). Strict superset of v1.7 -- every v1.7 plugin remains
+valid; the new primitives are additive and opt-in.
+
+### Spec
+
+- **Sec 6.2.1** Added `ProvenanceBlock` TypeScript interface.
+  Every `nac:*` event detail now carries
+  `source: { type: 'user' | 'agent' | 'script', id?, tool? }`.
+  Default `{type:'script'}` when the runtime emits without
+  context. Required at NAC-3. Closes the silent-failure gap
+  reviewers identified for users delegating UI work to AI
+  assistants.
+- **Sec 6.2.1** Added precedence rule: canonical fields win
+  over legacy aliases when both are present.
+- **Sec 6.2.1** Added emission order rule: canonical event
+  fires synchronously BEFORE its legacy alias, same task tick.
+- **Sec 6.2.27** Added `legacy_event_field` warning dedup
+  requirement (per-session, by event_type+field). DeepSeek
+  finding: a chatty page could fire 400+ identical warnings
+  per single user action.
+- **Sec 6.2.27** Promoted self-test to a normative NAC-3
+  requirement -- the runtime MUST expose
+  `validate_event_conformance` and CI gates SHOULD treat
+  `fail > 0` as a hard error. Mistral action item.
+- **Sec 6.2.27** Added `skip_subtree_contains_interactives`
+  finding (severity `warn`) when a `data-nac-validate="skip"`
+  region contains operable surface.
+- **Sec 6.2.30 (NEW)** `nac:command:rejected` and
+  `nac:command:failed` event families. Closes the case where
+  an AI claims success based on event emission while the UI
+  silently ignored the command.
+- **Sec 6.2.31 (NEW)** Stable persistent IDs required for
+  paginated/virtualized collections. Voice control + AI
+  delegation collapse on virtualized 5000-row lists otherwise.
+- **Sec 3.1 (NEW)** `data-nac-validate="skip"` declarative
+  attribute (third-party widget escape hatch) +
+  `data-nac-a11y-hint` declarative attribute (irreversible /
+  requires_confirmation / dangerous / long_running / costly /
+  external_side_effect / data_loss) so voice and screen-reader
+  tooling can interpose confirmations BEFORE invocation.
+- **Sec 13.4** Drag-drop type validation: `data-nac-drag-type`
+  on source + `data-nac-drag-accept` (CSV or `*`) on target.
+  Mismatch rejects with `NacError('drag_type_mismatch')` AND
+  emits `nac:command:rejected`.
+- **Sec 13.9 (NEW)** `NAC.emit_dual()`, `NAC.command_rejected()`,
+  `NAC.command_failed()`, `NAC.check_canonical_shape()`,
+  `NAC.validate_event_conformance()` interface declarations.
+- **Sec 7.6 (NEW)** Public CSS custom properties for the focus
+  pulse + section-visited highlight (`--nac-focus-pulse-*` and
+  `--nac-section-visited-*`). `prefers-reduced-motion` respect
+  is normative.
+
+### Runtime (`js/nac.js`)
+
+- Apply default `source: {type:'script'}` to every emitted
+  event when caller did not set one.
+- New helpers: `_validateSkipAncestor`, `_emitCommandRejected`,
+  `_emitCommandFailed`, `_dragTypesCompatible`, `_legacyWarn`
+  (deduplicated).
+- `NAC.click()` now emits `nac:command:rejected` for
+  not_found / disabled / hidden targets BEFORE throwing the
+  matching `NacError`. Hidden detection uses
+  `getBoundingClientRect` width+height + aria-hidden so
+  position:fixed elements are not misclassified.
+- `NAC.fill()` likewise emits rejected for not_found / disabled.
+- `NAC.drag_drop()` emits rejected for not_found / role_mismatch
+  / drag_type_mismatch and emits `nac:command:failed` from its
+  catch path on unexpected throws.
+- `NAC.validate()` skips elements inside `data-nac-validate=
+  "skip"` subtrees and emits a `skip_subtree_contains_
+  interactives` warning for every skip region with operable
+  descendants.
+- `_serializeElement` (`describe()` output) gains an `a11y_hint`
+  array parsed from `data-nac-a11y-hint`.
+- 5 new public APIs: `NAC.emit_dual`, `NAC.command_rejected`,
+  `NAC.command_failed`, `NAC.check_canonical_shape`,
+  `NAC.validate_event_conformance`.
+- Bumped runtime to `1.8.0` and `spec_version` to `1.8`.
+
+### Demo (`yujin.app/nac-spec/example.php`)
+
+- Three new cards: **Skip-validate region** (third-party
+  widget mock + a button that runs `validate()` and surfaces
+  the skip-subtree warning); **Dangerous action with a11y
+  hint** (delete button declares `irreversible|requires_
+  confirmation|data_loss`; click reads `NAC.find().a11y_hint`
+  and composes a confirm interposing on it); **Drag-type
+  accept/reject** (3 typed sources + 2 zones; 'try mismatch'
+  button drives `NAC.drag_drop` with a tag onto a files-only
+  zone so the user sees `nac:command:rejected` fire).
+- Conformance self-test extended: families list + canonical
+  shapes table for `nac:command:rejected` and
+  `nac:command:failed`; seq[] adds two new probes.
+- CSS focus-pulse rule rewritten to consume the public custom
+  properties from sec 7.6.
+
+### Migration tooling
+
+- New `tools/migrate-legacy-events.js` codemod -- a Node script
+  that scans a project tree, finds event listener handlers
+  reading legacy field names (`detail.nac_id` for action /
+  field / tab events, etc.), and rewrites them to read the
+  canonical field with a fallback (`detail.field_id ??
+  detail.nac_id`). Idempotent; safe to run repeatedly.
+- New `docs/MIGRATION_v1_to_v2.md` -- ahead-of-schedule guide
+  for the v2.0 hard-break that drops legacy aliases. Lists
+  every alias pair and recommends running the codemod once
+  the v1.8 dual-emit dust settles.
+
+### Reviewer attribution
+
+- ProvenanceBlock + `nac:command:*`: Microsoft Copilot,
+  DeepSeek (silent-failure / audit gap).
+- `data-nac-validate="skip"` + escape hatch: DeepSeek,
+  Microsoft Copilot, Mistral Le Chat (third-party widget
+  brownfield abandonment).
+- `data-nac-a11y-hint`: Mistral Le Chat (cognitive disability
+  + irreversible action interposition).
+- Drag type validation: DeepSeek (drag_drop did not validate
+  operation kind).
+- Migration codemod + dual-emit helper: Microsoft Copilot,
+  DeepSeek (proposed hard break + codemod), Mistral Le Chat
+  (proposed `NAC.emit_dual` helper).
+- Self-test as runtime + NAC-3 normative: Mistral Le Chat.
+- Stable persistent IDs for virtualized lists: Grok, DeepSeek.
+- Focus pulse CSS custom properties: Mistral Le Chat, Grok.
+- Legacy_event_field warning dedup: DeepSeek.
+
 ## [1.7.0] - 2026-05-07
 
 MINOR release. Closes the v1.6 peer review's #1 abandonment

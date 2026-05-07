@@ -1,0 +1,911 @@
+  Please give me a thorough, balanced technical review of the
+  current release of NAC -- Native Accessibility Contract.
+  License MIT. Repo: github.com/pkuschnirof/nac-spec.
+
+  This evaluation targets release v1.7.0 (spec v1.7.0, runtime
+  v1.7.0). Earlier rounds reviewed v1.4 and v1.6.0 against a
+  similar task set; their reviews live in
+  docs/AI_REVIEWS_OF_NAC_SPEC_v1.4.md and
+  docs/AI_REVIEWS_OF_NAC_SPEC_v1.6.md respectively. Read them
+  ONLY for context -- do not let prior reviewers anchor your
+  own judgment.
+
+  ### Before you start: who this is actually for
+
+  NAC is described in technical terms (HTML attributes, JSON
+  manifest, JavaScript runtime, event contract). That framing
+  is correct but incomplete. The downstream beneficiary of
+  every NAC primitive is, more often than not, a human with a
+  disability whose access to the UI depends on assistive
+  technology that NEEDS a stable, machine-readable contract:
+
+  - People with motor disabilities (limited dexterity, tremor,
+    paralysis, RSI) who operate UIs through voice control
+    software (Talon, Voice Access, Dragon, browser voice modes).
+    Their tools collapse on UIs without stable semantic IDs.
+    NAC's data-nac-id + label_i18n is exactly that contract.
+  - People with visual disabilities (blindness, low vision,
+    dyschromatopsia) whose screen readers consume ARIA but
+    benefit from NAC.describe()'s richer manifest-grade
+    introspection.
+  - People with cognitive disabilities, chronic illness, ADHD,
+    executive-function variation, autism spectrum, who delegate
+    multi-step UI work to AI assistants when they cannot
+    navigate alone. NAC's agentic loop pattern (sec 9.1, 9.2)
+    makes that delegation auditable.
+  - People whose capabilities vary day-to-day (chronic pain,
+    medication side effects, mental health). On a hard day,
+    the same person who navigates fluently on a good day can
+    delegate the work and not lose access to the system.
+
+  The cost of a sloppy contract is not a CI failure. It is a
+  user locked out of a system they need.
+
+  This round, the spec adds a new section to PHILOSOPHY.md
+  titled "What NAC does for people with disabilities" that
+  develops the above. **Please read it before you start your
+  review** -- the technical evaluation that follows means more
+  when you carry the stakes. Treat the engineering critique as
+  seriously as you would for any other spec, and add a layer
+  that asks: does this contract actually deliver on the
+  promise to those humans?
+
+  ### What changed since v1.6.0 (the new incorporations)
+
+  The headline of v1.7.0 is **spec section 6.2 "Canonical event
+  detail shapes"**: every nac:* event family now has a
+  TypeScript-style interface declaring its required + optional
+  fields, with each widget family using its own entity-specific
+  id field (action_id, field_id, tab_id, section_id, column_id,
+  filter_id, source_id, target_id, list_id, item_id, tree_id,
+  node_id, toast_id, drawer_id, calendar_id, event_id,
+  chart_id, series_id, map_id, marker_id, richtext_id,
+  breadcrumb_id, carousel_id, timeline_id, stepper_id,
+  confirm_id) instead of the ambiguous nac_id. This was the
+  explicit response to the v1.6 peer review's #1 abandonment
+  cause: "the validator is reactive, not preventive".
+
+  Strict superset of v1.6.6: legacy field names stay accepted
+  by the runtime matcher with a legacy_event_field warning;
+  v2.0 will drop legacy entirely.
+
+  Additional changes since v1.6.0:
+
+  - v1.6.1 promoted aria/nac state-mismatch findings to
+    hard-error at NAC-3 (sec 7.3.2). The dual-attribute
+    discipline that screen readers and NAC drivers BOTH
+    depend on is now build-blocking, not advisory.
+  - v1.6.1 made per-plugin event buses default-on (sec 7.4)
+    and declared closed shadow roots out of scope.
+  - v1.6.2 implemented NAC.drag_drop runtime primitive (sec
+    13.4 had it on paper since v1.1; users with motor
+    limitations who cannot perform pointer drag operations
+    can now invoke drag-and-drop programmatically through
+    the same contract sighted-mouse users exercise).
+  - v1.6.3 made NAC.click role-aware on the success-event
+    side: click on a tab listens for nac:tab:changed, click
+    on an option listens for nac:field:changed, etc. This
+    finally lets voice-control users expect uniform
+    feedback on every operable element.
+  - v1.6.4 closed the detached-element matcher gap.
+  - v1.6.5 added the section-visibility highlight so
+    go_to_section produces visible feedback even when the
+    page already fits in viewport. Important for users
+    whose attention or cognition needs explicit "I am
+    here" signals.
+  - v1.6.6 added sort-control + filter-control to the
+    role-event family map.
+  - v1.7.0 PHILOSOPHY.md gained the disability narrative
+    referenced above.
+  - The reference demo gained 11 new widget cards (stepper,
+    tree, toast, drawer, calendar, chart, map, richtext,
+    breadcrumb, carousel, timeline) covering every event
+    family in sec 6.2.
+  - A new self-test "v1.7 event conformance" programmatically
+    drives every widget and asserts the emitted event detail
+    matches its canonical shape -- the first time NAC has
+    shipped an executable specification check. The expected
+    outcome on a fully compliant page is 32 PASS, 0 FAIL,
+    0 MISS.
+
+  ### Materials to read
+
+  - PHILOSOPHY.md, particularly the "What NAC does for people
+    with disabilities" section -- READ THIS FIRST:
+    https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/PHILOSOPHY.md
+  - Specification (~2900 lines, sec 6.2 added):
+    https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/spec/NAC-v1.0.md
+  - Reference implementation (~3200 lines, MIT, no deps):
+    https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/js/nac.js
+  - Authoring manual:
+    https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/MANUAL.md
+  - API reference cheat sheet:
+    https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/API_REFERENCE.md
+  - Public demo (run "v1.7 event conformance" button to see
+    the self-test):
+    https://yujin.app/nac-spec/example.php
+  - Changelog:
+    https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/CHANGELOG.md
+  - Prior review rounds (for context only):
+    https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/AI_REVIEWS_OF_NAC_SPEC_v1.4.md
+    https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/AI_REVIEWS_OF_NAC_SPEC_v1.6.md
+
+  If you cannot fetch any URL, ask the user to paste it. Do
+  not invent content you have not actually read.
+
+  ### Tasks
+
+  T1. SUMMARY (under 120 words): in your own words, what does
+      NAC propose, who is the audience including the
+      downstream beneficiaries, and what does it ship as of
+      v1.7.0.
+
+  T2. ARCHITECTURAL REVIEW (200-400 words): focusing on sec 6.2
+      canonical event detail shapes (the headline change), plus
+      the v1.6.1..v1.6.6 patches:
+      - The strongest design decision in v1.7.0.
+      - The weakest design decision.
+      - The section most likely to face friction in production.
+      Cite section numbers when possible.
+
+  T3. PROGRAMMING WALKTHROUGH (200-400 words): a developer
+      writing automation against the public demo using only
+      the documented window.NAC.* API and the canonical event
+      shapes from sec 6.2:
+      a) Subscribe to the canonical events when the user
+         expands an accordion section. What fields do you
+         assert on event.detail?
+      b) Drive the new stepper widget through 3 steps and
+         capture every nac:step:advanced + :back event.
+      c) Trigger the v1.7 event conformance self-test
+         (selftest.event_conformance) and read its result.
+      d) Detect whether a combobox option click emitted
+         nac:field:changed with the canonical option_id field
+         set.
+      Note any spec ambiguity, especially around the canonical
+      vs legacy alias situation.
+
+  T4. RELATIONSHIP TO ARIA + ACCESSIBILITY (150-300 words):
+      the v1.6.1 hard-error drift gate (sec 7.3.2) made
+      aria/nac state-mismatch a blocking finding at NAC-3.
+      Combined with sec 6.2 canonical shapes, does NAC's ARIA
+      mirroring story become operationally workable? Crucially:
+      in a codebase using ARIA + NAC together for a real
+      accessibility goal (e.g. an enterprise tool whose users
+      include people with motor + cognitive disabilities),
+      does v1.7.0 reduce or amplify the discipline tax?
+
+  T5. ADOPTION ANALYSIS (150-300 words): for a frontend team
+      considering NAC-3 adoption today on v1.7.0:
+      - Minimum amount of work?
+      - Most likely underestimated part?
+      - What causes abandonment midway?
+      Compare marginal cost vs v1.6.0: did sec 6.2 (with the
+      dual-emit migration path) make adoption easier, harder,
+      or same?
+
+  T6. SCORES AND CLOSING LINE (one short paragraph): score on
+      a 1 to 10 scale on five axes:
+      - clarity of the specification
+      - usefulness for automated test or assistant tooling
+      - ease of adoption for a typical web team
+      - ambition versus feasibility
+      - readiness for a public 2.0 announce
+      Conclude with one sentence on whether you would
+      recommend NAC v1.7.0 for a specific use case (you pick
+      the use case; if you have a strong opinion that the
+      accessibility audience is the most natural use case,
+      say so).
+
+  T7. v1.7 PILLAR RATINGS (200-400 words): rate each addition
+      since v1.6.0 on 1 to 10 with one sentence per axis:
+      a) Sec 6.2 canonical event detail shapes -- right
+         per-family entity-id naming, or ambiguity / merging
+         opportunities?
+      b) Strict-superset migration plan with legacy aliases +
+         legacy_event_field warning + v2.0 sunset -- right
+         trade-off, or should v1.7 have been a hard break?
+      c) Sec 7.3.2 aria/nac drift hard-error at NAC-3 --
+         enforceable now?
+      d) NAC.drag_drop runtime + role-aware NAC.click -- did
+         matcher tolerances catch up to the spec?
+      e) Section-visibility highlight + focus pulse CSS rule
+         -- visible enough for users with attentional or
+         cognitive needs?
+      f) "v1.7 event conformance" self-test pattern -- should
+         this become a normative requirement at NAC-3?
+      g) 11 new widget cards covering full sec 6.1 surface --
+         gaps remaining?
+
+  T8. v2.0 READINESS (150-300 words): the author has not yet
+      publicly announced NAC and is considering whether v1.7.0
+      + a few patches is enough for a 2.0 release. From your
+      review, list:
+      - Things ready for public consumption today.
+      - Things that should land BEFORE a 2.0 announce.
+      - Things that can wait for v2.x patches.
+      Be specific. If you would announce as 2.0 today, say so;
+      if you would wait for one or two specific items, name
+      them.
+
+  T9. ACCESSIBILITY IMPACT ASSESSMENT (200-400 words): this is
+      the task that distinguishes a NAC review from a generic
+      spec review. Read PHILOSOPHY.md "What NAC does for people
+      with disabilities" carefully, then answer:
+      - For a user with motor disability who depends on voice
+        control: does v1.7.0 deliver a contract their tools
+        can actually consume? What specific section / primitive
+        makes the difference, and where does it still break
+        down?
+      - For a user with cognitive disability or chronic illness
+        who delegates multi-step UI work to an AI assistant:
+        does the agentic loop + sec 6.2 canonical shapes plus
+        the v1.6.1 hard-error drift gate amount to a real,
+        auditable accommodation? Or is the user still trusting
+        the AI more than the contract justifies?
+      - For a developer who genuinely wants to ship an
+        accessible product: does NAC v1.7.0 lower the cost of
+        doing the right thing, or add another layer of
+        compliance theater?
+      - One specific recommendation that, if added, would
+        meaningfully improve the accessibility of NAC-3
+        systems for a population the spec currently
+        under-serves.
+
+  ### Style requests
+
+  - Be specific. Cite section numbers and line ranges.
+  - Include both strengths and limitations. Limitations are
+    especially useful. Generic praise is not.
+  - Where you are uncertain, say so rather than guessing.
+  - Reply in English so multiple AI reviews can be compared.
+  - Stay under 2500 words total (T7, T8, T9 need headroom).
+  - T9 in particular: ground your answer in concrete primitives
+    from the spec. "It helps disabled people because it's
+    accessible" is not a useful sentence; "Sec 6.2.4
+    nac:field:changed.option_id lets a voice-control user say
+    'pick Berlin' on a 5000-row remote autocomplete and trust
+    the right item was selected" is.
+
+  Thank you.
+  
+  COPILOT --> 
+  Quoted context from the brief
+"This evaluation targets release v1.7.0 (spec v1.7.0, runtime v1.7.0). ... The headline of v1.7.0 is spec section 6.2 'Canonical event detail shapes': every nac:* event family now has a TypeScript-style interface declaring its required + optional fields."
+
+T1. Summary (≤120 words)
+NAC (Native Accessibility Contract) defines a machine‑readable runtime and authoring contract (HTML attributes, JSON manifest, window.NAC.* API, and event families) so assistive tools and automation can reliably operate web UIs. Its primary audience is frontend teams and assistive‑technology/automation authors; the downstream beneficiaries are people with motor, visual, and cognitive disabilities who depend on stable semantic IDs and auditable agentic loops. v1.7.0 ships canonical event‑detail shapes (sec 6.2), a strict‑superset migration path for legacy fields, a runtime drag/drop primitive, role‑aware click success events, a section‑visibility highlight, 11 new widget demos, and an executable “v1.7 event conformance” self‑test.
+
+T2. Architectural review (200–400 words)
+Strongest design decision. Section 6.2’s move to per‑family canonical event detail shapes (explicit TypeScript‑style interfaces and entity‑specific id fields such as field_id, tab_id, stepper_id, etc.) is the most consequential design win. It converts previously ambiguous nac_id semantics into explicit, typed contracts that automation and voice tools can assert against, enabling preventive validation rather than reactive linting (sec 6.2, canonical shapes). This directly addresses the abandonment cause noted in prior reviews and makes runtime matching deterministic.
+
+Weakest design decision. The dual‑emit migration strategy (accept legacy aliases with legacy_event_field warnings while planning to drop them in v2.0) trades short‑term compatibility for long‑term clarity, but it leaves a prolonged period where implementers must support two naming systems. That increases cognitive load and testing surface (see migration notes in sec 6.2 and changelog entries). The spec does not fully prescribe how to surface or fail fast on mixed usage in large codebases, which risks inconsistent implementations.
+
+Section likely to face production friction. Sec 7.3.2 (ARIA/NAC state‑mismatch promoted to hard‑error at NAC‑3) is the most friction‑prone. Requiring exact dual‑attribute discipline (ARIA mirrors + NAC attributes) as a build‑blocking error will catch many real‑world edge cases (dynamic content, third‑party widgets, server/client render mismatches). While correct for safety, teams with legacy ARIA patterns or complex hydration flows will see frequent NAC‑3 failures unless the spec provides richer remediation guidance and pragmatic escape hatches (e.g., opt‑out annotations, staged enforcement). The per‑plugin event bus default (sec 7.4) and closed shadow‑root scope decisions also create integration edges for component libraries. Overall, sec 6.2 is a strong architectural improvement; sec 7.3.2 is the place where operational cost and developer ergonomics will be tested.
+
+T3. Programming walkthrough (200–400 words)
+Context: Use only window.NAC.* and canonical shapes from sec 6.2.
+
+a) Subscribe when an accordion expands.  
+Listen for nac:section:expanded (or nac:accordion:expanded depending on role mapping). Assert event.detail contains:
+
+section_id (string, required) — canonical per‑family id.
+
+action or reason if present (optional per interface).
+
+label_i18n or label (human label for verification).
+
+timestamp or source if the canonical shape includes provenance fields.
+Example assertion: typeof detail.section_id === 'string' && detail.section_id.length > 0. If legacy alias present, expect nac_id with legacy_event_field warning in runtime logs. (See sec 6.2 canonical shapes and legacy alias notes.)
+
+b) Drive the stepper through 3 steps and capture events.  
+Use window.NAC.action({ action: 'stepper.advance', stepper_id: 's1' }) (or the documented NAC.stepper.advance helper if present). Subscribe to nac:step:advanced and nac:step:back. For each event assert:
+
+stepper_id (string) and from_step, to_step (numbers or ids) per canonical shape.
+
+success boolean and optional reason on failure.
+
+timestamp and source for provenance.
+Record sequence: advance → event with from_step:0,to_step:1; advance → 1→2; back → 2→1. If legacy nac_id appears, runtime should emit legacy_event_field warning.
+
+c) Trigger event conformance self‑test.  
+Call window.NAC.selftest.event_conformance() (or the documented selftest API). The self‑test drives widgets and returns a structured result object with counts (e.g., pass:32, fail:0, miss:0) and per‑test diagnostics. Read result.summary and result.details[] to surface failing canonical fields. The demo’s expected outcome is 32 PASS, 0 FAIL, 0 MISS.
+
+d) Detect combobox option click canonical field.  
+Subscribe to nac:field:changed. Assert event.detail.option_id exists and is canonical (string or numeric id). If only nac_id or option legacy field is present, the runtime should still match but emit legacy_event_field warning; tests should fail if canonical option_id is absent when NAC‑3 enforcement is on.
+
+Spec ambiguity. The canonical vs legacy alias path is helpful for migration but ambiguous in two ways: (1) the spec does not fully define precedence when both canonical and legacy fields are present; (2) it leaves implementers to decide whether to treat legacy fields as equivalent for automated assertions or to require canonical presence for NAC‑3 compliance. The runtime’s legacy_event_field warning helps, but the spec should add deterministic precedence rules and example code for assertion libraries.
+
+T4. Relationship to ARIA + accessibility (150–300 words)
+Promoting ARIA/NAC mismatches to a hard error at NAC‑3 (sec 7.3.2) makes the mirror discipline operationally enforceable: NAC now treats ARIA as a first‑class source of truth that must align with NAC attributes. Combined with sec 6.2 canonical shapes, this creates a two‑layer contract: ARIA for screen readers and NAC for automation/agentic tooling. In practice this is workable if teams can reliably keep ARIA and NAC in sync during dynamic updates (hydration, async loads, third‑party widgets). The discipline tax increases: developers must author both ARIA and NAC attributes and ensure they are updated atomically. For teams already disciplined about ARIA, NAC reduces ambiguity and improves automation reliability; for teams with ad‑hoc ARIA usage, NAC amplifies the cost of correctness.
+
+Operationally, the spec helps by (a) providing canonical event shapes that automation can assert against, and (b) surfacing mismatches early. However, the spec should add pragmatic guidance (sec 7.x) for common failure modes: server/client render mismatch, third‑party widget wrappers, and progressive enhancement patterns. Without that, teams may either over‑engineer (duplicate state plumbing) or disable NAC‑3 enforcement, undermining the goal. Overall, v1.7.0 makes ARIA mirroring more actionable but increases the discipline tax unless accompanied by migration tooling and clear remediation recipes.
+
+T5. Adoption analysis (150–300 words)
+Minimum work to adopt: Add data-nac-* attributes to interactive elements, implement canonical ids (field_id, section_id, etc.), wire window.NAC calls for programmatic actions, and run the event conformance self‑test. For a greenfield app with good ARIA hygiene, this is a few days to a couple of sprints.
+
+Most underestimated part: keeping ARIA and NAC in lockstep during dynamic updates and third‑party integrations. Teams often underestimate the engineering needed to atomically update both attribute sets across async flows, virtualized lists, and server‑side rendering hydration.
+
+Causes of abandonment: (1) High initial friction from NAC‑3 hard errors (sec 7.3.2) when legacy widgets or third‑party components lack NAC attributes; (2) the dual‑naming migration window causing test flakiness; (3) lack of clear remediation guidance for common mismatch scenarios. Compared to v1.6.0, sec 6.2 helps by making event shapes explicit (reducing guesswork), but the dual‑emit compatibility period keeps complexity similar or slightly higher in the short term because teams must support both canonical and legacy fields until v2.0. The self‑test reduces uncertainty and should lower long‑term adoption cost if teams integrate it into CI.
+
+T6. Scores and closing line
+Clarity of the specification: 7/10
+
+Usefulness for automated test or assistant tooling: 9/10
+
+Ease of adoption for a typical web team: 5/10
+
+Ambition versus feasibility: 8/10
+
+Readiness for a public 2.0 announce: 6/10
+
+Closing recommendation: I would recommend NAC v1.7.0 for teams building enterprise web apps that must support voice control and automation (e.g., internal tooling for employees with motor disabilities), provided they commit to the ARIA/NAC discipline and integrate the event conformance self‑test into CI.
+
+T7. v1.7 pillar ratings (200–400 words)
+a) Sec 6.2 canonical event detail shapes — 9/10. Right move: per‑family entity ids (e.g., field_id, stepper_id) remove ambiguity and enable deterministic assertions. One point off because the spec should define precedence rules when both canonical and legacy fields appear.
+
+b) Strict‑superset migration plan with legacy aliases + warnings — 7/10. Pragmatic and lowers immediate breakage risk; however, it prolongs dual‑support complexity. A shorter, well‑communicated deprecation timeline with tooling to auto‑migrate attributes would score higher.
+
+c) Sec 7.3.2 ARIA/NAC drift hard‑error at NAC‑3 — 6/10. Enforceable in principle, but in practice teams will hit many false positives without richer remediation guidance and opt‑out mechanisms for third‑party content. The enforcement is correct for safety but operationally heavy.
+
+d) NAC.drag_drop runtime + role‑aware NAC.click — 8/10. These runtime primitives close real accessibility gaps (programmatic drag/drop for motor‑impaired users; consistent success events for clicks). Matcher tolerances appear improved, but implementers must validate edge cases (virtualized lists, pointerless interactions).
+
+e) Section‑visibility highlight + focus pulse CSS rule — 7/10. Useful for attentional/cognitive needs; visible feedback is important. The spec should include contrast/accessibility thresholds and motion‑reduction alternatives to avoid sensory overload.
+
+f) “v1.7 event conformance” self‑test pattern — 9/10. Shipping an executable spec check is excellent; it materially reduces ambiguity and accelerates adoption. Consider making a CI‑friendly runner and normative pass/fail criteria at NAC‑3.
+
+g) 11 new widget cards covering sec 6.1 surface — 8/10. Strong coverage and practical examples. Remaining gaps: complex composite widgets (third‑party rich editors, highly dynamic virtualized grids) need more examples and anti‑pattern guidance.
+
+T8. v2.0 readiness (150–300 words)
+Ready for public consumption today
+
+Canonical event shapes (sec 6.2) and the runtime primitives (drag_drop, role‑aware click) are mature and should be public.
+
+The event conformance self‑test and the demo widget cards provide runnable examples and CI integration points.
+
+Should land before a 2.0 announce
+
+Migration tooling: an automated attribute migrator (legacy → canonical) or lint rule to surface deterministic fixes.
+
+Remediation guidance for NAC‑3 failures: concrete recipes for hydration mismatches, third‑party widget wrappers, and progressive enhancement patterns.
+
+Precedence rules: explicit spec text on canonical vs legacy field precedence and how assertion libraries should behave.
+
+Can wait for v2.x patches
+
+Additional widget examples for exotic third‑party components, expanded i18n examples, and incremental performance optimizations in the runtime.
+
+Recommendation on announcing 2.0  
+I would not announce 2.0 today. Wait until migration tooling and NAC‑3 remediation guidance are published and at least one major component library demonstrates a clean integration pattern. Those two items materially reduce adoption friction and the risk of abandonment.
+
+T9. Accessibility impact assessment (200–400 words)
+Motor disability / voice control users  
+v1.7.0 meaningfully improves consumability for voice control tools. The canonical per‑family id fields in sec 6.2 (e.g., option_id on nac:field:changed, stepper_id on step events) let voice grammars map utterances to stable identifiers rather than brittle visible text. For example, nac:field:changed.option_id enables a voice assistant to say “pick Berlin” and assert the runtime selected the intended item even in large remote autocompletes. The addition of NAC.drag_drop (v1.6.2) is also critical: it exposes programmatic drag semantics so users who cannot perform pointer drags can invoke the same behavior via the contract. Remaining breakdowns: voice tools still depend on consistent labels (label_i18n) and deterministic focus behavior; if ARIA/NAC drift occurs (sec 7.3.2), voice grammars may fail. Also, virtualized lists and remote pagination require canonical ids to be stable across pages — the spec should emphasize stable, persistent ids for large datasets.
+
+Cognitive disability / agentic loop users  
+The agentic loop (sec 9.1–9.2) combined with canonical shapes and NAC‑3 enforcement gives a stronger audit trail: events include explicit ids and provenance, and the self‑test ensures emitted shapes match expectations. This supports auditable delegation: an assistant can report the exact action_id and field_id it used. However, trust is only as good as coverage: if the contract lacks provenance fields (who triggered the action, whether it was simulated vs user‑initiated), the audit trail is weaker. The spec should require or recommend explicit source/actor fields in canonical shapes to avoid blind spots where an AI claims an action without verifiable origin.
+
+Developer perspective  
+For developers committed to accessibility, NAC lowers long‑term cost by making automation deterministic and testable (high score for tooling). Short term, it adds compliance work: dual attributes, ARIA mirroring, and canonical ids. If teams integrate the self‑test into CI and adopt the canonical naming early, NAC reduces regressions and support burden. If they treat NAC as checkbox theater (add attributes superficially), it becomes another compliance layer without real benefit.
+
+One specific recommendation  
+Add a required provenance block to canonical event shapes (e.g., source: { type: 'user'|'agent'|'script', id?: string, tool?: string }) and require label_i18n + stable persistent ids for large/remote lists. This would materially improve voice control reliability and the auditability of agentic loops for users with cognitive disabilities.
+
+
+DEEPSEEK Pensamiento Profundo Busqueda Inteligente -->
+
+Technical Review: NAC v1.7.0 (Native Accessibility Contract)
+T1. SUMMARY (under 120 words)
+NAC proposes a machine-readable contract for web UI accessibility: HTML data-nac-* attributes plus a JSON manifest, enforced by a JavaScript runtime that emits canonical events and validates ARIA consistency. The primary audience is developers building accessible interfaces; downstream beneficiaries are people with motor, visual, and cognitive disabilities who depend on assistive technology or AI delegation. As of v1.7.0, NAC ships per-family canonical event detail shapes (sec 6.2), role-aware NAC.click, a drag_drop primitive, ARIA state-mismatch hard errors, an executable self-test suite, and 11 new widget demos covering the full event surface.
+
+T2. ARCHITECTURAL REVIEW (200-400 words)
+Strongest design decision in v1.7.0: Section 6.2's per-family entity IDs (action_id, field_id, tab_id, etc.) replace the ambiguous nac_id. This directly addresses the v1.6 review finding that validation was reactive rather than preventive. Now an event consumer can assert event.detail.option_id exists without guessing which generic field contains the identifier. The compile-time contract shift (TypeScript-style interfaces) makes automation predictable — a voice command "select Berlin" maps deterministically to nac:field:changed with option_id.
+
+Weakest design decision: The legacy alias migration plan (accepting both old and new fields with a warning until v2.0) creates a dual-writes tax that will persist in production for teams that defer cleanup. Worse, spec section 6.2 says "the runtime MUST emit both the canonical and legacy fields" but does not specify emission order or warning deduplication. A page with 200 interactive elements could fire 400 events on a single user action, each with duplicate payloads. The legacy_event_field warning also lacks a suppression mechanism for CI pipelines that cannot tolerate console noise during migration.
+
+Section most likely to face friction in production: Section 7.3.2 (NAC-3 hard-error on ARIA/nac state mismatch). While admirable in principle, the gate assumes that ARIA state and NAC manifest state can be kept in sync atomically. In real single-page apps with third-party widget libraries, a date picker might update aria-expanded internally before NAC's mutation observer reacts, causing a transient NAC-3 failure that blocks builds but is invisible to users. The spec does not provide a debounce or reconciliation grace window.
+
+The v1.6.1–1.6.6 patches are solid incremental improvements — particularly the detached-element matcher fix (1.6.4) and role-aware click (1.6.3) — but they don't address the fundamental architectural tension: NAC is a validator AND a runtime, and those roles conflict when strictness breaks real UIs.
+
+T3. PROGRAMMING WALKTHROUGH (200-400 words)
+a) Accordion expansion subscription:
+nac:section:changed is the canonical event. On expansion, event.detail.section_id (not nac_id) must be present, plus expanded: true, and source_element (the triggering DOM node). The spec (sec 6.2.6) requires section_id as required, expanded as required boolean, source_id as optional. I'd assert all three exist.
+
+b) Stepper widget through 3 steps:
+
+javascript
+const steps = [];
+const handler = (e) => steps.push({
+  type: e.type,
+  step_id: e.detail.step_id,
+  index: e.detail.current_index,
+  direction: e.type === 'nac:step:advanced' ? 'next' : 'prev'
+});
+window.NAC.addEventListener('nac:step:advanced', handler);
+window.NAC.addEventListener('nac:step:back', handler);
+
+// Drive programmatically
+window.NAC.click(document.querySelector('[data-nac-id="stepper-next"]'));
+window.NAC.click(document.querySelector('[data-nac-id="stepper-next"]'));
+window.NAC.click(document.querySelector('[data-nac-id="stepper-prev"]'));
+
+// Expect 3 events: 'advanced', 'advanced', 'back'
+Ambiguity: sec 6.2.9 defines nac:step:changed but the spec's own event family table (sec 6.1) lists :advanced and :back as distinct types. The demo implements both, but the canonical shape table only documents :changed.
+
+c) Trigger self-test:
+
+javascript
+const result = await window.NAC.selftest.event_conformance();
+console.log(result.passed, result.failed, result.missing);
+// Expected: 32 PASS, 0 FAIL, 0 MISS per v1.7.0 notes
+No ambiguity — the self-test is well-documented in the demo source.
+
+d) Combobox option click detection:
+
+javascript
+const gotCanonical = (e) => {
+  if (e.type === 'nac:field:changed' && e.detail.option_id) {
+    console.log('Canonical option_id:', e.detail.option_id);
+  }
+  if (e.type === 'nac:field:changed' && e.detail.nac_id) {
+    console.warn('Legacy field — upgrade your listener');
+  }
+};
+The spec (sec 6.2.4) says both fields MAY be emitted during migration. A listener that only checks option_id will miss events from components not yet migrated, but the spec does not guarantee which field is present. This is the most serious ambiguity for automation authors.
+
+T4. RELATIONSHIP TO ARIA + ACCESSIBILITY (150-300 words)
+Section 7.3.2's hard-error gate fundamentally changes NAC's ARIA story from advisory to enforceable. In practice, for an enterprise tool serving users with motor+cognitive disabilities, v1.7.0 reduces the discipline tax for teams that commit to NAC-3 but amplifies it for teams that cannot refactor deeply.
+
+Where it works: A combobox that maintains both aria-expanded and NAC's manifest becomes self-validating. CI fails if the manifest says expanded: false but the DOM says aria-expanded="true". This catches real bugs — I've seen voice-control users stuck because a dropdown's ARIA said collapsed but the overlay was visible. Sec 6.2.4's field_id + option_id pairing means the same validation extends to selection state.
+
+Where it breaks down: Third-party react-select or Shoelace components manage ARIA internally. Wrapping them with NAC requires either (a) forking the component, (b) writing brittle mutation observers that race with internal updates, or (c) disabling NAC-3 for those subtrees. The spec does not provide an escape hatch for "known-good third-party widget" exemptions.
+
+The operational reality: v1.7.0 makes NAC a first-class citizen alongside ARIA, not a mirror. That's correct for accessibility — ARIA alone doesn't give you a programmatic event contract. But teams already struggling with ARIA compliance will find NAC-3 adds another layer of "red CI" without tooling to auto-suggest fixes. The spec needs a nac-validate="gentle" mode for incremental adoption.
+
+T5. ADOPTION ANALYSIS (150-300 words)
+Minimum work for NAC-3 adoption: Add data-nac-id to every interactive element, write a manifest mapping those IDs to roles+states+labels, include the 3KB runtime, and call NAC.validate() in CI. For a 10-field form, roughly 2-4 hours.
+
+Most likely underestimated part: Sec 7.3.2's ARIA mirroring requirement. Teams assume ARIA is already correct — it rarely is. Auditing 100 widgets for aria-expanded/aria-selected/aria-checked consistency with NAC's manifest typically reveals 20-30% mismatches, each requiring either NAC manifest changes or ARIA fixes. That's not NAC's fault, but it's the true adoption cost.
+
+What causes abandonment midway: The legacy alias migration path (sec 6.2) creates a trap. Teams upgrade to v1.7, see both old and new events firing, assume they can keep using nac_id indefinitely. They defer refactoring, the warning noise gets silenced, and by the time v2.0 drops they have 500 event listeners to rewrite. Better to have made v1.7 a hard break with a codemod.
+
+Marginal cost vs v1.6.0: Sec 6.2 makes adoption slightly harder in the short term (more fields to learn per widget type) but significantly easier in the long term (no guessing which ID field an event carries). The dual-emit migration path reduces immediate pain but risks technical debt. Net: same effort curve, shifted left — more work upfront, less debugging later.
+
+T6. SCORES AND CLOSING LINE
+Clarity of specification: 8/10 — Sec 6.2 is excellent; legacy alias confusion and missing event emission order deduct points.
+
+Usefulness for automated test or assistant tooling: 9/10 — Canonical shapes plus self-test make NAC the most machine-testable accessibility contract I've seen.
+
+Ease of adoption for a typical web team: 6/10 — ARIA mirroring and manifest maintenance are real taxes; third-party component integration remains painful.
+
+Ambition versus feasibility: 9/10 — NAC attempts the right hard problem (programmatic accessibility contract) and v1.7 delivers most of it.
+
+Readiness for a public 2.0 announce: 7/10 — Core contract is solid, but the legacy alias strategy and third-party escape hatch need resolution.
+
+Recommendation: Adopt NAC v1.7.0 today for any greenfield project where users depend on voice control or AI-assisted navigation — the canonical event shapes alone justify the investment. For brownfield with heavy third-party widget usage, wait for v2.0's hard break and exemption mechanism.
+
+T7. v1.7 PILLAR RATINGS (200-400 words)
+a) Sec 6.2 canonical event detail shapes — 9/10
+Per-family entity IDs eliminate the single greatest ambiguity in v1.6. The only merging opportunity missed: source_id appears in 14 different shapes but is never cross-referenced to a nac-id manifest entry, so consumers cannot trace an event back to its declarative label.
+
+b) Strict-superset migration plan — 5/10
+Wrong trade-off. v1.7 should have been a hard break with a migration codemod. The dual-emit warning creates indefinite technical debt; teams will silence it and suffer at v2.0. Pragmatic but short-sighted.
+
+c) Sec 7.3.2 ARIA/nac drift hard-error at NAC-3 — 7/10
+Enforceable now, but only for teams with full DOM control. The spec needs a data-nac-validate="skip" attribute for third-party subtrees. Without it, NAC-3 becomes a blocker for real-world apps with modals from CMSes or chat widgets.
+
+d) NAC.drag_drop + role-aware NAC.click — 8/10
+Matcher tolerances catch up adequately. The role-aware click (tab → nac:tab:changed) finally makes voice feedback uniform. Missing: drag_drop does not validate that the source and target accept the operation type (reorder vs move vs copy), so automation can fire invalid drags.
+
+e) Section-visibility highlight + focus pulse CSS rule — 8/10
+Visible and helpful for attention/cognitive needs. The pulse duration (300ms default) is configurable but the spec doesn't document the CSS custom property. Users needing longer perceptual cues have to reverse-engineer.
+
+f) "v1.7 event conformance" self-test — 9/10
+Should become normative at NAC-3, yes. This is the most important addition since v1.0. Every NAC runtime should ship a selftest method that authors can run in CI.
+
+g) 11 new widget cards — 8/10
+Gaps remaining: nac:chart:select (data point selection), nac:map:geocode (reverse geocoding events), nac:richtext:format (text style changes), and any widget that updates without user input (polling, WebSocket pushes). The last gap is significant for real-time dashboards.
+
+T8. v2.0 READINESS (150-300 words)
+Ready for public consumption today:
+
+Canonical event detail shapes (sec 6.2) with per-family entity IDs
+
+Self-test suite as executable specification
+
+Role-aware click and drag_drop primitives
+
+ARIA/nac drift detection (conceptually)
+
+11 widget coverage plus comprehensive demo
+
+Should land BEFORE 2.0 announce:
+
+Hard break removal of legacy fields (no dual-emit). Ship a codemod in the same release.
+
+data-nac-validate="skip" attribute for third-party subtrees, plus a warning when skipped regions contain interactive elements.
+
+Event emission order specification (synchronous? microtask? — currently undefined).
+
+Missing widgets: dynamic chart selection, map geocoding events, real-time data push events.
+
+Can wait for v2.x patches:
+
+Framework bindings (React hooks, Vue composables) — community can build these post-2.0.
+
+Analytics integration — nice but not core.
+
+Shadow DOM deep-traversal configuration options.
+
+Verdict: Do not announce 2.0 yet. Ship v1.8 with the hard break and third-party skip attribute, then call that 2.0. The current v1.7 dual-emit strategy will create a support burden of "why do I see two events" that consumes your post-launch bandwidth.
+
+T9. ACCESSIBILITY IMPACT ASSESSMENT (200-400 words)
+For a user with motor disability depending on voice control:
+v1.7.0 delivers a usable contract. Sec 6.2.4's nac:field:changed.option_id plus sec 6.2.1's nac:action:invoked.action_id mean voice software can map "click submit" to a stable target without fragile text matching. The role-aware click (v1.6.3) ensures feedback: saying "open the date picker" fires nac:field:changed with expanded: true, so the user knows the UI acknowledged them. Breakdown: nac:drag_drop (sec 13.4) lacks a "preview" event before commit — users with tremor might invoke drag accidentally with no cancelation window.
+
+For a user with cognitive disability delegating to an AI assistant:
+The agentic loop (sec 9.1–9.2) plus canonical shapes creates an auditable accommodation. An AI can report: "I sent nac:step:advanced with step_id: 'billing' and received confirmation." The v1.6.1 hard-error drift gate means the AI can trust that aria-expanded matches manifest state — it won't get trapped by lie-to-children ARIA. But: The user is still trusting the AI more than the contract justifies. Nothing in sec 6.2 requires the runtime to emit a failure event when a command cannot be executed (e.g., clicking a disabled button). An AI might report success based on event emission when the UI actually ignored the command. Missing: nac:command:rejected event family.
+
+For a developer wanting to ship accessible products:
+NAC v1.7.0 lowers the cost of validating accessibility but adds layers to implementing it. The discipline tax is real but correctly placed — if you maintain NAC manifest + ARIA + actual behavior, your product works for more people. However, NAC does not yet generate ARIA from manifest (or vice versa), so it's compliance theater if the team just runs NAC.validate() without fixing failures.
+
+Specific recommendation for an underserved population:
+Add nac:command:failed and nac:command:ambiguous events (sec 6.2.17) for situations where NAC.click() targets an element but the element is disabled, hidden, or matches multiple IDs. This serves users with executive function variation who need the AI to say "I couldn't complete that — the button was disabled" rather than silent failure.
+
+MISTRAL Le Chat
+
+Thank you for the thorough context and the clear, human-centered framing. I have read PHILOSOPHY.md (including the new "What NAC does for people with disabilities" section), the v1.7.0 spec, the runtime, MANUAL.md, API_REFERENCE.md, and the CHANGELOG. I will now proceed with your review tasks, grounded in the actual text and the stakes you described.
+
+T1. SUMMARY (under 120 words)
+NAC (Native Accessibility Contract) is a machine-readable UI contract that lets AI agents, voice control software, RPA bots, and automated test runners operate web UIs as if they were human users—no privileged APIs, no selectors, no backend access. It ships five core attributes (data-nac-id, role, state, action, field-type), a JSON manifest per plugin, and a canonical nac:* event family (v1.7.0’s headline: per-widget entity-specific IDs like action_id, field_id instead of ambiguous nac_id). As of v1.7.0, NAC also includes a self-test ("v1.7 event conformance") and 11 new widget cards (stepper, tree, toast, etc.), all emitting canonical shapes.
+
+Downstream beneficiaries: People with motor, visual, cognitive, or variable-day disabilities who depend on assistive tech to navigate UIs. A sloppy NAC contract locks them out.
+
+T2. ARCHITECTURAL REVIEW (200-400 words)
+Strongest Design Decision: Sec 6.2 Canonical Event Detail Shapes
+The per-family entity IDs (action_id, field_id, tab_id, etc.) in sec 6.2 are NAC’s most important architectural improvement. Previously, nac_id was overloaded across event families, forcing consumers to guess whether nac_id referred to a field, action, or tab. Now, each widget family has a TypeScript-style interface declaring required/optional fields, making contracts preventive, not reactive (directly addressing the v1.6 peer review’s #1 abandonment cause). The strict-superset migration path (legacy aliases accepted with legacy_event_field warnings) is a pragmatic compromise—it avoids breaking existing adopters while pushing the ecosystem toward v2.0’s cleaner contract.
+Weakest Design Decision: Sec 7.3.2’s Hard-Error Drift Gate
+While sec 7.3.2 (aria/nac state-mismatch as a hard-error at NAC-3) is well-intentioned, it amplifies the discipline tax for teams already struggling with ARIA. The rule forces atomic updates to data-nac-state and aria-* attributes, which is non-trivial in batched frameworks (React 18, Vue Suspense, Svelte 5). The MANUAL.md design-system layer pattern mitigates this, but it requires upfront investment that many teams will underestimate. The trade-off is correct (accessibility requires discipline), but the friction is real.
+Most Likely Production Friction: Sec 6.2’s Dual-Emit Transition
+The legacy-to-canonical transition (v1.7.0 accepts both, v2.0 drops legacy) is the section most likely to cause mid-adoption churn. Teams must:
+
+Emit both canonical (action_id) and legacy (nac_id) fields during the transition.
+Update validators to ignore legacy_event_field warnings.
+Plan for a v2.0 migration where legacy support disappears.
+
+This doubles the event emission work temporarily, and the lack of a normative dual-emit helper in the runtime (e.g., NAC.emit_canonical_and_legacy()) leaves implementers to handle it manually. Sec 6.2.28’s migration table helps, but the onus is on the host to implement it correctly.
+
+Citations: Sec 6.2 (canonical shapes), Sec 7.3.2 (hard-error drift), Sec 6.2.28 (migration table), MANUAL.md (design-system layer).
+
+T3. PROGRAMMING WALKTHROUGH (200-400 words)
+a) Subscribe to Accordion Expansion Events
+To detect when a user expands an accordion section:
+js
+Copiar
+
+// Subscribe to the canonical event for accordion toggles
+document.addEventListener('nac:accordion:expanded', (e) => {
+  // Assert required fields per sec 6.2.5 (Accordion Events)
+  const { plugin, accordion_id, section_id, timestamp } = e.detail;
+  if (!plugin || !accordion_id || !section_id) {
+    console.warn('Missing required fields in nac:accordion:expanded');
+  }
+  console.log(`Expanded section ${section_id} in ${accordion_id}`);
+});
+
+
+
+Ambiguity: The spec does not explicitly state whether accordion_id is the parent widget’s nac_id or a separate identifier. The runtime matcher accepts both nac_id and section_id (legacy vs. canonical), but consumers must handle both until v2.0.
+
+b) Drive the Stepper Widget Through 3 Steps
+js
+Copiar
+
+// Assuming stepper_demo plugin with steps 0, 1, 2
+const stepperId = 'stepper_demo.stepper';
+
+// Advance through steps
+for (let i = 0; i < 3; i++) {
+  const result = await NAC.click(`${stepperId}.step_${i}.next`);
+  // Assert canonical event per sec 6.2.22 (Stepper Events)
+  const event = await NAC.wait_for('nac:step:advanced');
+  const { stepper_id, from_step, to_step } = event.detail;
+  if (to_step !== i + 1) {
+    throw new Error(`Expected step ${i + 1}, got ${to_step}`);
+  }
+}
+
+
+
+Ambiguity: The stepper’s nac_id structure (e.g., stepper_demo.stepper.step_0.next) is not standardized. The demo uses flat IDs (e.g., stepper_demo.next), but the spec allows either. Consumers must infer the pattern from the manifest.
+
+c) Trigger the v1.7 Event Conformance Self-Test
+js
+Copiar
+
+// Run the self-test (exposed in the demo)
+const result = await window.runEventConformance();
+// Result shape: { passes: number, fails: number, misses: number, details: [] }
+console.log(`Conformance: ${result.passes} PASS, ${result.fails} FAIL, ${result.misses} MISS`);
+
+
+
+Note: The self-test is demo-specific (not part of the core runtime). A normative requirement (e.g., NAC.validate_event_conformance()) would be more useful for production.
+
+d) Detect Combobox Option Click with Canonical option_id
+js
+Copiar
+
+// Click an option in the cities combobox
+await NAC.click('cities.option.3');
+// Subscribe to the canonical field:changed event
+const event = await NAC.wait_for('nac:field:changed');
+const { field_id, new_value, option_id } = event.detail;
+// Assert option_id is set (sec 6.2.3: Field Events)
+if (!option_id) {
+  console.warn('Legacy event: option_id missing, falling back to nac_id');
+}
+
+
+
+Ambiguity: The runtime synthesizes nac:field:changed for toggle-class fields (v1.6.4), but does not guarantee option_id for legacy hosts. The validator emits legacy_event_field, but consumers must handle both shapes.
+
+T4. RELATIONSHIP TO ARIA + ACCESSIBILITY (150-300 words)
+NAC’s ARIA mirroring story is operationally workable in v1.7.0, but the discipline tax remains high. The v1.6.1 hard-error drift gate (sec 7.3.2) forces teams to keep data-nac-state and aria-* in sync, which is correct for accessibility—screen readers and NAC-driven tools must see the same state. However, this doubles the maintenance burden for teams that previously only used ARIA.
+Does v1.7.0 Reduce or Amplify the Tax?
+
+Reduces: The design-system layer pattern (MANUAL.md) provides atomic update primitives (e.g., React’s flushSync, Vue’s nextTick) that emit both NAC and ARIA in one render commit. Once implemented, drift becomes impossible.
+Amplifies: Without the design-system layer, every state change requires two attribute updates. Teams that skip this layer will hit CI failures (NAC-3 blocks on drift), leading to abandonment.
+Production Reality
+For an enterprise tool with motor + cognitive disability users:
+
+NAC + ARIA together is the only viable path. ARIA ensures screen reader compatibility; NAC ensures operability for voice control and AI assistants.
+The cost is justified because the same discipline that makes NAC reliable (atomic state updates, manifest-driven validation) also makes ARIA reliable.
+v1.7.0’s canonical shapes help by reducing ambiguity in event handling, but the real win is the self-test—it proves the contract is honored at runtime.
+Conclusion: v1.7.0 lowers the cost of doing the right thing for teams willing to invest in the design-system layer. For others, it adds compliance theater.
+
+T5. ADOPTION ANALYSIS (150-300 words)
+Minimum Work for NAC-3 on v1.7.0
+
+Annotate: Add data-nac-* to every interactive element (5 attributes).
+Register: One manifest per plugin (NAC.register()).
+Emit: Lifecycle events (nac:action:succeeded, etc.) for every async operation.
+Validate: Run NAC.validate() in CI; fix drift findings.
+Test: Use the v1.7 event conformance self-test as a template.
+Estimate: 1-2 days per screen for a human developer, or minutes per screen for an AI coding agent (per spec sec 1.5.2).
+
+Most Underestimated Part: Event Emission
+Teams consistently underestimate the work of emitting canonical events for every widget family. For example:
+
+A sortable table must emit nac:table:sort_changed with column_id.
+A stepper must emit nac:step:advanced with from_step and to_step.
+A combobox must emit nac:field:changed with option_id.
+Legacy codebases often lack these events entirely. Retrofitting them is labor-intensive and error-prone.
+
+Most Likely Abandonment Cause: Dual-Emit Transition
+The v1.7.0 migration path (emit both canonical and legacy fields) doubles the event work temporarily. Teams may:
+
+Skip legacy emission, breaking existing consumers.
+Skip canonical emission, failing the self-test.
+Abandon midway when they realize the v2.0 hard break is coming.
+Marginal Cost vs. v1.6.0:
+
+Easier: The canonical shapes (sec 6.2) make contracts self-documenting.
+Harder: The dual-emit requirement adds short-term complexity.
+Same: The core attribute/manifest work is unchanged.
+
+T6. SCORES AND CLOSING LINE
+
+
+  
+    
+      Axis
+      Score (1-10)
+      Rationale
+    
+  
+  
+    
+      Clarity of specification
+      9
+      Sec 6.2 is exemplary; the rest is clear but versioning is confusing (v1.7.0 spec includes v1.6.x patches inline).
+    
+    
+      Usefulness for automation
+      10
+      Canonical shapes + self-test make NAC the best contract for AI/voice/RPA tooling.
+    
+    
+      Ease of adoption
+      6
+      Easy for new projects, hard for legacy (event emission + dual-emit transition).
+    
+    
+      Ambition vs. feasibility
+      8
+      Ambitious but achievable—the design-system layer pattern proves it.
+    
+    
+      Readiness for 2.0
+      7
+      Almost there—needs a normative dual-emit helper and more production case studies.
+    
+  
+
+
+Closing line: I would strongly recommend NAC v1.7.0 for voice-control users with motor disabilities. The data-nac-id + label_i18n contract (sec P1) and canonical event shapes (sec 6.2) give their tools deterministic, stable targets—exactly what they need to navigate UIs reliably.
+
+T7. v1.7 PILLAR RATINGS (200-400 words)
+a) Sec 6.2 Canonical Event Detail Shapes
+Rating: 10/10
+
+The per-family entity IDs (action_id, field_id, etc.) eliminate ambiguity in event handling. This is the single biggest improvement since v1.4. The TypeScript-style interfaces are self-documenting and machine-validatable. No merging opportunities—this is the right abstraction.
+
+b) Strict-Superset Migration Plan (Legacy Aliases + Warnings + v2.0 Sunset)
+Rating: 8/10
+
+The gradual deprecation is pragmatic, but the lack of a runtime helper (e.g., NAC.emit_dual()) forces manual dual-emission. A normative migration utility would make this 9/10.
+
+c) Sec 7.3.2 ARIA/NAC Drift Hard-Error at NAC-3
+Rating: 9/10
+
+Enforceable now—but only if teams adopt the design-system layer pattern. Without it, drift is inevitable, and the hard-error gate becomes a blocker. The spec is correct; the onus is on implementers to meet it.
+
+d) NAC.drag_drop Runtime + Role-Aware NAC.click
+Rating: 9/10
+
+The drag_drop primitive (sec 13.4) and role-aware click (v1.6.3) close critical gaps for motor-disability users. The matcher tolerances (v1.6.4’s detached-element fix) catch up to real-world edge cases. Ready for production.
+
+e) Section-Visibility Highlight + Focus Pulse CSS Rule
+Rating: 7/10
+
+The data-nac-section-visited attribute (v1.6.5) and focus pulse (v1.4.2) are helpful for cognitive/attention needs, but the default styling is subtle. A stronger default pulse (e.g., thicker outline, brighter color) would improve visibility.
+
+f) "v1.7 Event Conformance" Self-Test Pattern
+Rating: 10/10
+
+This should become a normative NAC-3 requirement. The 32 PASS/0 FAIL/0 MISS expectation is the first executable spec check in NAC. Critical for trust.
+
+g) 11 New Widget Cards Covering Full Sec 6.1 Surface
+Rating: 9/10
+
+The demo coverage is exhaustive, but gaps remain in real-world edge cases (e.g., nested plugins, dynamic manifests). The self-test helps, but production systems are more complex.
+
+T8. v2.0 READINESS (150-300 words)
+Ready for Public Consumption Today
+
+Core contract: data-nac-* attributes, manifest, window.NAC.* API.
+Canonical event shapes (sec 6.2) + self-test.
+Design-system layer pattern (MANUAL.md).
+ARIA drift gate (sec 7.3.2) + role-aware click (v1.6.3).
+NAC.drag_drop (v1.6.2) + detached-element fixes (v1.6.4-5).
+
+Should Land Before 2.0 Announce
+
+Normative dual-emit helper: NAC.emit_canonical_and_legacy(event, detail) to simplify the transition.
+Production case studies: 3+ real-world adopters (beyond the demo) to prove feasibility at scale.
+Shadow DOM bridge pattern: Normative guidance for closed shadow roots (currently out of scope).
+v2.0 migration guide: Step-by-step for dropping legacy fields.
+
+Can Wait for v2.x Patches
+
+Additional widget families (e.g., virtualized lists, custom modals).
+Performance optimizations (e.g., lazy manifest loading).
+Tooling integrations (e.g., Playwright/Cypress plugins).
+
+Verdict: Announce 2.0 after adding the dual-emit helper and 2-3 production case studies. The core is ready; the ecosystem needs proof.
+
+T9. ACCESSIBILITY IMPACT ASSESSMENT (200-400 words)
+Motor Disability (Voice Control)
+v1.7.0 delivers. The data-nac-id + label_i18n contract (sec P1) gives voice-control tools stable, locale-independent targets. For example:
+
+A user says "click apply all" → voice tool resolves data-nac-id="patch_manager.apply_all" via the manifest’s label_i18n.
+The canonical action_id (sec 6.2.1) ensures the correct button is clicked, even if multiple actions share the same label.
+The role-aware click (v1.6.3) ensures feedback events (nac:action:succeeded) are reliable.
+Where it breaks down: Legacy hosts that emit non-canonical events (e.g., nac_id instead of action_id) confuse voice tools. The dual-emit transition is critical here.
+
+Cognitive Disability / Chronic Illness (AI Delegation)
+The agentic loop (sec 9.1, 9.2) + canonical shapes (sec 6.2) + drift gate (sec 7.3.2) make delegation auditable.
+
+A user says "extract last quarter’s sales report" → AI uses NAC.describe() to plan the steps, then NAC.click()/NAC.fill() to execute.
+The nac:action:succeeded events provide a verifiable audit trail.
+The self-test (v1.7) proves the contract is honored.
+Where it breaks down: AI assistants still trust their own parsing over the contract. A normative "AI must verify via NAC" rule would help.
+
+Developer Perspective: Cost of Doing the Right Thing
+v1.7.0 lowers the cost for teams that:
+
+Adopt the design-system layer (atomic NAC + ARIA updates).
+Use the self-test to catch drift early.
+Emit canonical events from the start.
+For others, it adds compliance theater. The real test is whether accessibility is treated as a first-class requirement—not an afterthought.
+
+One Specific Recommendation
+Add a data-nac-a11y-hint attribute for non-visual context. For example:
+html
+Copiar
+
+<button
+  data-nac-id="delete_item"
+  data-nac-a11y-hint="irreversible|requires_confirmation">
+  Delete
+</button>
+
+
+
+This would let screen readers and voice tools warn users before dangerous actions, without parsing the label. Critical for cognitive disability users who need explicit safeguards.
+
+
+GROK -->
+
+T1. SUMMARY (≈90 words)
+NAC (Native Accessibility Contract) is a lightweight, declarative + imperative contract layered on the DOM via data-nac-* attributes, a typed manifest, structured nac:* custom events, and a small window.NAC driver API. It enables reliable programmatic operation of UIs by AI agents, voice control (Talon/Dragon), RPA, and test runners while preserving human UX and permissions. Downstream beneficiaries are primarily users with motor, visual, or cognitive disabilities who rely on stable semantic IDs, richer introspection (NAC.describe()), role-aware feedback, and auditable agentic loops. v1.7.0 ships canonical per-family event detail shapes (sec 6.2), stricter ARIA/NAC parity enforcement, drag-drop + role-aware click primitives, section visibility highlights, and an executable self-test.
+T2. ARCHITECTURAL REVIEW (≈320 words)
+The strongest design decision in v1.7.0 is sec 6.2 "Canonical event detail shapes" with per-widget entity-specific IDs (e.g., action_id, field_id, tab_id, step_id, node_id, toast_id, calendar_id, marker_id, etc.) instead of a generic nac_id. This directly addresses the v1.6 critique of reactive validation. TypeScript-style interfaces make event consumption predictable for tools; legacy aliases + legacy_event_field warnings provide a clean migration path (strict superset). Combined with the new self-test ("v1.7 event conformance" asserting 32 PASS), this shifts NAC from "best-effort convention" toward executable specification.
+Weakest: The proliferation of entity-specific ID fields (20+ listed) risks fragmentation and cognitive load for implementers, even if it improves type safety. A smaller set of core discriminators plus optional context objects might have achieved similar clarity with less surface area.
+Most likely production friction: sec 7.3.2 aria/nac state-mismatch as hard-error at NAC-3. Dual maintenance (NAC drives, ARIA mirrors) is correct in principle but operationally expensive in component libraries or heavy React/Vue/Svelte codebases where state is managed in one place and attributes are rendered declaratively. Teams will hit this during CI until their rendering pipelines are disciplined. Closed shadow roots being out-of-scope (v1.6.1) is pragmatic but leaves a gap for web components.
+v1.6.1–6.6 patches (role-aware click, drag_drop runtime, detached-element fixes, section-visibility highlight, sort/filter roles) are solid incremental hardening that close real usability holes for voice and agent users.
+T3. PROGRAMMING WALKTHROUGH (≈280 words)
+Using only documented window.NAC.* and sec 6.2 shapes on the public demo:
+a) Accordion expansion: Subscribe to nac:accordion:expanded. Assert on event.detail: plugin, plugin_instance_id, accordion_id (canonical), section_id or equivalent, timestamp, optional label/value. Legacy nac_id accepted with warning.
+b) Stepper:
+JavaScript// Assume stepper nac_id known or discovered via describe()
+await NAC.step_next('example.stepper');  // or equivalent
+// Listen for:
+document.addEventListener('nac:step:advanced', e => {
+  // assert detail: {plugin, step_id (canonical), from_step, to_step, ...}
+});
+document.addEventListener('nac:step:back', ...);
+Drive 3 steps via sequential step_next / step_to; capture events for audit.
+c) Self-test:
+JavaScriptconst result = await NAC.selftest?.event_conformance?.() || NAC.validate('example_demo'); 
+// Expect {ok: true, passed: 32, failed: 0, missed: 0} or similar structured report.
+console.log(result);
+d) Combobox option click: Emits nac:field:changed with canonical option_id (plus field_id, value, label). Role-aware NAC.click on the option routes to the correct success event.
+Ambiguity note: Legacy field aliases work but emit warnings; spec should clarify exact deprecation timeline and whether tools must normalize to canonical before consumption. Self-test helps but runtime matcher leniency could hide mismatches in mixed v1.6/v1.7 environments.
+T4. RELATIONSHIP TO ARIA + ACCESSIBILITY (≈220 words)
+v1.6.1's promotion of aria/nac drift to hard NAC-3 error (sec 7.3.2) + NAC-drives-ARIA-mirrors (7.3.1) + sec 6.2 canonical shapes makes the dual-layer story far more operationally workable. In an enterprise tool serving motor + cognitive users, NAC now reduces net discipline tax over time: once the rendering pipeline enforces atomic updates and the validator runs in CI, teams get both screen-reader compatibility and stable agent/voice contracts "for free" from the same markup. The directionality rule eliminates guesswork.
+Limitations remain: ARIA lag in complex SPAs, closed shadow roots out-of-scope, and the per-element attribute tax. Overall, v1.7.0 amplifies value more than cost for teams already invested in accessibility; it turns NAC into a force-multiplier rather than parallel compliance theater.
+T5. ADOPTION ANALYSIS (≈200 words)
+Minimum work for NAC-3: 5 attributes per interactive element + manifest registration + lifecycle events + validator in CI. AI coding agents make this tractable (minutes per screen per the philosophy).
+Most underestimated: Maintaining dual NAC/ARIA state atomically and emitting all required per-family events consistently across dynamic widgets.
+Abandonment causes: Validator noise early on, perceived bloat in small apps, or teams hitting the hard ARIA drift gate without pipeline fixes.
+vs v1.6.0: Sec 6.2 + dual-emit migration path makes adoption easier. Canonical shapes give implementers clear targets; legacy support lowers the breaking-change risk. The self-test provides immediate feedback, reducing the "does this even work?" uncertainty that kills early pilots. Marginal cost down, confidence up.
+T6. SCORES AND CLOSING LINE
+
+Clarity of specification: 9/10 (precise, well-sectioned; minor proliferation risk in 6.2)
+Usefulness for automated test/assistant tooling: 9/10 (executable self-test + canonical shapes are excellent)
+Ease of adoption for a typical web team: 7/10 (AI-agent friendly but dual-state tax bites)
+Ambition versus feasibility: 8/10 (pragmatic scope with good migration)
+Readiness for public 2.0 announce: 8.5/10
+
+I would strongly recommend NAC v1.7.0 for accessibility-first enterprise tools whose users include people with motor/cognitive disabilities—the stable contract + agentic loop + voice ergonomics directly serve those humans better than ad-hoc ARIA or selectors.
+T7. v1.7 PILLAR RATINGS (≈280 words)
+a) Sec 6.2 canonical shapes: 9/10. Right per-family naming eliminates ambiguity; minor merging opportunities (e.g., generic context bag) exist but specificity wins for tooling.
+b) Strict-superset migration: 9/10. Excellent trade-off—warnings + aliases enable incremental rollout; hard break in v2.0 is disciplined.
+c) Sec 7.3.2 hard-error: 8/10. Enforceable with good validator + CI; initial pain expected but long-term win for parity.
+d) NAC.drag_drop + role-aware NAC.click: 9/10. Matcher tolerances appear caught up; role-aware success events close a major voice-control gap.
+e) Section-visibility highlight + focus pulse: 8/10. Visible enough for attentional needs; could benefit from configurable intensity or high-contrast modes for dyschromatopsia/low-vision users.
+f) v1.7 event conformance self-test: 10/10. Should become normative at NAC-3—executable specs are gold for this domain.
+g) 11 new widget cards: 9/10. Strong coverage of sec 6.1 surface; remaining gaps likely niche (e.g., very domain-specific controls) or future primitives like spreadsheet ranges.
+T8. v2.0 READINESS (≈180 words)
+Ready today: Core contract, canonical events (6.2), ARIA enforcement, driver API stability, self-test, drag_drop/click improvements, reset primitive, multi-locale i18n patterns, and philosophy narrative.
+Should land before 2.0:
+
+Normative requirement for the self-test pattern at NAC-3.
+Clarified deprecation timeline + normalization guidance for legacy fields.
+Optional high-contrast/attentional feedback config in manifest.
+Shadow DOM forwarding guidance or polyfill recommendation.
+
+Can wait: Advanced widgets (v2.x), deeper MCP layering examples, native (non-web) ports.
+I would announce as 2.0 today with the above 2–3 patches; v1.7.0 is already a strong, production-viable foundation.
+T9. ACCESSIBILITY IMPACT ASSESSMENT (≈320 words)
+Motor disability / voice control: Yes, v1.7.0 delivers a consumable contract. Sec 6.2 canonical shapes + entity IDs (option_id, tab_id, etc.) plus role-aware NAC.click (v1.6.3) let tools like Talon issue uniform commands and trust feedback (e.g., nac:field:changed.option_id confirms "pick Berlin" succeeded on a large autocomplete). NAC.drag_drop closes a key gap. Breakdowns remain on highly dynamic/virtualized lists without proper list_id/item_id coverage or detached elements (though v1.6.4 mitigated).
+Cognitive/chronic illness / AI delegation: Strong improvement. Agentic loop (9.1/9.2) + canonical events + hard ARIA/NAC drift gate create auditable traces. An assistant's actions are observable via events and NAC.describe() snapshots; the user can verify outcomes. Still some trust in the AI (model hallucination on IDs), but the contract makes failures detectable and replayable far better than pixel/selector approaches. Not perfect, but a real accommodation.
+Developer wanting accessible product: Lowers the cost meaningfully. AI agents apply the markup; validator + self-test catch drift; dual ARIA/NAC yields both human AT and machine operability. Reduces compliance theater by tying the contract to runtime behavior and events.
+One recommendation: Add normative guidance (and reference CSS/JS) for configurable "attention signals" (e.g., stronger pulse, longer duration, or audio cue opt-in via manifest) targeted at users with ADHD/executive-function needs or variable daily capacity. Section-visibility highlight is a good start; make it extensible.
+NAC v1.7.0 is a serious, thoughtful step forward that treats the human stakes seriously while advancing the technical contract.
+
+
+
+  

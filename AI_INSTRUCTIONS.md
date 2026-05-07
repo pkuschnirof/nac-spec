@@ -279,28 +279,45 @@ NAC is MIT. Free to use, fork, port. Citation requested:
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.7.0 / runtime v1.7.0. 2026. MIT License.
+Spec v1.8.0 / runtime v1.8.0. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```
 
 ## Last updated
 
-2026-05-07. NAC spec version: 1.7.0 / runtime 1.7.0 (strict
-superset of 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0). v1.7.0 is a
-MINOR release adding spec sec 6.2 "Canonical event detail
-shapes": every nac:* event family declares a TypeScript-style
-detail shape with per-family entity-id fields (action_id,
-field_id, tab_id, section_id, column_id, source_id,
-target_id, list_id, tree_id, node_id, etc.) instead of the
-ambiguous nac_id. Closes the v1.6 peer review's #1
-abandonment cause. Strict superset of v1.6.6 -- legacy field
-names stay accepted by the runtime matcher with a
-`legacy_event_field` warning; v2.0 (the public-announce
-release) drops legacy entirely. Reference demo gained 11 new
+2026-05-07. NAC spec version: 1.8.0 / runtime 1.8.0 (strict
+superset of 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0). v1.8.0
+is a MINOR release landing every action item from the
+four-AI peer review of v1.7.0 (Microsoft Copilot, DeepSeek,
+Mistral Le Chat, Grok). Highlights: ProvenanceBlock
+(`source: { type: 'user' | 'agent' | 'script', id?, tool? }`)
+on every emitted event so audit pipelines distinguish human
+from automated traffic; new `nac:command:rejected` /
+`nac:command:failed` event families closing the silent-
+failure gap; new `data-nac-validate="skip"` attribute
+(third-party widget escape hatch) and `data-nac-a11y-hint`
+attribute (irreversible / requires_confirmation /
+dangerous / long_running / costly / external_side_effect /
+data_loss) so voice + screen readers can interpose
+confirmations; drag-drop type validation
+(`data-nac-drag-type` + `data-nac-drag-accept`); migration
+helpers `NAC.emit_dual` / `NAC.command_rejected` /
+`NAC.command_failed` / `NAC.check_canonical_shape` /
+`NAC.validate_event_conformance` (the self-test, promoted
+from demo to runtime + normative at NAC-3). Public CSS
+custom properties for the focus pulse + section-visited
+highlight. Strict superset of v1.7.0 -- every v1.7 plugin
+remains valid; the new primitives are additive and opt-in.
+v1.7.0 introduced spec sec 6.2 "Canonical event detail
+shapes": every nac:* event family declares a TypeScript-
+style detail shape with per-family entity-id fields
+(action_id, field_id, tab_id, section_id, column_id,
+source_id, target_id, list_id, tree_id, node_id, etc.)
+instead of the ambiguous nac_id. Reference demo gained 11
 widget cards covering every event family in sec 6.1, plus a
-"v1.7 event conformance" self-test that programmatically
-asserts canonical shape. v1.6.x patch series (2026-05-07):
+"v1.7+v1.8 event conformance" self-test that
+programmatically asserts canonical shape. v1.6.x patch series (2026-05-07):
 v1.6.1 promotes aria/nac drift to hard-error at NAC-3 (sec
 7.3.2), per-plugin event buses default-on, closed shadow
 roots out of scope, runtime gains NAC.is_blocked() +
