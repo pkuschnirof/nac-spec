@@ -2936,11 +2936,21 @@
     _focusElement(source);
 
     source.setAttribute('data-nac-state', 'dragging');
-    /* v1.7.0: emit canonical source_id + legacy from_nac_id alias. */
-    _emit('nac:drag:started', {
+    /* v1.7.0: emit canonical source_id + legacy from_nac_id alias.
+       Plugin scope from the source's data-nac-plugin ancestor so
+       sec 6.2.1 universal base (plugin + plugin_instance_id) is
+       satisfied. v1.7 round 3 conformance FAILed without these. */
+    var dragPluginRoot = source.closest('[data-nac-plugin]');
+    var dragPluginCtx = {
+      plugin: dragPluginRoot ? dragPluginRoot.getAttribute('data-nac-plugin') : null,
+      plugin_instance_id: dragPluginRoot
+        ? (dragPluginRoot.getAttribute('data-nac-plugin-id') || null)
+        : null,
+    };
+    _emit('nac:drag:started', Object.assign({}, dragPluginCtx, {
       source_id:   source_nac_id,
       from_nac_id: source_nac_id, /* legacy, removed v2.0 */
-    });
+    }));
 
     /* Tiny delay so the focus pulse is observable before the DOM
        move settles. Mirrors the demo's existing UX. */
@@ -2948,12 +2958,12 @@
       setTimeout(function () {
         try {
           target.setAttribute('data-nac-state', 'drop-target-over');
-          _emit('nac:drag:over', {
+          _emit('nac:drag:over', Object.assign({}, dragPluginCtx, {
             source_id:   source_nac_id,           /* v1.7.0 canonical */
             target_id:   target_nac_id,           /* v1.7.0 canonical */
             from_nac_id: source_nac_id,           /* legacy, drop v2.0 */
             over_nac_id: target_nac_id,           /* legacy, drop v2.0 */
-          });
+          }));
           /* Remove any "drop here" placeholder the demo stages. */
           var empty = target.querySelector('.ne-drag-empty');
           if (empty) empty.parentNode.removeChild(empty);
@@ -2971,23 +2981,23 @@
           }
           source.setAttribute('data-nac-state', 'idle');
           target.setAttribute('data-nac-state', 'idle');
-          _emit('nac:drag:dropped', {
+          _emit('nac:drag:dropped', Object.assign({}, dragPluginCtx, {
             source_id:     source_nac_id,         /* v1.7.0 canonical */
             target_id:     target_nac_id,         /* v1.7.0 canonical */
             from_nac_id:   source_nac_id,         /* legacy, drop v2.0 */
             target_nac_id: target_nac_id,         /* legacy, drop v2.0 */
             value:         opts.value !== undefined ? opts.value : null,
-          });
+          }));
           resolve({ ok: true, source: source_nac_id, target: target_nac_id });
         } catch (err) {
           source.setAttribute('data-nac-state', 'idle');
           target.setAttribute('data-nac-state', 'idle');
-          _emit('nac:drag:cancelled', {
+          _emit('nac:drag:cancelled', Object.assign({}, dragPluginCtx, {
             source_id:   source_nac_id,           /* v1.7.0 canonical */
             from_nac_id: source_nac_id,           /* legacy, drop v2.0 */
             reason:      'aborted',
             error:       err && err.message ? err.message : String(err),
-          });
+          }));
           reject(err instanceof Error ? err :
             new NacError('invalid', String(err)));
         }
