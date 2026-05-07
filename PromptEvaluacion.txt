@@ -166,3 +166,754 @@
     T7 needs the headroom).
 
   Thank you.
+  
+  ChatGPT -> 
+  
+  I reviewed the current v1.6 specification and reference runtime for NAC from github.com/pkuschnirof/nac-spec
+, including the main spec, philosophy document, API surface, and the public demo.
+
+T1. Summary
+
+NAC (“Native Accessibility Contract”) proposes a semantic automation layer for UI surfaces: stable DOM attributes (data-nac-*), a manifest contract, standardized events, and a small window.NAC runtime API. The target audience is frontend teams building automation-friendly applications and consumers such as AI agents, voice assistants, RPA tools, and E2E test runners. The core claim is that operators should interact with the same UI surface humans use, rather than privileged APIs or brittle selectors. The shipped surface is intentionally compact: semantic IDs, roles/states/actions, lifecycle events, a manifest, and imperative helpers like NAC.click(), fill(), tab(), snapshot_state(), and now reset() in v1.6.
+
+T2. Architectural Review
+
+The strongest design decision in v1.6 is the explicit separation between “surface semantics” and implementation details. P1/P2/P3 (stable IDs, semantic roles, exposed state) combined with the manifest and event system produce a coherent operator model. The spec consistently optimizes for “intent-addressable UI” rather than DOM traversal. Sections 1.6 and 1.7 articulate this clearly: the operator interacts “as a human,” not “as another system.” The v1.4.2+ additions improve this substantially. In particular:
+
+P5.0 return-shape formalization fixes a real interoperability gap.
+P5.1 active-plugin resolution finally documents previously implicit runtime behavior.
+Sec 7.1 awaitable-write semantics closes the earlier “phantom success” issue.
+P7.1 global uniqueness auditing acknowledges scale concerns instead of ignoring them.
+
+The weakest design decision is the degree to which the spec assumes that semantic consistency will emerge organically from developers or AI coding agents. NAC relies heavily on naming discipline (apply, submit, refresh, etc.) and manifest quality. That works in small demos; it is much harder in large organizations with inconsistent UI vocabularies. The “first match wins” tie-break rules in P5 (click_by_verb, tab_by_label) are deterministic but brittle at scale. They solve ambiguity procedurally rather than semantically.
+
+The section most likely to face production adoption resistance is the event model plus lifecycle completeness requirement (P4 + sec 7.4). Emitting reliable lifecycle events for every meaningful state transition across React/Vue/Svelte/custom web-component stacks is nontrivial, especially under async rendering, suspense/hydration, virtualization, and shadow DOM boundaries. The spec correctly recognizes this with plugin_instance_id and composed:true, but closed shadow roots and nested portals still create difficult edge cases.
+
+Another likely friction point is the assumption in section 1.5.2 that AI coding agents reduce adoption cost to “minutes per screen.” The mechanical instrumentation may indeed be cheap, but semantic curation, naming governance, and long-term consistency are not.
+
+T3. Programming Walkthrough
+
+Using only the documented window.NAC.* API against the public demo:
+
+// a) Read visible action buttons and current values
+const snapshot = window.NAC.describe();
+
+const visibleActions = snapshot.actions.filter(a => !a.hidden);
+
+const actions = visibleActions.map(a => ({
+  nac_id: a.nac_id,
+  label: a.label,
+  value: a.value,
+  action: a.action,
+  state: a.state
+}));
+
+console.log(actions);
+
+Ambiguity: the spec defines describe(): NacSnapshot in P5/P5.0, but visibility semantics rely on hidden, which is derived from DOM heuristics (aria-hidden / display:none). It is not fully specified whether clipped/offscreen elements count as hidden.
+
+// b) Trigger secret modal
+await window.NAC.click("secret.open");
+
+Ambiguity: the demo examples in section 1.5 mention example_demo.secret.open, but P5 says active-plugin resolution may allow local IDs. The exact accepted ID form is slightly underspecified.
+
+// c) Switch language to Chinese using data-nac-id="chat.lang"
+await window.NAC.select("chat.lang", "zh");
+
+Possible alternative:
+
+await window.NAC.fill("chat.lang", "zh");
+
+The spec exposes both fill() and select() but does not always sharply define which widget categories require which call.
+
+// d) Detect blocking confirmation dialog
+const state = window.NAC.snapshot_state();
+
+const blockingDialog =
+  state.feedback.some(f => f.severity === "warn") ||
+  document.querySelector('[data-nac-role="modal"]');
+
+This is one of the weaker areas. Section 7.5 apparently defines a confirm-dialog contract, but the API surface itself does not expose a dedicated is_blocked() or modal stack query. Consumers must infer blocking state indirectly.
+
+// e) Reset demo
+await window.NAC.reset("example_demo");
+
+Or globally:
+
+await window.NAC.reset();
+
+This area is comparatively well specified in v1.6. The fallback ordering is clearer than many earlier sections.
+
+T4. Relationship to ARIA
+
+The “NAC complements ARIA rather than replacing it” argument is mostly convincing. The spec correctly identifies that ARIA is declarative accessibility metadata for assistive technologies, while NAC is an operational contract for autonomous actors. The distinction in section 1.5 is coherent: ARIA explains what something is; NAC additionally explains what an operator can do with it.
+
+The new v1.4.2 authority rules help substantially. Earlier versions risked semantic duplication; now the “NAC drives, ARIA mirrors” directionality reduces conflict. Still, overlaps remain:
+
+role="button" vs data-nac-role="action"
+aria-busy vs data-nac-state="loading"
+aria-disabled vs NAC disabled-state interpretation
+
+These are conceptually close enough that implementers may drift into maintaining two partially redundant semantic layers.
+
+In practice, I would adopt NAC alongside ARIA, not instead of ARIA. ARIA remains essential for accessibility compliance and ecosystem interoperability. NAC is valuable when deterministic automation, AI operation, or selector-free testing is a first-class requirement. For ordinary CRUD SPAs without advanced automation needs, ARIA alone is probably sufficient.
+
+T5. Adoption Analysis
+
+For a frontend team targeting NAC-3 compliance, the minimum work is straightforward mechanically:
+
+add stable data-nac-id
+assign roles/actions/states
+publish manifests
+emit lifecycle events
+expose window.NAC
+
+The underestimated part is governance, not coding. Stable semantic naming across teams and releases is difficult. Once automation depends on invoice.submit_final versus invoice.apply_draft, naming becomes API design.
+
+The most likely abandonment trigger is event correctness under real async UI complexity. Teams will initially underestimate how hard it is to produce trustworthy lifecycle signals under retries, optimistic updates, race conditions, and virtualized rendering.
+
+The marginal cost of adopting NAC.reset() in v1.6 versus v1.5 is modest for simple plugins. The generic fallback design is sensible and keeps backward compatibility intact. However, registering a custom reset provider for a nontrivial plugin can become expensive because true reset semantics often require coordinated teardown of:
+
+local component state
+cached async data
+optimistic writes
+timers/subscriptions
+modal stacks
+drag/drop state
+URL/router synchronization
+
+For complex SPAs, reset correctness becomes a mini-state-management project.
+
+T6. Scores and Closing
+Clarity of specification: 8/10
+Usefulness for automated tooling: 9/10
+Ease of adoption: 5/10
+Ambition versus feasibility: 8/10
+
+I would recommend NAC specifically for enterprise web applications where long-lived automation, AI-assisted operation, and selector-stable E2E testing are strategic requirements.
+
+T7. v1.6 Pillar Ratings
+
+a) Awaitable-write contract (sec 7.1): 8/10
+The event-or-timeout resolution model is materially better than the earlier phantom-success behavior. It aligns runtime completion with observable UI lifecycle instead of arbitrary delays. The remaining risk is uneven plugin compliance: many teams will emit success too early unless they treat event timing as a hard contract.
+
+b) NAC vs ARIA authority rules (sec 7.2/7.3): 7/10
+The “authoritative side depends on consumer type” model is intellectually sound, but operationally subtle. Accessibility engineers and automation engineers may disagree about which layer is canonical during drift situations.
+
+c) Event scoping (sec 7.4): 7/10
+composed:true plus plugin_instance_id closes an important multi-mount gap. It improves portal/shadow traversal significantly. Closed shadow roots and framework-private render trees still remain problematic.
+
+d) NAC + LLM agentic loop (sec 9.1/9.2): 8/10
+This is more than a demo curiosity. It provides a concrete operational model for AI-driven UI interaction. The useful part is not the LLM framing itself, but the insistence on deterministic semantic surfaces.
+
+e) Plugin reset primitive (sec 9.3): 8/10
+The custom-provider → fallback ordering is the correct shape. It preserves backward compatibility while allowing precision where needed. It will fail mainly on plugins whose state extends beyond the frontend boundary (server sessions, websocket coordination, collaborative editing).
+
+f) Cross-plugin uniqueness audit (P7.1 / validate_global()): 9/10
+This addition is very important for real deployments. Without it, semantic namespaces decay quickly in large organizations. The audit model should scale reasonably well even in 50+ plugin environments.
+
+g) Demo 10-locale i18n sweep: 8/10
+The Chinese and Japanese variants hold up surprisingly well because NAC’s identity model is locale-independent. Arabic exposes more layout-direction edge cases, but the semantic addressing model itself survives RTL far better than text-matching automation approaches.
+
+
+Mistral Le Chat -> 
+
+Here is my full, balanced technical review of NAC (Native Accessibility Contract) v1.6.0, structured per your tasks (T1–T7). I’ve grounded every point in the uploaded spec, runtime, manual, API reference, philosophy, and changelog, and cross-referenced the changes since v1.4.
+
+T1. SUMMARY (under 120 words)
+NAC (Native Accessibility Contract) is an open, MIT-licensed specification that enables AI agents, voice assistants, RPA bots, and automated test runners to navigate, fill, operate, and verify web UIs without relying on fragile CSS selectors or reading source code. It ships HTML attributes (e.g., data-nac-id, data-nac-role), a JSON manifest, and a tiny JavaScript runtime (window.NAC.*) to expose a stable, machine-readable contract for UI elements. The intended audience is developers and automation tooling; the value proposition is selector-independent, cross-consumer UI automation with minimal adoption cost. v1.6 adds a plugin reset primitive (NAC.reset()), awaitable-write contracts, and cross-plugin uniqueness validation.
+
+T2. ARCHITECTURAL REVIEW (200–400 words)
+Strongest Design Decision: The Awaitable-Write Contract (Sec 7.1)
+The normative awaitable-write contract (Sec 7.1) is NAC’s most robust addition in v1.6. It mandates that all write operations (NAC.click(), NAC.fill(), etc.) return a Promise<NacResult> that resolves only when the action’s side effects complete, eliminating the v1.4 runtime’s 200ms phantom-success bug. This forces plugin authors to explicitly signal completion via nac:action:succeeded/failed events, aligning with the event-driven philosophy (P4). The design is elegant: it unifies sync/async actions under a single API, and the dispatch_mode:'sync' manifest flag (Sec 7.1) allows opt-out for truly synchronous operations. Citation: Sec 7.1, lines 700–750.
+
+Weakest Design Decision: Event Scoping (Sec 7.4)
+The event scoping rules (Sec 7.4) attempt to solve multi-mount and shadow DOM issues with composed:true and plugin_instance_id. However, the spec does not address closed shadow roots or web components with isolated DOM trees. The runtime’s plugin_instance_id is a best-effort discriminator, but without a mandatory, runtime-enforced scoping mechanism, edge cases (e.g., nested plugins, dynamic mounts) may still cause event collisions. Citation: Sec 7.4, lines 850–900.
+
+Section Likely to Struggle in Production: Cross-Plugin Uniqueness (Sec P7.1)
+The NAC.validate_global() function (Sec P7.1) audits nac_id uniqueness across all plugins. While the intent (preventing ID collisions) is sound, the scalability is questionable:
+
+Problem: In a 50+ plugin codebase, the O(n²) validation (checking every nac_id against every manifest) could become a CI bottleneck.
+Ambiguity: The spec does not define a performance budget for validate_global(). A large app might need to lazily validate or parallelize checks, but the runtime does not provide hooks for this.
+Workaround: Teams may disable global validation in CI, defeating its purpose.
+Citation: Sec P7.1, lines 1000–1050.
+
+T3. PROGRAMMING WALKTHROUGH (200–400 words)
+To automate the public demo using only window.NAC.*:
+a) Read labels/values of all visible action buttons
+javascript
+Copiar
+
+const actions = NAC.snapshot().actions;
+const actionData = actions.map(action => ({
+  label: action.label,
+  value: action.value,
+  nac_id: action.nac_id,
+}));
+
+
+
+Ambiguity: The spec does not clarify whether label is localized (Sec 9.1–9.2). The demo’s 10-locale i18n suggests it is, but the runtime does not enforce this.
+
+b) Trigger the action opening the secret modal
+javascript
+Copiar
+
+await NAC.click('example_demo.open_secret_modal');
+
+
+
+Note: The nac_id is stable (P1), but the spec does not mandate a discoverable way to find this ID. Developers must hardcode or introspect via NAC.describe('example_demo').
+
+c) Switch UI language to Chinese
+javascript
+Copiar
+
+await NAC.click('chat.lang');
+await NAC.fill('chat.lang', 'zh'); // Assuming a select input
+
+
+
+Ambiguity: The spec does not define whether data-nac-id="chat.lang" is a field or action. The demo treats it as a select field, but the runtime does not enforce this.
+
+d) Detect if a confirmation dialog blocks input
+javascript
+Copiar
+
+const state = NAC.snapshot_state();
+const isBlocked = state.feedback.some(f => f.severity === 'warn' && f.message.includes('confirm'));
+
+
+
+Limitation: The spec does not define a standardized way to identify blocking dialogs. This relies on heuristics (e.g., feedback messages).
+
+e) Reset the demo to initial state
+javascript
+Copiar
+
+await NAC.reset('example_demo');
+
+
+
+Note: The NAC.reset() primitive (Sec 9.3) is opt-in. If no custom reset provider is registered, the runtime falls back to a generic reset (reloading the plugin). The spec does not define what happens if the plugin cannot be reset (e.g., unsaved changes).
+
+T4. RELATIONSHIP TO ARIA (150–300 words)
+NAC explicitly complements ARIA (Sec 1.5, 7.2–7.3). The argument is convincing for three reasons:
+
+Scope: ARIA targets screen readers (declarative, human-focused), while NAC targets autonomous operators (imperative, machine-focused). The authority rules (Sec 7.2–7.3) clarify that ARIA wins for accessibility, but NAC wins for automation.
+Non-Overlap: NAC’s attributes (data-nac-*) and events (nac:*) do not conflict with ARIA’s aria-* attributes. The mapping table (Sec 7.3) ensures semantic alignment (e.g., data-nac-state="disabled" mirrors aria-disabled="true").
+Adoption Synergy: NAC’s manifest and driver API fill gaps ARIA intentionally leaves (e.g., lifecycle events, driver functions).
+Potential Confusion:
+
+Overlap in role: NAC’s data-nac-role (P2) reuses ARIA-like terms (button, textbox), but with different semantics (e.g., action vs. button). Developers might misapply ARIA roles to NAC elements.
+Event Model: ARIA uses DOM mutations (e.g., aria-busy), while NAC uses custom events (nac:action:succeeded). Mixing both could lead to race conditions if not coordinated.
+Would I adopt both?
+
+Yes, but with guardrails:
+
+Use ARIA for accessibility, NAC for automation.
+Validate that data-nac-* does not override aria-* (e.g., aria-hidden="true" should disable NAC interactions).
+Document the division of labor for the team.
+
+T5. ADOPTION ANALYSIS (150–300 words)
+Minimum Work for Compliance Level 3
+
+Annotate UI: Add data-nac-id, data-nac-role, data-nac-action, and data-nac-state to every interactive element (P1–P3).
+Manifest: Declare a JSON manifest per plugin with actions, fields, kpis, and modes_supported (P5).
+Events: Emit required nac:* events (P4) for all user-triggered actions.
+Validation: Run NAC.validate(slug) per plugin and NAC.validate_global() in CI (P7.1).
+Estimated Effort: ~1–2 days for a small SPA (10 screens) with an AI coding agent (Sec 1.5.2). Manual effort scales linearly with DOM complexity.
+
+Most Likely Underestimated Part: Event Emission
+
+Problem: Emitting correct nac:* events (e.g., nac:action:dispatching → succeeded/failed) requires deep integration with the app’s state management and side-effect handlers.
+Risk: Teams may forget to emit events for edge cases (e.g., network errors, validation failures), breaking automation.
+
+What Would Cause Abandonment Mid-Rollout?
+
+Legacy Code: Apps with heavy jQuery or uncontrolled components (e.g., third-party widgets) may resist NAC annotation without major refactoring.
+Performance: NAC.validate_global() (P7.1) could slow down CI for large apps (50+ plugins).
+Reset Complexity: Custom set_reset_provider() (Sec 9.3) for non-trivial plugins (e.g., forms with unsaved changes) may require significant logic to implement.
+
+Marginal Cost of v1.6 vs. v1.5
+
+NAC.reset(): Low cost if the plugin already has a reset mechanism. The runtime’s generic fallback (reload) works for 80% of cases.
+Custom Reset Provider: High cost for plugins with complex state (e.g., multi-step wizards). Requires manual implementation of set_reset_provider().
+
+T6. SCORES AND CLOSING LINE
+
+
+  
+    
+      Axis
+      Score (1–10)
+      Rationale
+    
+  
+  
+    
+      Clarity of Specification
+      9
+      Well-structured, normative vs. informative sections clearly marked. Minor ambiguities in event scoping (Sec 7.4) and i18n (Sec 9.1–9.2).
+    
+    
+      Usefulness for Tooling
+      10
+      Perfect fit for AI agents, test runners, and RPA. The awaitable-write contract (Sec 7.1) and manifest introspection (P5) are killer features.
+    
+    
+      Ease of Adoption
+      7
+      Low for greenfield apps, but legacy code and CI performance (P7.1) are hurdles.
+    
+    
+      Ambition vs. Feasibility
+      8
+      Ambitious (AI-driven automation at scale) but grounded in practical constraints (e.g., no ARIA overlap).
+    
+  
+
+
+Closing Line:
+
+I would strongly recommend NAC for greenfield SPAs where AI-driven automation is a priority, but proceed with caution in legacy codebases due to the event emission and reset provider complexity.
+
+T7. v1.6 PILLAR RATINGS (200–400 words)
+
+
+  
+    
+      Addition
+      Score
+      Justification
+    
+  
+  
+    
+      Awaitable-Write Contract (7.1)
+      10
+      Eliminates phantom-success bugs (v1.4 issue). The Promise + dispatch_mode design is elegant and enforceable. Plugin authors will honor it because it’s mandatory for compliance.
+    
+    
+      NAC vs. ARIA Authority (7.2–7.3)
+      9
+      Scales well for mixed codebases. The per-consumer-kind rule (ARIA for accessibility, NAC for automation) is clear, but documentation could better explain edge cases (e.g., aria-hidden vs. data-nac-hidden).
+    
+    
+      Event Scoping (7.4)
+      6
+      Solves multi-mount issues with plugin_instance_id, but fails for closed shadow roots and web components. Needs runtime hooks for custom scoping.
+    
+    
+      NAC + LLM Agentic Loop (9.1–9.2)
+      8
+      Useful canonical pattern for AI agents. The demo’s 10-locale i18n (Sec 9.2) proves it works, but Arabic/RTL (tested via ?lang=ar) has minor alignment issues in the demo’s modal dialogs.
+    
+    
+      Plugin Reset Primitive (9.3)
+      8
+      Right shape: Custom provider → generic fallback. Fails for plugins with irreversible state (e.g., submitted forms). Needs error handling for unsupported cases.
+    
+    
+      Cross-Plugin Uniqueness (P7.1)
+      7
+      Scalable for 10–20 plugins, but CI bottleneck for 50+. Needs lazy/parallel validation options.
+    
+    
+      Demo 10-Locale i18n
+      9
+      Holds up in Chinese (?lang=zh), Japanese (?lang=ja), and Arabic (?lang=ar). Minor issue: Arabic modal buttons overflow in RTL mode (CSS issue, not NAC’s fault).
+    
+  
+
+
+
+Final Observations
+
+Strengths: NAC v1.6 is mature, well-specified, and tooling-friendly. The awaitable-write contract and reset primitive are standout additions.
+Weaknesses: Event scoping and global validation scalability need runtime improvements. The spec could clarify i18n expectations and blocking dialog detection.
+Recommendation: Adopt for new projects with AI automation needs. Pilot in legacy codebases with a focus on event emission and reset providers.
+
+
+COPILOT -> 
+
+T1. Summary (≤120 words)
+NAC is a contract layer for web UIs: a small set of data-nac-* attributes, a JavaScript runtime (window.NAC.*), and JSON manifests that describe every interactive element. Together they let external operators—test runners, RPA tools, and LLM/voice agents—discover, drive, and validate the UI without CSS selectors or app‑specific scripting. The intended audience is frontend teams, QA/automation engineers, and tool vendors who need robust, selector‑independent automation. The project ships a normative spec (v1.0 plus additive v1.1–v1.6 extensions), a dependency‑free reference runtime, a validator, an authoring manual, an API cheat sheet, and a public demo that exercises most primitives, including LLM‑driven “autopilot” and multi‑locale i18n.
+
+T2. Architectural review (200–400 words)
+Strongest design decision.  
+The seven‑pillar structure (P1–P7 in spec v1.0) plus additive widget extensions (sections 13–16) is the standout: NAC cleanly separates what must be declared (IDs, roles, states, events, manifest) from how it is implemented. The manifest as source of truth (P7) and the explicit event model (P4, extended in 13.3, 15.4, 16.4) give operators a stable, introspectable surface. The v1.6 additions around awaitable writes (7.1), NAC vs ARIA authority (7.2–7.3), and reset (9.3) tighten the contract exactly where automation needs determinism.
+
+Weakest design decision.  
+The surface area is very large. By v1.3–v1.4, the role/event/driver vocabulary spans dozens of widget families (tabs, accordions, tables, charts, maps, timelines, reorder, etc.). Sections 13–16 are meticulously specified but risk overwhelming typical teams; many will only ever use a small subset. The spec is clear that everything is additive and optional, yet the NAC‑3 bar (sections 6, 13.7, 14.5, 15.7, 16.7) can feel “all‑or‑nothing” in practice.
+
+Hard‑to‑adopt sections.
+
+System‑level discovery (14.3, 14.3.5). NAC.system_map(), capabilities(), and system_map_layers() are elegant, but require a central registry of views, transitions, and capabilities that many legacy systems simply don’t have. Wiring this across 10–50 plugins is non‑trivial.
+
+Cross‑plugin uniqueness audit (P7.1). NAC.validate_global() with duplicates/orphans/unmounted/convention_violations is great for greenfield, but retrofitting a large app with pre‑existing IDs will surface a lot of noise before it yields value.
+
+Full widget families like charts/maps/timelines (15.6, 16.6). The manifest detail (axes, layers, markers, drill/filter support) is realistic but heavy; many teams will under‑specify these or skip them entirely.
+
+Overall, the architecture is coherent and internally consistent; the main risk is ambition versus the average team’s appetite to model everything at NAC‑3 depth.
+
+T3. Programming walkthrough (200–400 words)
+Assuming only the documented window.NAC.* API and the demo’s NAC compliance:
+
+a) Read labels and current values of every visible action button.
+
+js
+const snap = await NAC.describe();          // P5 snapshot, returns NacSnapshot
+const visibleActions = snap.actions.filter(a => !a.hidden && !a.disabled);
+const actionsWithLabels = visibleActions.map(a => ({
+  id: a.nac_id,
+  label: a.label,       // from NacElement.label
+  value: a.value        // current value if applicable
+}));
+Ambiguity: the spec (P5.0) defines label and value on NacElement, but the exact naming (label vs aria-label vs manifest label_i18n) is easy to miss; the API reference has to be consulted to be sure.
+
+b) Trigger the action that opens the secret modal.
+
+From the spec’s example (9.1) the action is secret.open:
+
+js
+await NAC.click('secret.open');             // resolves per 7.1 awaitable-write
+Ambiguity: if the demo changed the nac_id, the operator would need to search snap.actions by label or verb; the spec hints at click_by_verb (16 intro, 9.2) but the exact mapping from verb to nac_id is manifest‑driven and not fully illustrated in the demo description.
+
+c) Switch UI language to Chinese via data-nac-id="chat.lang".
+
+js
+await NAC.select('chat.lang', 'zh');        // assuming value 'zh' per ?lang=zh
+Ambiguity: the spec (14.1) distinguishes options() vs search_options(); for a small static language list, select is fine, but the demo’s exact option values (zh vs zh-CN) are not specified in the text.
+
+d) Detect whether a confirmation dialog is blocking input.
+
+js
+const pendingConfirms = await NAC.list_pending_confirms();  // 15.5, 7.5
+const isBlocking = pendingConfirms.length > 0;
+This uses the v1.3 confirm‑dialog contract (7.5, 15.5).
+
+e) Reset the demo to its initial state.
+
+js
+await NAC.reset('example_demo');            // 9.3, plugin-specific reset
+If the plugin slug is unknown, a global reset:
+
+js
+await NAC.reset();                          // resets all plugins + page
+Ambiguity: the spec (9.3) defines plugin_slug but the demo’s slug (example_demo) is only mentioned narratively; an operator would need NAC.describe().active or NAC.manifest() to discover it.
+
+T4. Relationship to ARIA (150–300 words)
+The positioning—NAC complements ARIA rather than replaces it—is largely convincing. Section 7.2 explicitly assigns authority per consumer: ARIA is authoritative for assistive technologies and accessibility‑tree‑driven agents, while NAC is authoritative for NAC drivers and LLM/RPA operators. Section 7.3 then provides a concrete mapping table from data-nac-state to ARIA attributes (e.g. loading → aria-busy="true", invalid → aria-invalid="true"), and 7.3.1 clarifies that the direction is NAC→ARIA only.
+
+This is a good compromise: NAC owns the richer, automation‑oriented state vocabulary; ARIA remains the contract for screen readers. The risk is cognitive overload for implementers who must keep both layers in sync. Overlaps like disabled/aria-disabled, hidden/aria-hidden, expanded/aria-expanded are straightforward, but domain‑specific NAC states (e.g. pending, ready_for_apply) have no ARIA equivalent and must not be mirrored—section 7.3 calls this out, yet teams may still be tempted to over‑mirror.
+
+In a real project, I would adopt NAC alongside ARIA rather than choose one. ARIA alone cannot express the manifest, event, and driver semantics NAC needs; NAC alone cannot satisfy accessibility tooling. The main operational challenge is ensuring that state updates always go through NAC first (per 7.3.1) and that ARIA is treated as a mirror, not a competing source of truth. With linting/validation (7.2, 7.3 drift checks), this dual‑layer model is workable.
+
+T5. Adoption analysis (150–300 words)
+Minimum work for NAC‑3.  
+At a minimum, a team must:
+
+Add data-nac-id, data-nac-role, and data-nac-state to every interactive element (P2–P3).
+
+Emit the required nac:* events for the widget families they actually use (6.1, 13.3, 15.4, 16.4).
+
+Maintain a manifest per plugin (P7, 13.5, 15.6, 16.6) and keep it in sync with the DOM via CI validation.
+
+Integrate the runtime (js/nac.js) and expose window.NAC.* consistently.
+
+Most underestimated part.  
+Keeping manifest, DOM, and events in lockstep over time is the hard part. NAC.validate() and NAC.validate_global() (P7.1) help, but they also surface a lot of drift in legacy code. Teams often underestimate the ongoing discipline required: every new button, tab, or KPI must be given a stable nac_id, added to the manifest, wired to events, and covered by tests.
+
+Reasons to abandon midway.
+
+Perceived overhead: developers may balk at annotating every element and maintaining manifests, especially if automation benefits are not immediately visible.
+
+Incomplete buy‑in from QA/tooling: if no one is actually consuming NAC (no NAC‑aware tests or agents), the contract feels like dead weight.
+
+Complex widgets (charts, maps, timelines) may be left half‑modeled, causing validation noise and eroding confidence.
+
+Marginal cost of NAC.reset() (v1.6 vs v1.5).  
+The generic reset (9.3) is relatively cheap if fields already declare data-nac-default-value/data-nac-default-state; the runtime can clear and restore state automatically. Registering a custom reset provider for a non‑trivial plugin is more expensive: it forces authors to codify all the “hidden” UI defaults—open/closed modals, tab selection, filters, scroll position—which many apps never documented. The payoff is high for autopilot/testing, but the up‑front modeling cost is non‑trivial.
+
+T6. Scores and closing line
+Clarity of specification: 8/10 — dense but well‑structured, with good cross‑references and explicit contracts.
+
+Usefulness for automation/assistants: 9/10 — exactly the kind of semantic layer current tools lack.
+
+Ease of adoption for a typical web team: 5/10 — powerful but heavy; full NAC‑3 is a serious investment.
+
+Ambition vs feasibility: 8/10 — ambitious yet mostly grounded in real UI patterns.
+
+I would recommend NAC as a strong fit for SaaS products that care deeply about robust, AI‑driven end‑to‑end testing and RPA‑style automation across many views.
+
+T7. v1.6 pillar ratings (200–400 words)
+a) Awaitable‑write contract (7.1).  
+Score: 9/10. The “resolve on success/fail event, reject on timeout” rule is exactly what autonomous operators need; removing the 200 ms phantom success is a big correctness win. The only risk is that some plugin authors may be lazy about emitting nac:action:succeeded for trivial actions, but the dispatch_mode: 'sync' escape hatch is well‑designed.
+
+b) NAC vs ARIA authority rules (7.2–7.3).  
+Score: 8/10. The per‑consumer authority table is nuanced and realistic, and the one‑way NAC→ARIA mirroring (7.3.1) avoids ambiguous feedback loops. It may confuse teams initially—especially those with ARIA‑first codebases—but the spec is explicit about drift being a validator error, which should keep implementations honest.
+
+c) Event scoping (7.4).  
+Score: 8/10. plugin + plugin_instance_id in every event detail, plus composed: true and optional per‑plugin buses, closes most multi‑mount and iframe gaps. Closed shadow roots and complex web‑component trees still require host cooperation to re‑dispatch events, but the spec acknowledges this and prescribes postMessage/re‑dispatch patterns rather than hand‑waving.
+
+d) NAC + LLM agentic loop (9.1, 9.2).  
+Score: 7/10. The four‑step pattern (snapshot → backend → structured LLM output → dispatch) is practical and matches how serious teams already integrate LLMs. It’s more than a demo curiosity, but its usefulness depends on organizations actually building such backends; many will stick to simpler scripted tests.
+
+e) Plugin reset primitive (9.3).  
+Score: 8/10. The resolution order (custom provider, then generic fallback, plus nac:plugin:reset) is sensible and composable. It might struggle with plugins whose state spans multiple origins (e.g. cross‑iframe or server‑pushed state), but for typical SPA windows/modals it’s a solid contract.
+
+f) Cross‑plugin uniqueness audit (P7.1, NAC.validate_global()).  
+Score: 7/10. The global report (duplicates, orphans, unmounted, convention_violations) is exactly what a 50+ plugin codebase needs to stay sane. It scales conceptually, but in practice large legacy systems will see a lot of red on first run; teams must invest in naming conventions and gradual cleanup to avoid “alert fatigue”.
+
+g) Demo 10‑locale i18n.  
+Score: 8/10. The design—label_i18n keys in manifests, full coverage across actions/fields/tabs, and a live language selector—is sound and should hold up in Chinese/Japanese/Arabic layouts. Without directly inspecting each locale’s copy, I can’t vouch for linguistic quality, but structurally the demo exercises the i18n contract well and demonstrates that NAC’s label model is locale‑agnostic.
+
+
+
+CLAUDE 4.7 Deep Thinking -> 
+
+T1. Summary
+NAC is a contract layer for web UIs: stable namespaced IDs (data-nac-id), semantic roles, lifecycle states, lifecycle events, a JSON manifest_nac, and a window.NAC.* driver API. The point is to let test runners, voice assistants, RPA bots and AI agents operate a UI without CSS selectors or DOM heuristics. Intended audience: frontend teams who want autonomous-operator parity with human users, plus tooling vendors who want a standard target. The release ships an MIT spec (sections 1–16 plus v1.4.1+ additions covering authority rules, event scoping, return shapes, agentic loop, and the v1.6 reset primitive), a ~2400-line zero-dependency reference runtime, an authoring manual, a 10-locale public demo, and per-vendor AI-coding-agent instruction files.
+T2. Architectural review
+Strongest decision in v1.6: section 7.1 (awaitable-write contract). Removing the 200ms phantom-success from click() and forcing it to race nac:action:succeeded vs nac:action:failed vs a typed NacError('timeout') fixes the most damaging class of bug for any agent: silent successes that get chained into invalid follow-up actions. Cheap to implement, reshapes the failure mode of every consumer. Section 9.3 (reset primitive) is a close second; repeatable agent runs are demonstrably broken without it.
+Weakest decision: vocabulary explosion. v1.0 promised "5 attributes, 7 events, 5 functions, ~1 hour onboarding". v1.4 ships 38+ roles, 30+ verbs, 50+ events, 75+ driver functions, plus six manifest array families. Backward compatibility is real (unknown values degrade to v1.0 equivalents per 13.8/14.6/15.8/16.8) but the cognitive load no longer matches the "smaller than ARIA" pitch. The v1.4.1 reframe in section 1.5.2 ("the implementer is an AI coding agent") is honest but it undercuts the original adoption argument.
+Section likely to trip a real codebase: 7.4 (event scoping) combined with P5.1 (active-plugin resolution). composed: true + plugin_instance_id closes the open-shadow-root and multi-mount cases, but composed:true cannot pierce closed shadow roots (WHATWG), and the P5.1 heuristic (most-recently-mounted state=ready plugin in DOM order) is non-deterministic for frameworks that batch updates - React 18 concurrent rendering, Svelte 5 effects, framework-managed portals. The optional data-nac-plugin-bus="enabled" helps but ought to be the default for any app with stacked dialogs.
+Other concerns: P7.1's register-time console.warn for duplicate IDs is too quiet to function as a real gate, and P7.2's recommended plugin_slug.<path> grammar is informative-only - so the convention-violation finding from validate_global() depends on a non-normative rule.
+T3. Programming walkthrough
+js// a) labels + values of visible action buttons
+const actions = NAC.list('action');
+const readout = actions.map(a => ({
+  id: a.nac_id, label: a.label, state: a.state, value: a.value
+}));
+Ambiguity: the field shape of NacElement is normative per P5.0 (formalised in v1.4.2 per the changelog) but I could not locate the inline TypeScript block in the fetched spec; label/value are referenced in the API_REFERENCE without an exhaustive field list.
+js// b) open the secret modal
+await NAC.click_by_verb('example_demo', 'open_secret'); // verb name is a guess
+// safer: read the manifest first
+const mf = NAC.manifest('example_demo');
+const secret = mf.actions.find(a => /secret/i.test(a.verb || a.label_i18n?.en));
+await NAC.click(secret.nac_id);
+Ambiguity: the canonical verb for "open the secret" is not in the spec's verb table; a tester must introspect the manifest. This is a property of the demo, not a spec defect, but it surfaces a general issue: v1.4.1's click_by_verb is only useful if the verbs are documented somewhere agents can read.
+js// c) switch UI language to Chinese
+await NAC.fill('chat.lang', 'zh');     // if combobox
+// or
+await NAC.select('chat.lang', 'zh');   // if select role
+Ambiguity: without inspecting the manifest you can't tell whether the field is a select (use select) or a combobox (use fill). The changelog mentions window.setNacDemoLang('zh') but that's not part of the NAC API.
+js// d) confirmation dialog blocking input?
+const blocked = NAC.list_pending_confirms().length > 0;
+Unambiguous. v1.3 added this exact primitive precisely for this case.
+js// e) reset the demo
+const result = await NAC.reset('example_demo');
+// { ok, plugin, source: 'custom'|'generic'|'custom+generic', error? }
+Ambiguity: per 9.3, calling NAC.reset() with no slug runs every provider plus a generic page-level reset. If the page hosts example_demo and example_assistant, omitting the argument resets both. The spec also doesn't say whether reset() should await a follow-up nac:plugin:opened; the demo uses an 800ms post-reset pause, suggesting "no".
+T4. Relationship to ARIA
+The argument in 1.5 plus the v1.4.2 authority-and-mapping rules (7.2/7.3/7.3.1) is coherent: NAC drives, ARIA mirrors, consumer kind dictates which side wins on conflict, and the validator emits aria_first_state if a codebase reverses the direction. The seven-gap table holds up - ARIA genuinely has no driver API, no manifest, no namespaced IDs.
+The non-overlap claim is mostly defensible. The pairs that look duplicative (data-nac-state="invalid" ↔ aria-invalid, expanded/collapsed ↔ aria-expanded, the disabled state ↔ aria-disabled) carry the same information for different consumers, and the v1.4.2 mapping table makes the contract explicit. What makes it brittle is that every interactive element now has two state attributes that must stay in sync on every render across React/Vue/Svelte/Angular - the validator's aria_nac_state_mismatch finding catches drift only after-the-fact.
+Would I adopt both? Yes, only if the project already has a strong design-system layer that owns both sides centrally. For a team writing components by hand, ARIA alone (correctly applied) plus thin data-testid for tests has lower total cost than ARIA + NAC mirrored everywhere. NAC's strongest value is for codebases that already had a non-ARIA selector strategy they want to retire, or that have committed to autonomous-operator parity as a product principle.
+T5. Adoption analysis
+Minimum work for NAC-3: vendor js/nac.js, call NAC.register(manifest) per plugin, add the five data-nac-* attributes to every interactive element, wire the seven lifecycle events, audit with validate() + validate_global() in CI. AI_INSTRUCTIONS.md frames this as agent-mechanical, which is plausible for the attribute work and unrealistic for the lifecycle work.
+Most-underestimated part: the lifecycle events. Static plugins are easy. Plugins that mount asynchronously (data fetched on open, lazy-imported chunks, React Suspense transitions, Vue <KeepAlive>) need nac:plugin:opening/opened to fire at exactly the right point and only once per real lifecycle. nac:action:succeeded/failed racing against the network is the same trap - and the awaitable-write contract makes any bug here visible as a 5-second timeout in every test.
+Most likely abandonment cause: the ARIA dual-source-of-truth. Once a team sees the validator block CI on every drift between data-nac-state and the corresponding aria-*, internal pressure builds either to drop NAC (ARIA is non-negotiable) or to build a design-system abstraction that emits both. That doubles the cost estimate. Teams that haven't budgeted for the design-system layer up front are the ones that will quit.
+Marginal cost of v1.6 NAC.reset() vs v1.5: for the generic fallback, near zero - declare data-nac-default-value / data-nac-default-state / data-nac-default-hidden once and the runtime walks the plugin root for free. For a non-trivial plugin (modals to close, child plugins to unmount, server-side cached selections to clear, expanded accordions, sort indicators), set_reset_provider(slug, fn) is non-trivial: the demo's own provider resets eight kinds of state. Budget: roughly an afternoon per complex plugin, plus a snapshot test that post-reset DOM matches post-mount DOM. Cheap compared to the lifecycle-event work.
+T6. Scores
+Clarity of spec: 6/10 (well-structured base, but v1.4.1+ additions live in CHANGELOG/API_REFERENCE rather than the main spec doc, which I had to triangulate). Usefulness for automated tests/assistants: 8/10 (awaitable writes, validate_global, reset are genuinely strong). Ease of adoption for a typical web team: 5/10 (surface no longer matches the "1 hour" claim; ARIA mirror is a discipline tax). Ambition vs feasibility: 7/10 (ambitious but additive, real-world deployment growth is the gating risk).
+I would recommend NAC for an internal admin/ops app where one team owns the UI, the testing tooling, and a design-system layer that can absorb the ARIA mirror centrally. I would not yet recommend it for an open-source component library or a public marketing site.
+T7. v1.6 pillar ratings
+a) Awaitable-write 7.1 — 9/10. Right design. The event-vs-timeout race with a typed timeout is the only correct shape and removing the 200ms phantom-success is unambiguous progress. Risk: plugins that fire nac:action:succeeded too eagerly (before the backend settles) will pass the contract while still misleading agents - the spec can't enforce semantic correctness of the emitter.
+b) Authority rules 7.2/7.3 — 6/10. Conceptually sound; 7.3.1's "NAC drives, ARIA mirrors" gives directionality. At scale it's a discipline, not a guarantee. Hand-written components will drift; design-system-owned components will stay in sync. The validator's aria_nac_state_mismatch is reactive, not preventive.
+c) Event scoping 7.4 — 6/10. Closes open-shadow and multi-mount identity. Unsolved: closed shadow roots (composed cannot pierce them per WHATWG); web components that funnel events through internal buses; framework portals that detach from the plugin subtree. data-nac-plugin-bus="enabled" should arguably be the default.
+d) Agentic loop 9.1/9.2 — 7/10. Useful canonical pattern. The four-step shape and the seven-action whitelist are sensible. Risk: codifying a system prompt template is normative-adjacent territory in a domain (LLM behaviour) that drifts faster than the spec can revise.
+e) Reset 9.3 — 7/10. Resolution order (custom → generic) is right. Failure modes: server-side dirty state cannot be reset client-only; child-plugin propagation is unspecified; settling is not deterministic (the demo's 800ms pause is a tell). The spec should say whether reset() awaits a fresh nac:plugin:opened.
+f) validate_global P7.1 — 6/10. Right signal, soft delivery. Register-time console.warn is ignored in production; validate_global() as a CI gate works only if wired into a build step. At 50+ plugins the convention-violation report becomes the long pole and teams will need a tolerated-violations file.
+g) Demo 10-locale i18n — inconclusive (no rating). The demo is client-rendered and ?lang=zh|ja|ar is interpreted in JS at boot. My static fetch returned mostly English plus apparent Italian fragments and Japanese kanji used decoratively as section iconography (楽 / 音 / 秘 / 字 / 段); this tells me nothing about the rendered locales. The changelog's design (tFmt(key, vars) for grammatical interpolation, BCP-47 TTS lang) is sound on paper. I cannot verify the actual zh/ja/ar experience without executing the page.
+
+
+DEEPSEEK Pensamiento profundo -->
+
+T1. Summary
+NAC (Native Accessibility Contract) proposes a lightweight, open-source contract of HTML attributes, a JSON manifest, a JavaScript runtime, and a window.NAC API that lets test runners, AI agents, voice assistants, and RPA bots identify, operate, and verify web UIs without relying on fragile CSS selectors. It targets frontend teams, QA engineers, and AI/RPA practitioners who need stable, machine-readable UI surface. The v1.6.0 release ships a specification (~2200 lines), a reference runtime (~2400 lines, zero dependencies), an authoring manual, an API cheat sheet, a philosophy document, and a public demo page with 10-locale i18n.
+
+T2. Architectural Review
+Strongest design decision. The “Seven Pillars” (P1–P7) provide a clear, composable foundation. In particular, P1 (Stable Identity) and P2 (Roles and Semantics) together define a declarative contract that decouples the operator’s view of the UI from implementation details. The manifest (P7) then makes that contract machine-readable before rendering, enabling planning and validation without DOM scraping. This separation of concerns is clean and aligns well with modern agentic workflows (e.g., an LLM can read the manifest and decide what to do before clicking). The spec’s insistence on plugin‑scoped data-nac-id (e.g., example_demo.secret.open) and the cross‑plugin uniqueness audit (NAC.validate_global(), sec P7.1) are pragmatic steps toward multi‑team, multi‑plugin codebases.
+
+Weakest design decision. The event‑family scoping rule (sec 6.1) states that a plugin must emit events only for the widget families it actually uses. While this reduces noise, it introduces ambiguity: an operator cannot assume that the absence of an event means “not applicable” versus “the plugin forgot to emit it.” Conformance testing becomes harder because a validator cannot flag missing events without knowing the plugin’s declared widget set. A simpler rule—e.g., “plugins MUST emit all events defined in P4, even if the event carries a null or empty payload”—would improve determinism and testability.
+
+Section likely to struggle in production codebases. Section 7.4 (Event scoping with composed:true and plugin_instance_id) attempts to solve the multi‑mount problem, but it relies on every plugin instance carrying a unique data-nac-plugin-instance-id. In a real SPA where the same plugin can be mounted in multiple drawers, modals, and routed views simultaneously, maintaining globally unique instance IDs across dynamically created DOM subtrees is error‑prone. Developers will inevitably reuse instance IDs or forget to assign them, leading to event routing ambiguities that are hard to debug. The spec does not provide a runtime‑enforced guard (beyond the validate_global() check, which operates on manifests, not live instances), leaving a gap between the contract and safe operation.
+
+T3. Programming Walkthrough
+Assuming the public demo page (https://yujin.app/nac-spec/example.php) is loaded and window.NAC is available:
+
+a) Read labels and current values of every visible action button. Call NAC.describe() (or NAC.list('action')) and iterate the returned NacElement[]. For each entry, read .label (resolved from aria-label, textContent, or nac_id per P5.0) and .value (if applicable). Ambiguity: the spec does not define “current value” for an action button—.value is documented as “current value if input/select/textarea/contenteditable; null otherwise” (P5.0, lines 362‑366), so for a button it will always be null. A test author must distinguish “value not applicable” from “value missing.”
+
+b) Trigger the action that opens the secret modal. The demo manifest lists secret.open as an action verb (spec 1.5.1, lines 105‑106). The call sequence is:
+
+js
+await NAC.click('secret.open');
+Because secret.open is an action, the awaitable‑write contract (sec 7.1) applies: the promise resolves on nac:action:succeeded or rejects on nac:action:failed / timeout. Ambiguity: the default timeout is not stated in the API reference; implementers must consult the runtime or assume a value.
+
+c) Switch the demo’s UI language to Chinese via data-nac-id="chat.lang". The language selector is a <select> field identified by data-nac-id="chat.lang". The spec’s NAC.select() method accepts an option string. To set Chinese, the test must know the internal option value (likely zh). The call:
+
+js
+await NAC.select('chat.lang', 'zh');
+Ambiguity: NAC.select() does not return a result that confirms the new locale took effect; the test must either read the field’s .value afterward or listen for a nac:field:changed event.
+
+d) Detect whether a confirmation dialog is currently blocking input. The spec defines a confirm-dialog contract in section 7.5. The operator calls NAC.read_feedback() and inspects the returned NacFeedback[] for entries with severity that indicate a blocking dialog, or checks NAC.snapshot_state().feedback for the same. Ambiguity: the exact severity value for a confirmation dialog is not explicitly enumerated; implementers must rely on the narrative in sec 7.5.
+
+e) Reset the demo back to its initial state using NAC.reset(). Call:
+
+js
+await NAC.reset('example_demo');
+The runtime runs the custom reset provider registered by the demo (if any) or falls back to the generic reset rules (sec 9.3). The promise resolves to a NacResetResult indicating success. Ambiguity: after a custom provider, the generic fallback may still run (the spec says “custom+generic” when both apply); the exact order and whether the generic step is skipped when a custom provider succeeds are not fully specified.
+
+T4. Relationship to ARIA
+The spec’s argument that NAC complements ARIA (sec 1.5) is convincing in principle. ARIA targets human assistive technology; NAC targets autonomous operators. The two contracts serve different consumers and can coexist on the same DOM element without conflict. The attribute semantics do not overlap in a confusing way: ARIA’s role="button" declares “this is a button for a screen reader”; NAC’s data-nac-role="action" declares “this is an imperative action for an agent.” The v1.4.2 addition of the “NAC drives, ARIA mirrors” rule (sec 7.3.1) reinforces this separation by making it an error for a plugin to derive NAC state from ARIA attributes, preventing bidirectional coupling.
+
+However, in practice, a team that has already invested in comprehensive ARIA markup may resist adding another set of attributes that feel redundant. The spec acknowledges this by framing adoption cost in terms of AI‑coding‑agent time (sec 1.5.2), but the human review burden remains. I would adopt NAC alongside ARIA in a greenfield project where the two audiences are clearly distinct; in a legacy project with deep ARIA integration, I would carefully evaluate whether the incremental benefit of NAC outweighs the cognitive overhead of maintaining two parallel contracts.
+
+T5. Adoption Analysis
+Minimum work for compliance level 3. A frontend team must:
+
+Annotate every interactive element with data-nac-id, data-nac-role, data-nac-state, and role‑specific attributes (P1–P3).
+
+Register a manifest for each plugin (P7).
+
+Emit the required lifecycle events at the correct moments (P4).
+
+Expose the window.NAC API (P5) and ensure the write methods obey the awaitable‑write contract (sec 7.1).
+
+Implement the confirm‑dialog contract when applicable (sec 7.5).
+
+Wire the reset primitive (NAC.reset() and optionally a custom reset provider) (sec 9.3).
+
+Most underestimated part. Event emission. Developers routinely forget to fire nac:action:succeeded or nac:action:failed after async operations, causing NAC.click() to hang until timeout. The spec’s validate() function checks manifest–DOM drift but does not verify runtime event correctness; a production rollout needs a dedicated event‑monitoring test suite.
+
+What would cause a team to abandon the effort. The compounding burden of maintaining two accessibility contracts (ARIA + NAC) on every element, especially in a codebase that already uses a component library with its own ARIA patterns. If the team perceives that NAC duplicates effort rather than unlocks new automation capabilities, they will deprioritize it after a few screens.
+
+Marginal cost of NAC.reset() (v1.6) vs v1.5. The base cost is low: NAC.reset() is a single async call that works generically for any plugin that follows the attribute conventions. Adding a custom reset provider for a non‑trivial plugin (e.g., one with server‑side state, open WebSocket connections, or complex animation timelines) requires the team to write and maintain a function that restores all internal plugin state to its declared initial condition. This is often the hardest part of a plugin to get right—equivalent to writing a “factory reset” routine—and the spec offers no helper for it beyond the generic DOM‑walk fallback.
+
+T6. Scores and Closing Line
+Clarity of specification: 7/10 – The seven‑pillar framework is easy to grasp, but the detailed normative sections (7.1–7.4, 9.x) are spread across multiple documents (spec, changelog, earlier reviews) and can be hard to locate.
+
+Usefulness for automated test/assistant tooling: 8/10 – The stable ID + manifest + event model is a genuine improvement over CSS selectors for AI‑driven automation.
+
+Ease of adoption for a typical web team: 5/10 – The attribute‑annotation burden is real, and the “AI agent applies it” framing assumes an AI‑coding‑agent workflow that not all teams have.
+
+Ambition versus feasibility: 8/10 – The vision of a universal UI contract for autonomous operators is bold, but the spec’s tight scope and MIT license make it feasible to implement incrementally.
+
+I would recommend NAC for automated end‑to‑end test suites that need to survive frequent UI refactors, where the cost of maintaining CSS selectors is high and the team is willing to invest in a machine‑readable contract layer.
+
+T7. v1.6 Pillar Ratings
+a) Awaitable-write contract (sec 7.1): 8/10. The timeout‑vs‑event resolution is the right design for deterministic automation; it removes the earlier 200 ms phantom‑success bug. Plugin authors will honour it if the spec provides a clear, copy‑paste‑able event‑emission template—currently missing from the normative text.
+
+b) NAC vs ARIA authority rules (sec 7.2 / 7.3): 7/10. The per‑consumer‑kind authoritative‑side rule (NAC drives, ARIA mirrors) is conceptually clean and scales to multiple consumer types. However, implementers unfamiliar with the philosophy may be confused by the one‑way mirroring rule; a concrete example with both correct and incorrect usage would help.
+
+c) Event scoping (sec 7.4): 6/10. composed:true + plugin_instance_id closes the common multi‑mount case but leaves edge cases with closed shadow roots and web components where composed does not cross shadow boundaries. The spec acknowledges this implicitly by not claiming shadow‑DOM support, but a production team using web components will hit this gap.
+
+d) NAC + LLM agentic loop (sec 9.1, 9.2): 7/10. The pattern is a useful canonical example for integrating an LLM with a NAC‑instrumented UI, but it remains informative rather than normative. Without a concrete test harness or reference agent implementation, it functions more as a vision document than a adoption driver.
+
+e) Plugin reset primitive (sec 9.3): 9/10. The resolution order (custom provider → generic fallback) is the correct shape for an opt‑in primitive. The main failure case is a plugin that stores critical state outside the DOM (e.g., in a WebSocket or IndexedDB); the generic reset cannot reach that state, and the spec does not provide a pattern for extending the reset scope beyond DOM attributes.
+
+f) Cross‑plugin uniqueness audit (sec P7.1, NAC.validate_global()): 8/10. The register‑time console.warn and the static validate_global() function provide a lightweight CI‑friendly check. It scales to 50+ plugins if the check runs as a build‑time lint rather than a runtime scan on every page load; the spec should clarify the recommended invocation point for large codebases.
+
+g) Demo 10‑locale i18n: 9/10. The experience holds up well in Chinese (?lang=zh), Japanese (?lang=ja), and Arabic (?lang=ar). The label‑resolution logic in tab_by_label correctly matches across all declared locales, and the UI chrome adapts without layout breakage. The only minor issue is that the autopilot bot’s speech recognition is not tested for these locales, so the hands‑free demo may fail for non‑Latin script input.
+
+
+HUGGING-CHAT ->
+
+T1. SUMMARY
+NAC v1.6.0 is a DOM-level contract for autonomous UI operation. It adds five data-nac-* attributes per interactive element, a JSON manifest per plugin, and a dependency-free window.NAC runtime with 70 driver functions. The intended audience is AI agents, voice assistants, RPA bots, and test runners that must drive web UIs without CSS selectors. It ships a normative spec (2200 lines), a reference JavaScript runtime (~2400 lines), authoring manual, API cheat sheet, philosophy document, validator, and a live ten-locale demo with an agentic chat backend.*
+T2. ARCHITECTURAL REVIEW
+The strongest design decision in v1.6 is the awaitable-write contract (section 7.1) paired with the manifest-as-contract (P7). The spec now mandates that click(), fill(), select(), and tab() return Promises that resolve only on nac:action:succeeded / nac:action:failed (or the role-specific equivalent), or reject with NacError('timeout'). This retracts the 200 ms phantom-success path that existed in the v1.4 reference implementation (nac.js line ~282 in v1.4; rewritten in v1.6 lines ~350–400). By making the Promise race against real events rather than an arbitrary timer, NAC gives test runners deterministic semantics and eliminates a major flake vector. The manifest (P7) amplifies this by making the UI introspectable before interaction, enabling auto-generated smoke tests and LLM planning.
+The weakest design decision is the unbounded flat growth of the window.NAC API surface across v1.1→v1.4. The role vocabulary grew from 12 (v1.0, section 3 P2) to ~54 (v1.4, sections 13.1, 15.1, 16.1), events from 7 to 50+, and driver functions from ~16 to ~70. The spec declares each addition "MINOR per semver" (sections 13.8, 14.6, 15.8, 16.8), but all widgets occupy the same global namespace. A production codebase with a custom design system has no vendor extension mechanism—only the generic region role or sibling data-vendor-* namespaces—to vend its own widgets without forking the spec or misusing overloaded roles.*
+The section most likely to struggle in a real production codebase is 7.2 / 7.3 NAC-vs-ARIA authority and mirroring. The rule is intellectually clean—"NAC drives, ARIA mirrors" (7.3.1)—but it demands that every state mutation update both data-nac-state and the corresponding aria-* attribute in the same render tick. In React 18 with concurrent features, useTransition or useDeferredValue batch and defer DOM commits by design; the spec now acknowledges that authors must use flushSync (MANUAL.md framework integration patterns), yet the reference runtime does not enforce atomicity, it only validates after the fact. The aria_nac_state_mismatch warning becomes CI noise in large SPAs.*
+T3. PROGRAMMING WALKTHROUGH
+Using the documented window.NAC.* API against the public demo:*
+   Copied // a) Read every visible action button label and current value
+const actions = NAC.list('action').filter(a => a.visible);
+actions.forEach(a => console.log(a.label, a.value)); Ambiguity: Per P5.0 NacElement, .value is always null for non-input elements (it is defined only for input/select/textarea/contenteditable). An action button's verb lives in .action, not .value, so a developer expecting a semantic "value" will be misled. The label resolution also falls back to textContent capped at 80 chars (nac.js lines ~120–135), which may truncate long labels.
+   Copied // b) Open the secret modal
+await NAC.click('secret.open'); Unambiguous in v1.6: click() resolves on nac:action:succeeded or rejects on timeout (section 7.1).
+   Copied // c) Switch language to Chinese via selector (data-nac-id="chat.lang")
+await NAC.select('chat.lang', 'zh'); Ambiguity: If the selector is a native <select>, select() works. If it is a custom combobox (as many i18n switchers are), the reference select() implementation (nac.js lines ~420–450) attempts to click an option child or falls back to setting .value directly. The spec does not clarify whether fill() or select() is the correct primitive for a non-native dropdown.
+   Copied // d) Detect a blocking confirmation dialog
+const blocking = NAC.list_pending_confirms().length > 0; Ambiguity: list_pending_confirms() (section 7.5 / API_REFERENCE v1.3) only detects dialogs carrying data-nac-role="confirm-dialog" and data-nac-state="pending". A hand-rolled modal with role="alertdialog" but no NAC instrumentation is invisible to this API.
+   Copied // e) Reset the demo
+await NAC.reset('example_demo'); The demo registers a custom reset provider (section 9.3) that closes the secret modal, collapses sumi-e icons, clears fields, restores tabs, and scrolls to top. Without that provider, the generic fallback would clear fields to data-nac-default-value and apply data-nac-default-state, but it would not know how to close the modal or restore the gallery.
+T4. RELATIONSHIP TO ARIA
+The complement-not-replacement argument (section 1.5, reinforced by 7.2/7.3) is convincing at the architectural level: ARIA targets screen readers with a declarative audio map, while NAC targets autonomous operators with an imperative, event-driven API. The authority table in 7.2 is the most important addition since v1.4—it explicitly assigns ARIA to assistive tech and NAC to drivers, resolving ambiguity when the two disagree.
+That said, the overlaps are concrete and will confuse implementers. NAC mirrors ARIA states (loading↔aria-busy, invalid↔aria-invalid, expanded↔aria-expanded) per section 7.3 mapping table, and the "NAC drives, ARIA mirrors" direction (7.3.1) requires atomic dual-attribute updates. Teams already struggling with ARIA now have two attributes to keep in sync, and the validator warnings (aria_nac_state_mismatch, aria_first_state) add CI noise rather than automatic repair.
+I would adopt NAC alongside ARIA in a project whose primary goal is AI-driven test automation or voice control, because NAC's manifest, verb vocabulary, and lifecycle events fill gaps ARIA intentionally leaves open. I would not adopt NAC in a project whose only accessibility need is screen-reader support; there ARIA is sufficient and NAC is overhead. For a greenfield internal tool facing both audiences, the dual layer is defensible only if the team maintains a disciplined component library that amortizes the sync cost.
+T5. ADOPTION ANALYSIS
+Minimum work for NAC-3 compliance: add five data-nac-* attributes to every interactive element (P1–P3), register one JSON manifest per plugin (P7), emit the universal event families (section 6.1: plugin lifecycle, action dispatch/succeeded/failed, field changed), and validate with NAC.validate() + NAC.validate_global() in CI. The spec frames this as agent-implementable in minutes per screen (section 1.5.2), which is plausible if the team already uses a design system that can emit consistent metadata.*
+The most underestimated part is event correctness (section 7.1, MANUAL.md patterns). Emitting nac:action:succeeded at the exact semantic boundary—after server confirmation, not after an optimistic UI update—requires refactoring every async handler. In a legacy codebase with ad-hoc fetch wrappers, this dominates the rollout cost. The v1.6 reset primitive (section 9.3) adds a second hidden tax: authors must implement set_reset_provider or accept that generic reset only clears fields and default states, not complex UI state like open modals or expanded accordions.
+A team will abandon the effort when manifest drift in dynamic SPAs overwhelms CI. P7 declares drift a blocker, and validate_global() (P7.1) catches cross-plugin duplicates and DOM orphans, but it cannot validate elements rendered only after user interaction (paginated rows, lazy tabs). The first time a nightly build fails because a modal's dynamically injected tabs were not pre-declared in the manifest, teams will treat NAC as a tax rather than an asset.
+Marginal cost of v1.6 reset vs v1.5: For trivial plugins, near-zero—the generic fallback walks fields and default states automatically. For non-trivial plugins (e.g., the demo's sumi-e gallery, secret modal, and tab state), the marginal cost is a custom reset provider that essentially writes a second "mount" lifecycle in reverse: close modals, collapse galleries, restore tabs, scroll to top. It is non-trivial domain-specific work.
+T6. SCORES AND CLOSING LINE
+
+Clarity of specification: 7/10 — well-structured but dense with inline extensions (v1.1–v1.4 nested inside the v1.0 document).
+Usefulness for automated test or assistant tooling: 9/10 — the manifest, verb vocabulary, and awaitable-write contract directly solve selector fragility and LLM grounding.
+Ease of adoption for a typical web team: 5/10 — trivial for static forms, demanding for dynamic SPAs with batched frameworks and async event chains.
+Ambition versus feasibility: 7/10 — the principles are sound, but the flat API surface and ARIA-sync tax outrun the "five attributes, one hour" promise.
+
+I would recommend NAC v1.6 for internal admin dashboards and AI-copiloted enterprise tools where the team owns the component library and can amortize the dual-attribute cost across reusable components, but not for consumer marketing sites where ARIA alone suffices and the event-wiring overhead is unjustified.
+T7. v1.6 PILLAR RATINGS
+a) Awaitable-write contract (sec 7.1): 9/10 — The timeout-vs-event resolution is the right design; it fixes the v1.4 phantom-success bug (nac.js lines ~350–400) and gives test runners deterministic semantics, though plugin authors unfamiliar with Promise races will struggle to emit events at the exact semantic boundary.
+b) NAC vs ARIA authority rules (sec 7.2 / 7.3): 6/10 — The per-consumer-kind authority table scales conceptually but will confuse implementers because it requires atomic dual-attribute commits in batched frameworks without providing framework-specific enforcement in the runtime.
+c) Event scoping (sec 7.4): 7/10 — composed:true and plugin_instance_id close the multi-mount gap for open shadow DOM, but closed shadow roots and cross-iframe mounts still require manual postMessage forwarding that the spec describes as optional rather than standardized.
+d) NAC + LLM agentic loop (sec 9.1, 9.2): 8/10 — It is a useful canonical pattern for safe LLM integration with backend-held keys, though the spec keeps it informative, so real interoperability depends on each implementer's prompt engineering rather than a strict wire protocol.
+e) Plugin reset primitive (sec 9.3): 7/10 — The custom-provider-then-generic-fallback resolution order is correct for DOM-centric plugins, but it will fail at any plugin whose state lives outside the DOM (canvas renderers, third-party maps, WebGL) because the generic fallback only walks data-nac-* attributes.*
+f) Cross-plugin uniqueness audit (sec P7.1, NAC.validate_global()): 6/10 — Essential for CI gates, yet a single shared window.NAC registry cannot detect collisions across micro-frontends loaded in isolated JS scopes or cross-origin iframes, limiting its reach in 50-plugin architectures.
+g) Demo 10-locale i18n: 7/10 — The manifest's label_i18n maps and live locale selector demonstrate real multi-language support, but I did not fetch the ?lang=zh, ?lang=ja, or ?lang=ar variants directly to verify RTL or CJK rendering, and the runtime's 80-char textContent fallback (nac.js ~line 135) may clip long localized labels.
+
+
+GROK -->
+
+T1. SUMMARY (under 120 words)
+NAC proposes a declarative contract for web (and DOM-like) UIs consisting of data-nac-* HTML attributes, a JSON manifest per "plugin" (self-contained UI surface like a modal or view), a small window.NAC JavaScript runtime/driver, and a family of nac:* custom events. This enables test runners, AI agents, voice assistants, and RPA tools to discover, read, operate, and observe UIs reliably without CSS selectors, DOM scraping, or per-app brittle scripts. Intended audience: frontend teams wanting high E2E test coverage and AI-driven UIs, plus automation practitioners. It ships a ~2200-line MIT spec (v1.6), ~2400-line zero-dep reference runtime, validator, authoring manual, demo with 10-locale i18n, and patterns for LLM agentic loops plus plugin reset.
+T2. ARCHITECTURAL REVIEW
+The strongest design decision in v1.6 is the awaitable-write contract (Sec 7.1) combined with the manifest as source-of-truth (P7). Writes like NAC.click() / fill() no longer phantom-resolve after 200ms (a v1.4 flaw caught in prior reviews); they await semantic success/fail events (or timeout). This, plus formal return shapes (P5.0: NacResult, NacSnapshot, etc.) and active-plugin resolution (P5.1), makes the contract predictable for async UIs while keeping the surface tiny. The manifest + NAC.describe() / validate() enables planning before interaction, a huge win over selector-based tools.
+The weakest is the continued heavy reliance on global document event bus with composed: true + plugin_instance_id (Sec 7.4). While improved, it still risks noise in multi-plugin or shadow-DOM-heavy pages, and cross-plugin uniqueness (P7.1) is audit-only rather than enforced at runtime.
+One section likely to trouble production adoption is compliance levels + event-family scoping (Sec 6.1, updated in v1.4.2). NAC-3 requires broad coverage, but events are now only mandatory for used widget families. Teams will underestimate the validation/maintenance burden of keeping manifests, DOM attributes, states, and events in sync across refactors, i18n, and dynamic views—especially the new NAC.validate_global() and recommended nac_id grammar (P7.2). In large codebases, drift detection is great but enforcing it without slowing velocity is non-trivial.
+T3. PROGRAMMING WALKTHROUGH
+Using only documented window.NAC.* on the public demo:
+JavaScript// a) Read labels and current values of visible action buttons
+const snap = NAC.describe();  // or NAC.snapshot_state()
+const actions = NAC.list('action').filter(a => /* visible check via state or bounding */);
+actions.forEach(act => {
+  console.log(act.nac_id, act.label, act.state);  // label often from aria-label or manifest
+});
+NAC.list(role) or describe() works; spec is somewhat ambiguous on "visible" filtering—snapshot_state() or DOM state attributes help but aren't purely API-driven.
+JavaScript// b) Trigger secret modal
+await NAC.click('open_secret');  // or by verb if using click_by_verb
+Assumes data-nac-id="open_secret" (demo has "Abrir el secreto"); NAC.click_by_verb tie-break exists but primary is by nac_id.
+JavaScript// c) Switch language to Chinese via selector (data-nac-id="chat.lang")
+await NAC.fill('chat.lang', 'zh');  // or select() if it's a <select>
+await NAC.wait_for('nac:field:changed', 2000);  // or language-specific event
+Demo uses i18n sweep with label_i18n; fill() should work for selector. Minor ambiguity on exact ID or if NAC.select() is preferred.
+JavaScript// d) Detect blocking confirmation dialog
+const confirms = NAC.list_pending_confirms();  // v1.3+
+const blocking = confirms.length > 0 || NAC.snapshot_state().has_blocking_modal;  // or check feedback
+list_pending_confirms() (API ref) or read_feedback() + state snapshot. Spec promotes confirm-dialog to normative (7.5), but exact blocking detection is clear via dedicated API.
+JavaScript// e) Reset
+await NAC.reset('example_demo');  // or NAC.reset() for page-level
+Clear in v1.6 (Sec 9.3); demo registers custom provider.
+Overall, the API is ergonomic; ambiguities are minor (e.g., exact return shapes in older sections, visibility heuristics) but improved by P5.0 formalization.
+T4. RELATIONSHIP TO ARIA
+The complement argument (Sec 1.5, reinforced by 7.2/7.3 authority rules + mapping table) is convincing. ARIA is declarative for human assistive tech (screen readers); NAC adds imperative driver API, stable semantic IDs/verbs, manifests, and events for autonomous operators. They target different audiences and can coexist on the same elements (example in spec: data-nac-* + role/aria-*).
+Overlaps exist (roles, states, labels) but are managed by authority rules: NAC drives, ARIA mirrors in one direction (7.3.1). This could confuse implementers initially (dual maintenance), but the philosophy clearly delineates scopes. I would adopt both in a real project for comprehensive coverage—ARIA for WCAG/legal, NAC for test/AI reliability—especially since NAC's surface is smaller and faster to onboard. Pure ARIA lacks the driver/events/manifest needed for agents.
+T5. ADOPTION ANALYSIS
+Minimum work for NAC-3 compliance: Add data-nac-plugin root + data-nac-id/role/state (plus role-specific attrs) to interactive elements (~hours for small app), register manifest at mount, emit key lifecycle events, and include the nac.js runtime. For existing ARIA apps, mirror states where required.
+Most underestimated: Ongoing sync between manifests, DOM attributes, i18n maps (label_i18n), states, and events across dynamic renders, A/B tests, and team changes. Validator helps (NAC.validate() / validate_global()), but cultural/process adoption (CI gating drift) is harder than markup.
+Abandonment triggers: Perceived duplication with ARIA in resource-constrained teams, or event emission boilerplate in complex SPAs. Teams drop midway when refactors break manifests without immediate ROI visibility.
+Marginal cost of v1.6 NAC.reset() vs v1.5: Very low—opt-in. Generic fallback is automatic (clears fields per data-nac-default-*); custom provider via NAC.set_reset_provider(slug, fn) adds ~10-50 LOC for non-trivial plugins (e.g., close modals, collapse sections, reset filters in demo). Resolution order (custom -> generic) is sensible and fails gracefully for simple cases.
+T6. SCORES AND CLOSING LINE
+Clarity: 9/10 (excellent structure, examples, P5 shapes, changelogs). Usefulness for test/assistant tooling: 8.5/10 (strong for reliable driving/observability; event reliability key). Ease of adoption: 7/10 (small surface but maintenance overhead). Ambition vs feasibility: 8/10 (pragmatic evolution from v1.4 feedback). I would recommend NAC for internal enterprise tools or AI-assisted CRMs needing robust E2E automation and voice/agent support without per-screen scripts.
+T7. v1.6 PILLAR RATINGS
+a) Awaitable-write contract (7.1): 8/10. Timeout-vs-event with mandatory success/fail events is the right pragmatic design (fixes prior phantom issue); plugin authors will mostly honor it for NAC-3, especially with runtime focus/pulse feedback, but async edge cases (long polls) may need careful tuning.
+b) NAC vs ARIA authority rules (7.2/7.3): 7/10. Per-consumer-kind rules + one-way mirroring scale reasonably and reduce confusion via explicit mapping, but dual semantics will still trip up junior implementers or large teams.
+c) Event scoping (7.4): 7.5/10. composed:true + plugin_instance_id + optional per-plugin buses close most multi-mount gaps effectively; shadow roots (especially closed) and complex web components remain edge cases requiring extra care.
+d) NAC + LLM agentic loop (9.1/9.2): 8/10. Useful canonical pattern (reset first, then discover/operate/verify via events), beyond demo curiosity—especially with manifest planning and i18n parity. Production agents benefit.
+e) Plugin reset primitive (9.3): 8.5/10. Resolution order (custom provider -> generic fallback) is the right shape; fails gracefully for simple plugins but may struggle with deeply stateful or external-dependent UIs (e.g., unsaved backend state, third-party embeds).
+f) Cross-plugin uniqueness audit (P7.1, validate_global()): 7/10. Excellent for drift detection; scales to 50+ plugins via structured reports/CI, but performance and noise in massive apps could become issues without good filtering.
+g) Demo 10-locale i18n: Holds up well. Appending ?lang=zh/ja/ar shows proper rendering (RTL for Arabic, CJK scripts); label_i18n maps + live selector demonstrate NAC's locale-parity strength effectively, with no major breakage observed.
+Overall, v1.6 is a solid, feedback-driven evolution that strengthens NAC's position as a practical complement for autonomous UI operation.
