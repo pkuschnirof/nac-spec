@@ -7,7 +7,18 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.6.1 (spec) / 1.6.2 (reference runtime). v1.6.2 is
+**Version**: 1.6.1 (spec) / 1.6.3 (reference runtime). v1.6.3
+is a runtime-only patch (2026-05-07): NAC.click is now
+role-aware on the success-event side. Pre-v1.6.3 click() only
+listened for nac:action:succeeded / :failed, so calling it on a
+combobox option (data-nac-role="option", emits
+nac:field:changed) timed out at 5s even though the option was
+selected. v1.6.3 picks the right success / failure event family
+per role -- option, tab, breadcrumb-item, accordion-toggle,
+step, pagination-item, confirm-button -- with the action contract
+also listened-for as a safety net. No spec contract change;
+this implements existing widget-event vocabulary correctly.
+v1.6.2 is
 a runtime-only patch (2026-05-07): implements `NAC.drag_drop`
 which spec sec 13.4 had declared since v1.1 but the runtime
 never landed. Discovered same-day by user-testing the v1.6.1

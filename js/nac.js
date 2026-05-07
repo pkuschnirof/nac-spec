@@ -1,9 +1,31 @@
 /* =====================================================================
-   NAC v1.6.2 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.6.3 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.6.3 (2026-05-07) -- patch release. NAC.click is now role-aware
+   on the success-event side: it picks the right success / failure
+   event family based on the target's data-nac-role, instead of
+   listening only for nac:action:succeeded / nac:action:failed.
+   Pre-v1.6.3, click() on a combobox option (data-nac-role="option")
+   timed out at 5s even though the option was selected and the
+   widget emitted nac:field:changed -- the runtime simply was not
+   listening for that event. v1.6.3 maps:
+     role="action"          -> nac:action:succeeded / :failed
+     role="option"          -> nac:field:changed
+     role="tab"             -> nac:tab:activated
+     role="breadcrumb-item" -> nac:breadcrumb:navigated
+     role="accordion-toggle"-> nac:accordion:expanded / :collapsed
+     role="step"            -> nac:step:advanced
+     role="pagination-item" -> nac:table:page_changed
+     role="confirm-button"  -> nac:confirm:resolved / :cancelled
+   Unknown / missing role keeps the action default for back-compat.
+   For non-action roles the runtime ALSO listens for the action-
+   contract events as a safety net so a host that emits both
+   contracts on the same element still works. Strict superset of
+   v1.6.2; every v1.6.2 plugin remains valid.
 
    v1.6.2 (2026-05-07) -- patch release. Implements NAC.drag_drop
    (spec sec 13.4), which had been declared in the spec since v1.1
@@ -581,40 +603,84 @@
 
   /* ---------- Public write API ------------------------------------ */
 
+  /* v1.6.3: success-event family per role. NAC.click is the
+     canonical "fire the user's primary intent on this element"
+     verb, but different widget families emit different success
+     events:
+       role="action"          -> nac:action:succeeded / :failed
+       role="option"          -> nac:field:changed (combobox/select)
+       role="tab"             -> nac:tab:activated
+       role="breadcrumb-item" -> nac:breadcrumb:navigated
+       role="accordion-toggle"-> nac:accordion:expanded / :collapsed
+       role="step"            -> nac:step:advanced
+       role="pagination-item" -> nac:table:page_changed
+       role="confirm-button"  -> nac:confirm:resolved / :cancelled
+     Pre-v1.6.3 the runtime only listened for nac:action:succeeded,
+     so click() on any non-action role timed out at 5s even when the
+     widget reacted correctly. v1.6.3 picks the right event family
+     based on data-nac-role on the target. Unknown / missing role
+     keeps the action default for back-compat. */
+  const _CLICK_EVENT_FAMILY = {
+    'action':           ['nac:action:succeeded', 'nac:action:failed'],
+    'option':           ['nac:field:changed'],
+    'tab':              ['nac:tab:activated'],
+    'breadcrumb-item':  ['nac:breadcrumb:navigated'],
+    'accordion-toggle': ['nac:accordion:expanded', 'nac:accordion:collapsed'],
+    'step':             ['nac:step:advanced'],
+    'pagination-item':  ['nac:table:page_changed'],
+    'confirm-button':   ['nac:confirm:resolved', 'nac:confirm:cancelled'],
+  };
+
   async function click(nac_id, opts) {
-    /* v1.4.1: removed the 200ms phantom-success leg.
-       Previously this function resolved { ok: true, event: null } after
-       200ms whether or not the action emitted nac:action:succeeded, which
-       silently violated the awaitable-write contract from spec section 7.2
-       and caused phantom successes for any action that took >200ms to
-       respond. Now click() races the two real lifecycle events against a
-       configurable timeout and rejects with NacError('timeout', ...) if
-       neither fires. Default timeout 5000ms; override via opts.timeout. */
+    /* v1.4.1: removed the 200ms phantom-success leg. Now click()
+       races real lifecycle events against a configurable timeout
+       and rejects with NacError('timeout', ...) if none fire.
+       Default timeout 5000ms; override via opts.timeout.
+       v1.6.3: success-event family is role-aware (see _CLICK_EVENT_FAMILY). */
     const el = _findElement(nac_id, opts);
     if (!el) throw NacError('not_found', 'No element with nac_id=' + nac_id);
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') {
       throw NacError('disabled', 'Element ' + nac_id + ' is disabled');
+    }
+    const role = el.getAttribute('data-nac-role') || 'action';
+    const family = _CLICK_EVENT_FAMILY[role] || _CLICK_EVENT_FAMILY['action'];
+    /* The first event in each family is the "success" signal; if a
+       second entry exists it is the "failure" signal. Some families
+       (option, tab, breadcrumb, step, pagination) have no failure
+       counterpart -- the widget either succeeds or stays silent
+       (and the timeout catches the silent case). Always also listen
+       for nac:action:succeeded/failed as a fallback so hosts that
+       emit both contracts (e.g. a tab that is also an action) work. */
+    const successEvents = [family[0]];
+    const failureEvents = family.length > 1 ? [family[1]] : [];
+    if (role !== 'action') {
+      successEvents.push('nac:action:succeeded');
+      failureEvents.push('nac:action:failed');
     }
     const timeout_ms = (opts && opts.timeout) || 5000;
     const result = new Promise(function (resolve, reject) {
       let settled = false;
       function onSucceeded(e) {
         if (settled) return;
+        /* Filter: the event must mention this element via either
+           event.target or detail.nac_id matching. Without this, a
+           background nac:field:changed from another field would
+           resolve our click prematurely. */
+        if (!_eventMatchesElement(e, el, nac_id)) return;
         settled = true;
         cleanup();
-        resolve({ ok: true, event: { event: 'nac:action:succeeded',
-                                     detail: e.detail || null } });
+        resolve({ ok: true, event: { event: e.type, detail: e.detail || null } });
       }
       function onFailed(e) {
         if (settled) return;
+        if (!_eventMatchesElement(e, el, nac_id)) return;
         settled = true;
         cleanup();
-        resolve({ ok: false, event: { event: 'nac:action:failed',
-                                      detail: e.detail || null } });
+        resolve({ ok: false, event: { event: e.type, detail: e.detail || null } });
       }
       function cleanup() {
-        document.removeEventListener('nac:action:succeeded', onSucceeded);
-        document.removeEventListener('nac:action:failed', onFailed);
+        successEvents.forEach(function (n) { document.removeEventListener(n, onSucceeded); });
+        failureEvents.forEach(function (n) { document.removeEventListener(n, onFailed); });
         clearTimeout(t);
       }
       const t = setTimeout(function () {
@@ -622,15 +688,47 @@
         settled = true;
         cleanup();
         reject(NacError('timeout',
-          'click(' + nac_id + ') did not emit nac:action:succeeded or '
-          + 'nac:action:failed within ' + timeout_ms + 'ms'));
+          'click(' + nac_id + ', role=' + role + ') did not emit any of [' +
+          successEvents.concat(failureEvents).join(', ') + '] within ' +
+          timeout_ms + 'ms'));
       }, timeout_ms);
-      document.addEventListener('nac:action:succeeded', onSucceeded);
-      document.addEventListener('nac:action:failed', onFailed);
+      successEvents.forEach(function (n) { document.addEventListener(n, onSucceeded); });
+      failureEvents.forEach(function (n) { document.addEventListener(n, onFailed); });
     });
     _focusElement(el);
     el.click();
     return result;
+  }
+
+  /* v1.6.3 helper: an event "matches" the clicked element when its
+     detail names the same nac_id, OR when its target IS the element
+     (or a descendant), OR when no nac_id appears in detail (defensive
+     -- we take the event as a match rather than miss it on a sloppy
+     emitter and time out). */
+  function _eventMatchesElement(e, el, nac_id) {
+    var d = e && e.detail;
+    if (d && (d.nac_id === nac_id || d.from_nac_id === nac_id ||
+              d.target_nac_id === nac_id || d.tab_id === nac_id ||
+              d.section_id === nac_id || d.step_id === nac_id ||
+              d.id === nac_id || d.breadcrumb_id === nac_id)) {
+      return true;
+    }
+    if (e.target && (e.target === el || (el.contains && el.contains(e.target)))) {
+      return true;
+    }
+    /* Field-change events fire on the parent field when an option
+       is clicked; resolve those too. */
+    if (e.type === 'nac:field:changed' && d && d.nac_id) {
+      var parentField = el.closest('[data-nac-id="' + d.nac_id + '"]');
+      if (parentField) return true;
+      /* Or: the element is a descendant of an element whose nac_id
+         matches the field that fired. */
+      var fieldHost = document.querySelector(
+        '[data-nac-role="field"][data-nac-id="' + d.nac_id + '"], ' +
+        '[data-nac-role="combobox"][data-nac-id="' + d.nac_id + '"]');
+      if (fieldHost && fieldHost.contains(el)) return true;
+    }
+    return !d; /* defensive: emitter sloppy, no detail at all -> match */
   }
 
   async function fill(nac_id, value, opts) {
@@ -2672,7 +2770,7 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.6.2',
+    version:      '1.6.3',
     spec_version: '1.6',
     /* registry */
     register:        register,

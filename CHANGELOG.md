@@ -22,6 +22,84 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.6.3] - 2026-05-07
+
+PATCH release. Two fixes shipped together because they were
+raised in the same user-testing session of v1.6.2. Strict
+superset of v1.6.2.
+
+### Runtime: NAC.click is role-aware
+
+User-reported bug 2026-05-07: agent picked Buenos Aires from
+the cities combobox correctly, but NAC.click('cities.option.4')
+timed out with "did not emit nac:action:succeeded" even though
+the field changed. Diagnosis: `cities.option.*` has
+`data-nac-role="option"` and emits `nac:field:changed`;
+NAC.click only listened for `nac:action:succeeded` /
+`nac:action:failed`. Same pattern affects every non-action role
+with click semantics (tab, breadcrumb-item, accordion-toggle,
+step, pagination-item, confirm-button).
+
+`js/nac.js` v1.6.3 makes `NAC.click` consult a role-event-family
+map and listen for the appropriate success / failure events:
+
+| role | success | failure |
+|---|---|---|
+| `action` (default) | `nac:action:succeeded` | `nac:action:failed` |
+| `option` | `nac:field:changed` | -- |
+| `tab` | `nac:tab:activated` | -- |
+| `breadcrumb-item` | `nac:breadcrumb:navigated` | -- |
+| `accordion-toggle` | `nac:accordion:expanded` | `nac:accordion:collapsed` |
+| `step` | `nac:step:advanced` | -- |
+| `pagination-item` | `nac:table:page_changed` | -- |
+| `confirm-button` | `nac:confirm:resolved` | `nac:confirm:cancelled` |
+
+For non-action roles the runtime ALSO listens for the action-
+contract events as a safety net so a host that emits both
+contracts on the same element still works. Unknown / missing
+`data-nac-role` keeps the action default for back-compat. Event
+filtering walks `event.detail.nac_id`, `target_nac_id`,
+`from_nac_id`, `tab_id`, `section_id`, `step_id`, `id`,
+`breadcrumb_id`, plus `event.target` containment, so a
+background event on an unrelated element does not resolve the
+click prematurely.
+
+### Demo backend: tier rotation on parse failure
+
+User-reported bug 2026-05-07 (related): chat occasionally
+shows "No pude entender la respuesta del modelo. Probemos de
+nuevo." after a single attempt. User instruction verbatim: "No
+quiero el matcher local, hay que reintentar el comando contra
+la cadena de fallback antes de devolver un error."
+
+`crm_desa/api/v1/yujin.php yjNacDemo` now walks the AiClient
+chain explicitly when a tier returns ok=true with unparseable
+content. Each next tier sees a stricter "JSON ONLY, exact shape"
+reminder appended to the system prompt. Only when EVERY real
+tier (claude, deepseek, groq -- canned excluded) fails does the
+handler return `parse_degraded: true` with a localised error
+message ("I could not structure a response after trying every
+provider. Please rephrase and try again."). The local-matcher
+fallback that v1.6.2 used has been removed per user request --
+the chain rotation IS the retry policy, and the user accepts a
+clean error after exhausting the chain.
+
+`AiClient::callTier($tier, $payload, ...)` is the new public
+single-tier dispatcher used by yjNacDemo to bypass the chain
+logic. The standard `AiClient::call` still handles tier
+rotation on TIER failures (network, http 5xx); the new
+`callTier` lets callers implement content-aware rotation on
+top.
+
+### Demo frontend
+
+- `dispatchAgenticAction` no longer routes `parse_degraded` to
+  `interpret(prompt)` (the local matcher); it just shows the
+  localised `badge_parse_degraded` message in 10 locales.
+- New i18n key `badge_parse_degraded` with full 10-locale
+  coverage (es en pt fr it de ja zh hi ar).
+- Cache bump v27 -> v28.
+
 ## [1.6.2] - 2026-05-07
 
 PATCH release. Implements `NAC.drag_drop` (spec sec 13.4),
