@@ -7,17 +7,20 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.5 (spec) / 1.5.4 (reference runtime). v1.5.4 is
-a demo-only patch release that ships exhaustive 10-locale i18n
-on every visible string of the reference demo at
-`yujin.app/nac-spec/example.php`. v1.5.1 added normative
-section P7.1 (cross-plugin uniqueness + `NAC.validate_global()`
-cross-plugin audit) and P7.2 (recommended nac_id grammar).
-v1.5.0 added the canonical NAC + LLM agentic loop pattern
-(informative sections 9.1 and 9.2). v1.5.x is a strict
-superset of v1.4.2; every v1.0..v1.4.2 plugin remains valid.
-The attribute + event + driver-API contract is byte-identical
-across the v1.5 patch line. v1.4.2 normative additions on top of v1.4.1: P5.0 return
+**Version**: 1.6 (spec) / 1.6.0 (reference runtime). v1.6.0 adds
+the `NAC.reset()` plugin-reset primitive (normative section 9.3
++ a new `nac:plugin:reset` event), so an operator can ask any
+NAC-compliant plugin (or the whole page) to return to its
+declared initial state. v1.5.4 was the previous release: a
+demo-only patch that shipped exhaustive 10-locale i18n on every
+visible string of the reference demo. v1.5.1 added normative
+section P7.1 (cross-plugin uniqueness + `NAC.validate_global()`)
+and P7.2 (recommended nac_id grammar). v1.5.0 added the
+canonical NAC + LLM agentic loop pattern (informative sections
+9.1 and 9.2). v1.6 is a strict superset of v1.5.4; every
+v1.0..v1.5.4 plugin remains valid -- the new reset primitive is
+opt-in via `set_reset_provider`, with a generic fallback when
+no provider is registered. v1.4.2 normative additions on top of v1.4.1: P5.0 return
 shapes, 6.1 NAC-3 event-family scoping, 7.3.1 NAC-drives-
 ARIA-mirrors direction, 7.5 confirm-dialog contract, plus
 tightened plugin-id rule (sec 7.4) and click_by_verb tie-break
@@ -566,6 +569,10 @@ interface NAC {
   /* v1.4.1 voice/agent ergonomic helpers */
   click_by_verb(plugin: string | null, verb: string, opts?: any): Promise<NacResult>;
   tab_by_label(plugin: string | null, label: string, opts?: any): Promise<NacResult>;
+  /* v1.6.0 plugin reset primitive (section 9.3) */
+  reset(plugin_slug?: string): Promise<NacResetResult>;
+  set_reset_provider(plugin_slug: string,
+                     fn: () => void | Promise<void>): void;
 }
 ```
 
@@ -1743,6 +1750,120 @@ robustness measures: a defensive JSON extractor that strips
 markdown fences if the model emits one, and a strict
 allow-list of action kinds (unknown kinds are dropped, not
 errored, so the frontend keeps moving).
+
+---
+
+## 9.3. Plugin reset primitive (normative, added v1.6.0)
+
+> Added in v1.6.0 in response to the user request 2026-05-06:
+> "que cada vez que empiece el autopilot antes de comenzar
+> retorne todos los modales a su situacion inicial". Reset is a
+> small new pillar of the operator surface; without it, every
+> repeatable interaction (autopilot, regression test, second
+> tour) compounded state from the prior run.
+
+A v1.6.0-or-later runtime MUST expose:
+
+```typescript
+NAC.reset(plugin_slug?: string): Promise<NacResetResult>;
+NAC.set_reset_provider(plugin_slug: string,
+                       fn: () => void | Promise<void>): void;
+```
+
+`reset()` returns the plugin (or, when called with no
+argument, the entire page) to its declared initial state.
+Compliant plugins MAY register a custom reset provider via
+`set_reset_provider`. When no provider is registered for a
+target plugin, the runtime executes a generic reset (defined
+below).
+
+### Resolution order
+
+When a caller invokes `NAC.reset(plugin_slug)`:
+
+1. **Custom provider for that plugin**: if registered, invoke
+   it and emit `nac:plugin:reset { plugin: <slug> }` on
+   completion.
+2. **Generic fallback**: if no provider, walk the plugin root
+   (`[data-nac-plugin="<slug>"]`) and apply the generic reset
+   rules below.
+
+When a caller invokes `NAC.reset()` with no arguments:
+
+1. **Every registered provider** is invoked in registration
+   order. Each emits its own `nac:plugin:reset` on completion.
+2. **Generic reset** then runs against the whole document.
+3. A final `nac:plugin:reset { plugin: '*' }` is emitted.
+
+### Generic reset rules (normative)
+
+Without a custom provider, the runtime MUST:
+
+- Clear every `[data-nac-role="field"]` to its
+  `data-nac-default-value` if declared, else to empty
+  string / unchecked / no selection per field type.
+- Set every cleared field to `data-nac-state="pristine"`.
+- Dispatch `input` + `change` events on each cleared field
+  (so observers downstream see the reset).
+- For every element with `data-nac-default-state="<token>"`,
+  set `data-nac-state` to that token.
+- For every element with `data-nac-default-hidden="1"`, set
+  the `hidden` attribute true.
+
+### Authoring conventions (informative)
+
+For full control, plugins SHOULD register a custom provider
+that knows the plugin's domain semantics. Examples of work a
+custom provider commonly does:
+
+- Closing modals that were left open by a prior run.
+- Collapsing accordion sections / sumi-e expansion / details.
+- Restoring window-chrome state (un-minimise / un-maximise).
+- Resetting tabs to the first / default tab.
+- Clearing sort + filter on tables and lists.
+- Reverting slider / spinner controls to the documented
+  default value.
+- Scrolling the page back to the top so the next run starts
+  with the entire surface visible.
+
+The reference demo at `yujin.app/nac-spec/example.php`
+registers a custom provider that does all of the above before
+each autopilot run.
+
+### `NacResetResult` shape
+
+```typescript
+interface NacResetResult {
+  ok:      boolean;
+  plugin:  string;          // resolved plugin slug, or '*' for global
+  source:  'custom' | 'generic' | 'custom+generic';
+  plugins?: Record<string, { ok: boolean, source: string }>;
+                            // present when reset() was called with no arg
+  error?:  string;          // present only when ok=false
+}
+```
+
+### Event
+
+`nac:plugin:reset` -- detail
+`{ plugin: <slug | '*'>, timestamp: number }`. Fires once per
+plugin reset completion, plus a final `'*'` emission for
+no-argument calls. Bubbles + composed (per spec section 7.4).
+
+### Compliance levels
+
+- NAC-1 / NAC-2: `NAC.reset()` MAY exist; behaviour
+  unspecified.
+- NAC-3: `NAC.reset()` MUST exist; the generic reset rules
+  above MUST work for any plugin without a custom provider;
+  custom providers (when registered) MUST emit
+  `nac:plugin:reset` on completion.
+
+This pillar is the operator-side counterpart to the lifecycle
+events in P4 (section 4): P4 says "tell consumers when state
+changes", section 9.3 says "let consumers ASK for state to
+return to the start". Together they bound the plugin's state
+surface in both directions.
 
 ---
 

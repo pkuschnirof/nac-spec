@@ -10,12 +10,20 @@ short description, error throws, and the spec section that
 formalises it. AI coding agents implementing NAC can use this
 table as the canonical lookup.
 
-Current runtime version: **`NAC.version === '1.5.4'`** (spec
-`1.5`). The runtime exposes `NAC.version` and
+Current runtime version: **`NAC.version === '1.6.0'`** (spec
+`1.6`). The runtime exposes `NAC.version` and
 `NAC.spec_version` as strings; check them at boot if you need
 feature gating.
 
 Version history (most recent first):
+- **1.6.0** (2026-05-06) -- MINOR release. Adds
+  `NAC.reset(plugin_slug?)` plugin reset primitive (spec
+  section 9.3) + companion `set_reset_provider(slug, fn)` for
+  plugins to declare their custom reset semantics. New
+  `nac:plugin:reset` event. Generic reset fallback walks the
+  plugin root, clears every `[data-nac-role="field"]`, applies
+  `data-nac-default-state` / `data-nac-default-value` /
+  `data-nac-default-hidden`. Strict superset of v1.5.4.
 - **1.5.4** (2026-05-06) -- demo-only patch. Exhaustive
   10-locale i18n sweep on the reference demo: ~75 SECTION_I18N
   keys across `es en pt fr ja zh hi ar de it`, covering every
@@ -86,6 +94,8 @@ Version history (most recent first):
 | `screenshot` | `screenshot(): Promise<string>` | Best-effort SVG/PNG of active plugin | P5 |
 | `validate` | `validate(plugin_slug): { ok, missing, errors, manifest, timestamp }` | Manifest-vs-DOM drift check; v1.4.1 includes structured `errors[]` | 3.4-B |
 | `validate_global` | `validate_global(): NacGlobalReport` | **v1.5.1** -- cross-plugin audit: duplicates, DOM orphans, unmounted manifest entries, convention violations | P7.1 |
+| `reset` | `reset(plugin_slug?): Promise<NacResetResult>` | **v1.6.0** -- return a plugin (or the whole page) to its declared initial state. Runs the registered custom provider when present, generic fallback otherwise. Emits `nac:plugin:reset` | 9.3 |
+| `set_reset_provider` | `set_reset_provider(plugin_slug, fn): void` | **v1.6.0** -- plugin declares its custom reset routine; replaces the generic fallback for that plugin | 9.3 |
 
 `click` opts shape (v1.4.1): `{ plugin?: string, plugin_instance_id?: string, timeout?: number }`. See section 7.1 for the awaitable-write contract -- writes resolve only on the success/fail event, or reject with `NacError('timeout', ...)`.
 

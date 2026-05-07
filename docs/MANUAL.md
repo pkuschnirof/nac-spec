@@ -4,11 +4,26 @@ A hands-on guide to making a UI navigable by AI, voice and RPA.
 Read [spec/NAC-v1.0.md](../spec/NAC-v1.0.md) first for the formal
 contract; this manual focuses on day-to-day patterns.
 
-> **Version**: this manual tracks NAC spec v1.5 (runtime v1.5.4).
+> **Version**: this manual tracks NAC spec v1.6 (runtime v1.6.0).
 > Every version since v1.0 is a strict superset, so the v1.0
 > patterns shown here keep working unchanged. New primitives
-> introduced in v1.1..v1.5 are documented in their own sections;
+> introduced in v1.1..v1.6 are documented in their own sections;
 > follow the spec links for the normative contract.
+
+> **What v1.6 adds**: the `NAC.reset()` plugin reset primitive.
+> An operator can ask any plugin -- or the whole page -- to
+> return to its declared initial state. Plugins opt in by
+> registering a custom reset provider via
+> `NAC.set_reset_provider(slug, fn)`; the runtime falls back to
+> a generic reset (clear fields, apply
+> `data-nac-default-state` / `data-nac-default-value` /
+> `data-nac-default-hidden`) when no provider is registered.
+> See spec section 9.3 for the normative contract; the
+> reference demo registers a custom provider that closes the
+> secret modal, collapses sumi-e icons, clears form fields,
+> resets sort + filter + tabs + accordion, and scrolls to top
+> -- the autopilot calls `NAC.reset('example_demo')` as its
+> first step on every run.
 
 > **Looking for a specific `window.NAC.*` method?**
 > See [`API_REFERENCE.md`](API_REFERENCE.md) -- one-page cheat
@@ -862,7 +877,7 @@ MIT. See [LICENSE](../LICENSE).
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.5 / runtime v1.5.4. 2026. MIT License.
+Spec v1.6 / runtime v1.6.0. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```

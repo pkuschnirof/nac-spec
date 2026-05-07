@@ -1,9 +1,20 @@
 /* =====================================================================
-   NAC v1.5.4 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.6.0 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   v1.6.0 (2026-05-06) -- MINOR release. Adds NAC.reset(slug?)
+   plugin reset primitive (spec section 9.3) + companion
+   NAC.set_reset_provider(slug, fn) so plugins can declare
+   their custom reset semantics. Without a registered provider
+   the runtime falls back to a generic reset that walks the
+   plugin root, clears every [data-nac-role="field"] (honouring
+   data-nac-default-value), applies data-nac-default-state and
+   data-nac-default-hidden, and emits nac:plugin:reset on
+   completion. Strict superset of v1.5.4; every v1.0..v1.5.4
+   plugin remains valid (the new primitive is opt-in).
 
    v1.5.4 (2026-05-06) -- demo-only patch. Ships exhaustive
    10-locale i18n on every visible string of the reference demo
@@ -435,6 +446,14 @@
     /* Honour global opt-out via NAC.config.focus_on_action = false. */
     if (global.NAC && global.NAC.config
         && global.NAC.config.focus_on_action === false) return;
+    /* v1.5.5: back to block: 'center'. The previous 'nearest'
+       avoided rapid jumping but lost context -- elements landed
+       at the bottom of the viewport, where the human eye loses
+       the surrounding cards. Centering keeps the focused
+       element vertically middle on screen so the agent's
+       progress is always trackable, no matter how far apart the
+       targets are. The 1800ms autopilot tick (also v1.5.4-fix)
+       gives smooth-scroll enough time to settle between steps. */
     try {
       if (typeof el.scrollIntoView === 'function') {
         el.scrollIntoView({ behavior: 'smooth', block: 'center',
@@ -1371,6 +1390,118 @@
     };
   }
 
+  /* ---------- v1.6.0: plugin reset primitive ----------------------
+     Spec section 9.4 (informative). Lets a plugin declare how to
+     return to its initial state -- clearing fields, closing
+     modals, restoring minimised cards, resetting tabs / sort /
+     filter, etc. Without a registered provider, the runtime
+     falls back to a generic walk that clears every
+     [data-nac-role="field"] and resets every
+     [data-nac-default-state] within the plugin scope.
+     Use case: agentic operators that want to "start fresh"
+     before a new sequence (the canonical example: NAC.reset()
+     called at the top of the autopilot demo so each run begins
+     from a known state). */
+  const _resetProviders = Object.create(null);
+
+  function set_reset_provider(plugin_slug, fn) {
+    if (typeof fn !== 'function') {
+      throw NacError('invalid', 'reset provider fn required');
+    }
+    if (!plugin_slug) {
+      throw NacError('invalid', 'plugin_slug required');
+    }
+    _resetProviders[String(plugin_slug)] = fn;
+  }
+
+  async function reset(plugin_slug) {
+    /* Specific plugin + custom provider -> run it. */
+    if (plugin_slug && _resetProviders[plugin_slug]) {
+      try {
+        await _resetProviders[plugin_slug]();
+      } catch (e) {
+        return { ok: false, plugin: plugin_slug, error: String(e) };
+      }
+      _emitResetEvent(plugin_slug);
+      return { ok: true, plugin: plugin_slug, source: 'custom' };
+    }
+    /* No specific plugin -> run every registered provider in
+       parallel + a global generic reset for the page. */
+    if (!plugin_slug) {
+      const slugs = Object.keys(_resetProviders);
+      const results = {};
+      for (let i = 0; i < slugs.length; i++) {
+        try {
+          await _resetProviders[slugs[i]]();
+          results[slugs[i]] = { ok: true, source: 'custom' };
+          _emitResetEvent(slugs[i]);
+        } catch (e) {
+          results[slugs[i]] = { ok: false, error: String(e) };
+        }
+      }
+      _genericReset(null);
+      _emitResetEvent('*');
+      return { ok: true, plugin: '*', plugins: results,
+        source: 'custom+generic' };
+    }
+    /* Specific plugin without registered provider -> generic
+       fallback scoped to the plugin root. */
+    const ok = _genericReset(plugin_slug);
+    _emitResetEvent(plugin_slug);
+    return { ok: ok, plugin: plugin_slug, source: 'generic' };
+  }
+
+  function _genericReset(plugin_slug) {
+    const root = plugin_slug
+      ? document.querySelector('[data-nac-plugin="' + plugin_slug + '"]')
+      : document;
+    if (!root) return false;
+    /* Clear every NAC-instrumented field. Honours
+       data-nac-default-value when declared. */
+    Array.prototype.forEach.call(
+      root.querySelectorAll('[data-nac-role="field"]'),
+      function (el) {
+        const def = el.getAttribute('data-nac-default-value');
+        try {
+          if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            if (el.type === 'checkbox' || el.type === 'radio') {
+              el.checked = (def === 'true' || def === '1');
+            } else {
+              el.value = def !== null ? def : '';
+            }
+          } else if (el.tagName === 'SELECT') {
+            el.value = def !== null ? def : '';
+          } else if (el.hasAttribute('contenteditable')) {
+            el.textContent = def !== null ? def : '';
+          }
+          el.setAttribute('data-nac-state', 'pristine');
+          el.dispatchEvent(new Event('input',  { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch (e) { /* swallow per-field */ }
+      });
+    /* Reset elements with a declared default state. */
+    Array.prototype.forEach.call(
+      root.querySelectorAll('[data-nac-default-state]'),
+      function (el) {
+        el.setAttribute('data-nac-state',
+          el.getAttribute('data-nac-default-state'));
+      });
+    /* Hide every region that defaults hidden. Convention:
+       data-nac-default-hidden="1" on a region the host wants
+       reset to hidden. */
+    Array.prototype.forEach.call(
+      root.querySelectorAll('[data-nac-default-hidden]'),
+      function (el) { el.hidden = true; });
+    return true;
+  }
+
+  function _emitResetEvent(plugin) {
+    document.dispatchEvent(new CustomEvent('nac:plugin:reset', {
+      detail: { plugin: plugin || '*', timestamp: Date.now() },
+      bubbles: true, composed: true,
+    }));
+  }
+
   /* v1.4.1 (added 2026-05-06, spec section 14.3.5):
      synchronous declaration of which discovery layers the host
      supports, so agents do not need to probe by exception. */
@@ -2268,8 +2399,8 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.5.4',
-    spec_version: '1.5',
+    version:      '1.6.0',
+    spec_version: '1.6',
     /* registry */
     register:        register,
     unregister:      unregister,
@@ -2312,6 +2443,9 @@
     set_capabilities_provider:   set_capabilities_provider,
     /* v1.4.1 -- discovery layer declaration */
     system_map_layers:           system_map_layers,
+    /* v1.6.0 -- plugin reset primitive */
+    reset:                       reset,
+    set_reset_provider:          set_reset_provider,
     /* v1.2 -- section landmarks */
     list_sections:               list_sections,
     go_to_section:               go_to_section,

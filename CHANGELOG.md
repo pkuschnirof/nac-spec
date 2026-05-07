@@ -22,6 +22,85 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.6.0] - 2026-05-06
+
+MINOR release. Adds the **`NAC.reset()` plugin reset primitive**,
+the operator-side counterpart to the lifecycle events in P4. An
+operator can now ask any NAC-compliant plugin -- or the whole
+page -- to return to its declared initial state. Strict superset
+of v1.5.4; every v1.0..v1.5.4 plugin remains valid (the reset
+primitive is opt-in via `set_reset_provider`, with a generic
+fallback when no provider is registered).
+
+### Spec additions (normative)
+
+- **Section 9.3 Plugin reset primitive**. Defines
+  `NAC.reset(plugin_slug?)` resolution order:
+  1. Custom provider for the named plugin (registered via
+     `NAC.set_reset_provider(slug, fn)`) -- run it, emit
+     `nac:plugin:reset { plugin: <slug> }`.
+  2. No specific plugin -> every registered provider runs in
+     order, then a generic reset of the whole document, then a
+     final `nac:plugin:reset { plugin: '*' }`.
+  3. Specific plugin without provider -> generic reset scoped
+     to that plugin root.
+- **Generic reset rules** (normative). Without a custom
+  provider, the runtime MUST clear every
+  `[data-nac-role="field"]` (honouring `data-nac-default-value`
+  if declared), set every cleared field to
+  `data-nac-state="pristine"`, dispatch input + change events,
+  apply `data-nac-default-state` per element, hide every
+  `[data-nac-default-hidden]` region.
+- **`NacResetResult` shape**. `{ ok, plugin, source: 'custom'
+  | 'generic' | 'custom+generic', plugins?, error? }`.
+- **`nac:plugin:reset` event**. Bubbles + composed (per spec
+  7.4); detail `{ plugin, timestamp }`.
+- **NAC-3 compliance**: at NAC-3 `NAC.reset()` MUST exist, the
+  generic reset rules MUST work for any plugin without a
+  custom provider, and custom providers MUST emit
+  `nac:plugin:reset` on completion. NAC-1 / NAC-2 MAY expose
+  reset.
+
+### Reference runtime (`js/nac.js`)
+
+- New module-scope `_resetProviders` map keyed by plugin slug.
+- `NAC.set_reset_provider(slug, fn)` registers a provider.
+- `NAC.reset(plugin_slug?)` async function resolves to a
+  `NacResetResult`.
+- `_genericReset(slug?)` walks the plugin root (or the whole
+  document) and applies the four generic-reset rules.
+- `_emitResetEvent(slug)` fires `nac:plugin:reset` with the
+  v1.4.1 composed:true scoping rules.
+- Version constant bumped to `1.6.0`. Spec version `1.6`.
+
+### Reference demo (`yujin.app/nac-spec/`)
+
+- example.js registers a custom reset provider for
+  `example_demo` that closes the secret modal, collapses every
+  expanded sumi-e icon, clears the four text inputs, resets the
+  mood select + spread checkbox, returns the volume slider to
+  50, restores the cities card if minimised, switches back to
+  the first tab, collapses any expanded accordion sections,
+  removes table sort indicators, and smooth-scrolls to the top
+  of the page.
+- The autopilot now calls `NAC.reset('example_demo')` as its
+  FIRST step before the audio prewarm + the rest of the seq.
+  An 800ms pause after the reset settles the smooth-scroll +
+  card restore + tab swap before the demo begins. Repeatable
+  autopilot runs no longer compound state from the prior run.
+- New SECTION_I18N key `auto.reset` (10 locales).
+
+### Documentation
+
+- `docs/API_REFERENCE.md` adds rows for `reset`, and
+  `set_reset_provider`. NAC.version constant updated to
+  `1.6.0`. Version history block notes 1.6.0.
+- README badge bumps v1.5 -> v1.6, with the reset addition
+  called out in the lead block.
+- MANUAL adds a "Plugin reset" section pointing at spec 9.3.
+- AI_INSTRUCTIONS last-updated bumped 1.5.4 -> 1.6.0 with the
+  reset primitive in the timeline.
+
 ## [1.5.4] - 2026-05-06
 
 Demo-only patch release. Reference runtime contract is unchanged

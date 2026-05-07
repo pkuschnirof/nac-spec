@@ -6,22 +6,27 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.5](https://img.shields.io/badge/NAC-v1.5-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.6](https://img.shields.io/badge/NAC-v1.6-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v1.5 (2026-05-06).
-**Reference runtime:** v1.5.4 (`NAC.version === '1.5.4'`).
-**Strict superset of:** v1.4, v1.3, v1.2, v1.1, v1.0.
-**What v1.5 adds (informative):** the canonical NAC + LLM
-agentic loop pattern (spec sec 9.1, 9.2). The runtime contract
-of attributes + events + driver API is byte-identical to v1.4.2;
-v1.5.x is a spec + reference-demo release. v1.5.1 then added
-cross-plugin uniqueness audit (`NAC.validate_global()`, spec
-P7.1). v1.5.4 closes the demo's exhaustive 10-locale i18n
-sweep so the system disappears for non-English users too. Full
-diff in [`CHANGELOG.md`](CHANGELOG.md).
+**Spec version:** v1.6 (2026-05-06).
+**Reference runtime:** v1.6.0 (`NAC.version === '1.6.0'`).
+**Strict superset of:** v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
+**What v1.6 adds (normative):** the `NAC.reset()` plugin reset
+primitive (spec section 9.3). An operator can ask any plugin --
+or the whole page -- to return to its declared initial state;
+plugins declare their custom reset semantics via
+`NAC.set_reset_provider(slug, fn)`. New `nac:plugin:reset`
+event on the lifecycle bus. Generic fallback walks the plugin
+root and clears every `[data-nac-role="field"]` /
+`[data-nac-default-state]` / `[data-nac-default-hidden]`.
+**v1.5.x recap:** v1.5.0 added the canonical NAC + LLM agentic
+loop pattern (spec sec 9.1, 9.2). v1.5.1 added cross-plugin
+uniqueness audit (`NAC.validate_global()`, spec P7.1). v1.5.4
+shipped the exhaustive 10-locale i18n sweep on the reference
+demo. Full diff in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -609,14 +614,14 @@ python nac_runner.py --target http://localhost:3000 --plugin contact_form
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.5 / runtime v1.5.4. 2026. MIT License.
+Spec v1.6 / runtime v1.6.0. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```
 
 ## Status
 
-NAC v1.5 is **stable**. The first production deployment ships
+NAC v1.6 is **stable**. The first production deployment ships
 with the Yujin CRM (yujin.app) Control Center plugins; the
 public reference demo at https://yujin.app/nac-spec/example.php
 exercises every primitive in the spec (v1.0 piano + modal +

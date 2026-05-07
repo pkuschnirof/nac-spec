@@ -303,4 +303,5 @@ call. The RPA win is a side effect.
 - `spec/NAC-v1.0.md` -- the normative document, including the
   v1.1 widget extensions, v1.2 discovery + window chrome,
   v1.3 sixteen common UI primitives, v1.4 navigation +
-  ordering primitives, and v1.5 NAC + LLM agentic loop.
+  ordering primitives, v1.5 NAC + LLM agentic loop, and
+  v1.6 plugin reset primitive.
