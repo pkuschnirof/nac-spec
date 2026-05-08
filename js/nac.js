@@ -4046,9 +4046,12 @@
     /* validate() */
     const t2 = _now(); validate('__nac_perf_probe__'); const validate_ms = _now() - t2;
     /* validate_event_conformance: zero driver -- measures
-       runtime overhead only. */
+       runtime overhead only (subscribe + capture-zero + iterate
+       captured + check shapes + cleanup). The 1ms timeout means
+       we wait ~1ms instead of 100ms; what we measure is the
+       overhead, not the capture window. */
     const t3 = _now(); await validate_event_conformance(undefined,
-      { timeout_ms: 100 }); const conformance_ms = _now() - t3;
+      { timeout_ms: 1 }); const conformance_ms = _now() - t3;
     /* _emit avg: 100 emits, then divide. */
     const t4 = _now();
     for (let i = 0; i < 100; i++) {
