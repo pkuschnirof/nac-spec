@@ -295,6 +295,37 @@ benefits in practice is broader: it includes everyone for whom
 the human-default UI is a barrier, and a deterministic
 operable contract is an accommodation.
 
+### How each a11y_hint connects to a disability population
+
+`data-nac-a11y-hint` (sec 3.1, v1.8.0+) is not a generic UX
+risk vocabulary. Each tag was added in response to a specific
+population whose access to delegated UI work depends on the
+hint actually reaching their assistive software. The mapping:
+
+| Hint                       | Population the tag is for                                            |
+|----------------------------|----------------------------------------------------------------------|
+| `irreversible`             | Users with cognitive disability, dementia, attention variation. They cannot retrace a misclick. The hint exists so a screen reader announces the consequence BEFORE focus lands; an AI agent interposes confirmation. Without it, "delete invoice" is one tap of distance from "lose 6 hours of work". |
+| `requires_confirmation`    | Users with motor disability operating via voice ("click delete"). The hint tells the voice tool to insert a verbal "say confirm" step instead of dispatching on first utterance. Without it, every misheard utterance is a destructive action. |
+| `dangerous`                | Users with chronic illness or executive-function variation who delegate multi-step work. The hint signals "this step needs full attention" so the AI agent stops batching and surfaces the action discretely. |
+| `long_running`             | Users on screen readers who lose context if a quick click triggers a 30-second wait. The hint lets the SR announce "may take a while" so the user does not assume the system froze. |
+| `costly`                   | Users with chronic illness or limited capacity who delegate non-trivial work to an AI agent. The hint flags actions that consume their plan budget so the agent can ask before burning it. |
+| `external_side_effect`     | Users with cognitive variation whose memory of "what the assistant just did on my behalf" matters. The hint surfaces "this action sent an email / called a webhook" so the audit trail is comprehensible after the fact. |
+| `data_loss`                | Users with executive-function variation who batch-delegate. The hint distinguishes "remove from view" (recoverable) from "overwrite with no backup" (catastrophic) so the AI agent treats each correctly. |
+| `session_boundary` (v1.9)  | Users whose session state is load-bearing for their access (saved progress in a long form, captured authentication for a multi-tab flow). The hint warns "this action will end the session" so the AI agent confirms before invalidating their context. |
+| `audit_required` (v1.9)    | Users in regulated environments (healthcare, finance, legal) whose actions MUST survive compliance review. The hint tells the audit pipeline to retain the action record + ProvenanceBlock + confirmation chain regardless of the standard data-retention policy. |
+
+The vocabulary does not exist for "developers who want their
+UI to feel responsible". It exists for users whose access to
+the system depends on the assistive software hearing the
+right cue at the right moment. Every tag traces back to a
+specific class of human who, without the hint, makes
+irreversible mistakes the UI gives them no defence against.
+
+This is the test for adding a new hint to the vocabulary: does
+it correspond to a population whose access fails when the tag
+is absent? If yes, propose it. If it is just "another way to
+tag a button", it does not belong in the spec.
+
 ---
 
 ## Closing thought

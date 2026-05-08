@@ -316,13 +316,31 @@
     /* reason = 'disabled' | 'hidden' | 'not_found' | 'ambiguous' |
                 'drag_type_mismatch' | 'invalid' */
     /* message = optional human-readable string */
+    /* v1.9.0 (sec 6.2.30): pre-populate recommended_remediation
+       so consumers see the canonical next-step without each one
+       implementing the table. */
+    if (!detail.recommended_remediation && detail.reason) {
+      detail.recommended_remediation = _remediationByReasonLookup(detail.reason);
+    }
     _emit('nac:command:rejected', _withDefaultSource(detail, 'script'));
   }
   function _emitCommandFailed(detail) {
     detail = detail || {};
     /* Same shape as rejected, plus error_message + optional
        error_stack snippet. */
+    if (!detail.recommended_remediation && detail.reason) {
+      detail.recommended_remediation = _remediationByReasonLookup(detail.reason);
+    }
     _emit('nac:command:failed', _withDefaultSource(detail, 'script'));
+  }
+  /* Forward-declared lookup; populated when _REMEDIATION_BY_REASON
+     loads later in the file. Keeping the helper inline so emit
+     sites do not need to know the table. */
+  function _remediationByReasonLookup(reason) {
+    if (typeof _REMEDIATION_BY_REASON === 'undefined') {
+      return 'escalate_to_human';
+    }
+    return _REMEDIATION_BY_REASON[reason] || 'escalate_to_human';
   }
 
   /* Spec sec 6.2 ProvenanceBlock: every emitted event MAY carry
@@ -1742,10 +1760,17 @@
             'attribute (sec 3.1, v1.9). Format: ' +
             '"<category>[;remediate-by=YYYY-MM-DD][;tracker=<id>]"');
         } else {
-          /* Optional: parse remediate-by and warn if past. */
-          var m = /remediate-by=(\d{4}-\d{2}-\d{2})/.exec(reason);
-          if (m) {
-            var dueDate = m[1];
+          /* v1.9.0: enforce remediate-by presence (warn). */
+          var dateMatch = /remediate-by=(\d{4}-\d{2}-\d{2})/.exec(reason);
+          if (!dateMatch) {
+            pushErr('warn', 'skip_no_remediate_date',
+              skipEl.getAttribute('data-nac-id'),
+              'data-nac-skip-reason has a category but no ' +
+              'remediate-by=YYYY-MM-DD. Without a target date the ' +
+              'skip drifts to "permanent escape hatch". Add a ' +
+              'remediate-by token or remove the skip.');
+          } else {
+            var dueDate = dateMatch[1];
             var todayISO = new Date().toISOString().slice(0, 10);
             if (dueDate < todayISO) {
               pushErr('warn', 'skip_remediation_overdue',
@@ -4188,6 +4213,94 @@
     return typeof a.undo_window_ms === 'number' ? a.undo_window_ms : null;
   }
 
+  /* ---------- v1.9.0: provenance authenticity (sec 6.2.1) ------- */
+
+  /* NAC.sign_provenance(detail, secret) -> Promise<detail>
+     Returns a clone of detail with detail.source.signature set to
+     hex-encoded HMAC-SHA256 over the canonical provenance fields
+     (type, id, tool, ts). The secret is per-tenant; key
+     management is the host's responsibility (the spec MAY define
+     rotation/storage in a future revision). Optional in v1.9
+     (advisory); MAY become required at v2.x for high-trust
+     tenants. Microsoft Copilot v1.8 finding. */
+  async function sign_provenance(detail, secret) {
+    if (!detail || !detail.source) return detail;
+    const sig = await _hmacHex(secret, _provenanceCanonicalString(detail.source));
+    detail = Object.assign({}, detail);
+    detail.source = Object.assign({}, detail.source, { signature: sig });
+    return detail;
+  }
+
+  /* NAC.verify_provenance(detail, secret) -> Promise<boolean>
+     Returns true if detail.source.signature matches the HMAC of
+     the canonical provenance fields. */
+  async function verify_provenance(detail, secret) {
+    if (!detail || !detail.source || !detail.source.signature) return false;
+    const provided = detail.source.signature;
+    const expected = await _hmacHex(secret, _provenanceCanonicalString(detail.source));
+    /* Constant-time compare. */
+    if (provided.length !== expected.length) return false;
+    let diff = 0;
+    for (let i = 0; i < provided.length; i++) {
+      diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+    }
+    return diff === 0;
+  }
+
+  /* Canonical string serialization for HMAC input. Sorted keys
+     so {type,tool,id} and {tool,id,type} produce the same input. */
+  function _provenanceCanonicalString(source) {
+    const ordered = {};
+    ['type', 'id', 'tool', 'ts'].forEach(function (k) {
+      if (source[k] !== undefined && source[k] !== null) ordered[k] = source[k];
+    });
+    return JSON.stringify(ordered);
+  }
+
+  /* HMAC-SHA256 helper using SubtleCrypto. Returns hex string. */
+  async function _hmacHex(secret, message) {
+    if (typeof crypto === 'undefined' || !crypto.subtle) {
+      throw NacError('crypto_unavailable',
+        'SubtleCrypto API not available; cannot sign provenance');
+    }
+    const enc = new TextEncoder();
+    const keyData = enc.encode(secret);
+    const msgData = enc.encode(message);
+    const key = await crypto.subtle.importKey(
+      'raw', keyData, { name: 'HMAC', hash: 'SHA-256' },
+      false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, msgData);
+    const arr = new Uint8Array(sig);
+    let hex = '';
+    for (let i = 0; i < arr.length; i++) {
+      const b = arr[i].toString(16);
+      hex += b.length === 1 ? '0' + b : b;
+    }
+    return hex;
+  }
+
+  /* ---------- v1.9.0: recommended_remediation (sec 6.2.30) ----- */
+
+  const _REMEDIATION_BY_REASON = {
+    'not_found':            'requery_collection',
+    'disabled':             'inform_user_unavailable',
+    'hidden':               'inform_user_unavailable',
+    'ambiguous':            'disambiguate',
+    'role_mismatch':        'report_bug',
+    'drag_type_mismatch':   'pick_compatible_target',
+    'aria_busy':            'retry_after:1000ms',
+    'inert':                'inform_user_unavailable',
+    'readonly':             'inform_user_readonly',
+    'user_cancelled':       'accept_decision',
+    'timeout':              'retry_with_backoff',
+    'policy_blocked':       'escalate_to_human',
+    'exception':            'retry_with_backoff',
+  };
+  function recommended_remediation(reason) {
+    if (!reason || typeof reason !== 'string') return 'escalate_to_human';
+    return _REMEDIATION_BY_REASON[reason] || 'escalate_to_human';
+  }
+
   /* ---------- v1.9.0: event replay buffer (sec 13.11) ----------- */
 
   /* NAC.replay_pending(buffer)
@@ -4351,6 +4464,11 @@
     /* v1.9.0 -- action undoable flag (sec 6.2.33) */
     action_undoable:             action_undoable,
     action_undo_window_ms:       action_undo_window_ms,
+    /* v1.9.0 -- provenance authenticity (sec 6.2.1) */
+    sign_provenance:             sign_provenance,
+    verify_provenance:           verify_provenance,
+    /* v1.9.0 -- recommended remediation (sec 6.2.30) */
+    recommended_remediation:     recommended_remediation,
     /* v1.2 -- error codes */
     errors: {
       RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',

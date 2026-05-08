@@ -1150,11 +1150,21 @@ flagged that without enforced justification, "skip" becomes a
 permanent escape hatch and brownfield apps stay non-compliant
 indefinitely.
 
+The validator MUST also emit `skip_no_remediate_date` (severity:
+`warn` at NAC-3, `info` at NAC-2) when `data-nac-skip-reason`
+is set but does NOT include a `remediate-by=YYYY-MM-DD` token.
+This second-level enforcement (added v1.9.0) exists so a team
+that adds a category but never commits to a removal date does
+not stay green forever -- the warning is a periodic nudge that
+the skip needs a deadline.
+
 Audits and CI tooling SHOULD report:
 - The total count of skip regions per page.
 - The count of skip regions whose `remediate-by` is past.
 - The count of skip regions per category (so teams see what
   they actually skip most).
+- The count of skip regions WITHOUT a `remediate-by` (so teams
+  see the long-tail of "we'll fix it eventually").
 
 This attribute exists because reviewers (DeepSeek, Microsoft
 Copilot, Mistral Le Chat) flagged sec 7.3.2's hard-error gate
@@ -1565,6 +1575,25 @@ interface ProvenanceBlock {
   // For 'agent': name + version of the tool.
   //   e.g. 'claude-code/0.2.4', 'voice-control/talon-1.6'.
   tool?: string;
+
+  // v1.9.0: parent ProvenanceBlock for nested delegation chains.
+  // Example: a browser extension delegates to a local orchestrator
+  // which delegates to a cloud agent. The cloud agent emits the
+  // event with type='agent', tool='claude-3.5', and parent points
+  // to the orchestrator's provenance, whose parent points to the
+  // extension. Recursion cap: spec recommends depth <= 5; runtime
+  // SHOULD warn beyond that. ChatGPT v1.8 finding.
+  parent?: ProvenanceBlock;
+
+  // v1.9.0: HMAC signature over the provenance fields. Lets an
+  // audit pipeline verify that 'tool: claude-3.5' is not forged
+  // by a different actor. Format: hex-encoded HMAC-SHA256 of
+  // JSON.stringify({type, id, tool, ts}) with a per-tenant
+  // shared secret. Helpers: NAC.sign_provenance(detail, secret)
+  // and NAC.verify_provenance(detail, secret). Optional in v1.9
+  // (advisory); MAY become required at v2.x for high-trust
+  // tenants. Microsoft Copilot v1.8 finding.
+  signature?: string;
 }
 
 interface NacEventBase {
@@ -2173,6 +2202,46 @@ emits exactly one terminal event: success on its role-specific
 event family, or `nac:command:rejected`, or `nac:command:failed`.
 A consumer that hears no event in the timeout window now has a
 genuine bug to chase, not a missing-emitter shrug.
+
+#### Recommended remediation by reason (v1.9.0, normative)
+
+For each `reason` value, the spec declares a canonical
+`recommended_remediation` so consumers (AI agents, voice tools,
+RPA bots) make consistent decisions across implementations.
+The runtime emits these events with the `recommended_remediation`
+field already populated; consumers MAY override based on host
+context but MUST NOT silently drop the recommendation.
+
+| Reason                    | Recommended remediation       | Meaning for the consumer                                                  |
+|---------------------------|-------------------------------|---------------------------------------------------------------------------|
+| `not_found`               | `requery_collection`          | The target ID does not resolve. AI: refresh `NAC.describe()` and retry.    |
+| `disabled`                | `inform_user_unavailable`     | UI explicitly disables the target. AI: tell the user the action is off.    |
+| `hidden`                  | `inform_user_unavailable`     | Target not visible. AI: same as disabled; do NOT silently retry.           |
+| `ambiguous`               | `disambiguate`                | Multiple matches. AI: ask the user to specify or restrict the search.      |
+| `role_mismatch`           | `report_bug`                  | Author error; the runtime should never drive this role this way.           |
+| `drag_type_mismatch`      | `pick_compatible_target`      | Source-type vs target-accept mismatch. AI: pick a target that accepts.     |
+| `aria_busy`               | `retry_after:1000ms`          | Target is mid-update. AI: poll and retry once aria-busy clears.            |
+| `inert`                   | `inform_user_unavailable`     | Target inside `inert` subtree. AI: not currently navigable.                |
+| `readonly`                | `inform_user_readonly`        | Field is readonly. AI: read the value but do not attempt to fill.          |
+| `user_cancelled`          | `accept_decision`             | User said no. AI: do NOT retry; surface the cancel reason.                 |
+| `timeout`                 | `retry_with_backoff`          | Confirmation expired. AI: re-request with a fresh confirm_id.              |
+| `policy_blocked`          | `escalate_to_human`           | Policy gate denied the action. AI: queue for human review; do not retry.   |
+| `exception`               | `retry_with_backoff`          | Unexpected throw. AI: retry once with backoff; escalate after.             |
+| `<custom>`                | `escalate_to_human`           | Unrecognised reason. Conservative default: surface to a human reviewer.    |
+
+The runtime helper:
+
+```typescript
+interface NAC {
+  // Returns the recommended remediation for a given reason
+  // (or 'escalate_to_human' for unknown reasons).
+  recommended_remediation(reason: string): string;
+}
+```
+
+Reviewer attribution: ChatGPT v1.8 finding ("the reason taxonomy
+is useful but mostly diagnostic. There is still no strong
+convention for recoverability or suggested next action").
 
 ### 6.2.31. Stable persistent IDs for paginated and virtualized lists (v1.8.0, normative)
 
