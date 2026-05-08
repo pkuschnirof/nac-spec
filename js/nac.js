@@ -455,7 +455,37 @@
     'costly':               'Triggers a billable side effect.',
     'external_side_effect': 'Affects external systems.',
     'data_loss':            'Replaces data without preservation.',
+    /* v1.9.0 vocabulary additions (sec 3.1, DeepSeek v1.8 finding). */
+    'session_boundary':     'This action ends the session.',
+    'audit_required':       'Action subject to compliance audit.',
   };
+
+  /* Spec sec 3.1 v1.9.0: hint priority ordering normative.
+     Highest priority first. Custom hints sort to the bottom
+     unless a host registers a custom priority via
+     NAC.set_hint_priority(). */
+  const _DEFAULT_HINT_PRIORITY = [
+    'audit_required', 'session_boundary',
+    'irreversible', 'data_loss', 'dangerous',
+    'external_side_effect', 'costly',
+    'requires_confirmation', 'long_running',
+  ];
+  let _hint_priority = _DEFAULT_HINT_PRIORITY.slice();
+  function set_hint_priority(arr) {
+    if (Array.isArray(arr) && arr.length > 0) _hint_priority = arr.slice();
+  }
+  function sort_hints_by_priority(hints) {
+    if (!Array.isArray(hints)) return [];
+    const known = []; const custom = [];
+    for (let i = 0; i < hints.length; i++) {
+      if (_hint_priority.indexOf(hints[i]) >= 0) known.push(hints[i]);
+      else custom.push(hints[i]);
+    }
+    known.sort(function (a, b) {
+      return _hint_priority.indexOf(a) - _hint_priority.indexOf(b);
+    });
+    return known.concat(custom);
+  }
   let _a11y_hint_localizer = null;
   function set_a11y_hint_localizer(fn) {
     _a11y_hint_localizer = (typeof fn === 'function') ? fn : null;
@@ -621,10 +651,79 @@
     } catch (e) { /* never block register() on the lint */ }
 
     _manifests[slug] = manifest;
+    /* v1.9.0 (sec 13.5): apply manifest.attention_profile preset.
+       Sets the matching CSS custom properties on the plugin root
+       so the focus pulse + section-visited highlight cascade only
+       to that plugin's surface. */
+    _applyAttentionProfile(slug, manifest.attention_profile);
     document.dispatchEvent(new CustomEvent('nac:registered', {
       detail: { plugin: slug, version: manifest.version },
     }));
     return true;
+  }
+
+  /* Spec sec 13.5 v1.9.0: attention profile presets. */
+  const _ATTENTION_PROFILES = {
+    'default': {
+      '--nac-focus-pulse-thickness': '3px',
+      '--nac-focus-pulse-duration':  '700ms',
+      '--nac-focus-pulse-color':     '#DC2626',
+      '--nac-focus-pulse-glow-radius': '18px',
+    },
+    'high_contrast': {
+      '--nac-focus-pulse-thickness': '5px',
+      '--nac-focus-pulse-duration':  '700ms',
+      '--nac-focus-pulse-color':     '#000000',
+      '--nac-focus-pulse-glow-radius': '26px',
+    },
+    'reduced_motion': {
+      '--nac-focus-pulse-thickness': '3px',
+      '--nac-focus-pulse-duration':  '0ms',
+      '--nac-focus-pulse-color':     '#DC2626',
+      '--nac-focus-pulse-glow-radius': '0',
+    },
+    'extended_pulse': {
+      '--nac-focus-pulse-thickness': '4px',
+      '--nac-focus-pulse-duration':  '1500ms',
+      '--nac-focus-pulse-color':     '#DC2626',
+      '--nac-focus-pulse-glow-radius': '24px',
+    },
+    'maximum_salience': {
+      '--nac-focus-pulse-thickness': '5px',
+      '--nac-focus-pulse-duration':  '1500ms',
+      '--nac-focus-pulse-color':     '#000000',
+      '--nac-focus-pulse-glow-radius': '32px',
+    },
+  };
+  function _applyAttentionProfile(slug, profile) {
+    if (!profile || profile === 'default') return;
+    const map = _ATTENTION_PROFILES[profile];
+    if (!map) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[NAC] attention_profile_unknown: ' + profile +
+          ' is not a recognised preset. Expected one of: default, ' +
+          'high_contrast, reduced_motion, extended_pulse, maximum_salience.');
+      }
+      return;
+    }
+    /* Wait for the plugin root to mount, then apply.
+       Some plugins register before their DOM is mounted. */
+    function apply() {
+      const root = document.querySelector('[data-nac-plugin="' + slug + '"]');
+      if (!root) {
+        /* Try once after DOMContentLoaded if root is not yet in DOM. */
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', apply, { once: true });
+        }
+        return;
+      }
+      for (const k in map) {
+        if (Object.prototype.hasOwnProperty.call(map, k)) {
+          root.style.setProperty(k, map[k]);
+        }
+      }
+    }
+    apply();
   }
 
   /* Helper for the duplicate-id lint and validate_global().
@@ -2587,6 +2686,55 @@
         }));
       }
     }
+    /* v1.9.0 (DeepSeek v1.8 finding): if this event is a legacy
+       alias whose canonical pair did NOT fire in the same task
+       tick, emit a console.warn so authors notice incomplete
+       migrations. Deduped per (legacy_name, canonical_name) per
+       session. */
+    _checkLegacyOnlyEmit(name);
+  }
+
+  /* Map of legacy event name -> canonical event name. When a
+     legacy fires, we wait one microtask and check if the canonical
+     fired too. */
+  const _LEGACY_TO_CANONICAL = {
+    'nac:section:expanded':  'nac:accordion:expanded',
+    'nac:section:collapsed': 'nac:accordion:collapsed',
+  };
+  const _legacy_pending = Object.create(null);
+  const _legacy_warned = Object.create(null);
+  function _checkLegacyOnlyEmit(name) {
+    const canonical = _LEGACY_TO_CANONICAL[name];
+    if (canonical) {
+      /* Schedule a check at the end of the current macrotask. If
+         the canonical fired before this check runs, the pair was
+         dual-emit; nothing to warn. If not, the legacy fired alone. */
+      const key = name + '::' + canonical;
+      _legacy_pending[name] = (_legacy_pending[name] || 0) + 1;
+      setTimeout(function () {
+        const pending = _legacy_pending[name] || 0;
+        const canonicalSeen = _legacy_pending['_seen_' + canonical] || 0;
+        _legacy_pending[name] = 0;
+        _legacy_pending['_seen_' + canonical] = 0;
+        if (pending > canonicalSeen && !_legacy_warned[key]) {
+          _legacy_warned[key] = true;
+          if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[NAC] legacy_event_without_canonical: ' +
+              name + ' fired without ' + canonical + ' in the same tick. ' +
+              'Use NAC.emit_dual(canonical, legacy, detail) so both fire ' +
+              'and v2.0-ready consumers see the canonical name. Will be ' +
+              'enforced as a hard error in v2.0.');
+          }
+        }
+      }, 0);
+    }
+    /* Track canonical sightings so the legacy check above can dedupe. */
+    for (const legacyName in _LEGACY_TO_CANONICAL) {
+      if (_LEGACY_TO_CANONICAL[legacyName] === name) {
+        _legacy_pending['_seen_' + name] = (_legacy_pending['_seen_' + name] || 0) + 1;
+        break;
+      }
+    }
   }
   function _byId(id) {
     return document.querySelector('[data-nac-id="' + id + '"]');
@@ -3934,9 +4082,30 @@
     }
     hints = hints || [];
     const locale = (document.documentElement.lang || 'en').split('-')[0];
-    const hint_text = opts.hint_text ||
-      hints.map(function (t) { return _localizeHintTag(t, locale); }).join(' ') ||
-      'Confirm this action?';
+    /* v1.9.0 sec 3.1: data-nac-confirmation-message override.
+       Host can declare per-element confirmation text (literal or
+       i18n key). Beats the auto-generated hint vocabulary text. */
+    let hint_text = opts.hint_text;
+    if (!hint_text && el) {
+      const cm = el.getAttribute('data-nac-confirmation-message');
+      if (cm && cm.length) {
+        if (cm.indexOf('i18n:') === 0 && _a11y_hint_localizer) {
+          /* Re-use the localizer hook with the i18n key as tag. */
+          try {
+            const v = _a11y_hint_localizer(cm.slice(5), locale);
+            if (typeof v === 'string' && v) hint_text = v;
+          } catch (e) { /* fall through */ }
+        }
+        if (!hint_text) hint_text = cm.indexOf('i18n:') === 0 ? cm.slice(5) : cm;
+      }
+    }
+    if (!hint_text) {
+      /* v1.9.0: walk hints in normative priority order so the
+         strongest tag leads the interposition text. */
+      const sorted = sort_hints_by_priority(hints);
+      hint_text = sorted.map(function (t) { return _localizeHintTag(t, locale); }).join(' ');
+    }
+    if (!hint_text) hint_text = 'Confirm this action?';
     const verb = (el && el.getAttribute('data-nac-action')) || 'apply';
     const confirm_id = _newConfirmId();
     const pluginRoot = el && el.closest('[data-nac-plugin]');
@@ -4168,6 +4337,9 @@
     validate_event_conformance:  validate_event_conformance,
     /* v1.9.0 -- a11y_hint localizer override */
     set_a11y_hint_localizer:     set_a11y_hint_localizer,
+    /* v1.9.0 -- hint priority ordering (sec 3.1) */
+    sort_hints_by_priority:      sort_hints_by_priority,
+    set_hint_priority:           set_hint_priority,
     /* v1.9.0 -- test harness (sec 13.10) + event replay (sec 13.11) */
     assert_event_fired:          assert_event_fired,
     assert_event_count:          assert_event_count,

@@ -1175,12 +1175,14 @@ Recognised vocabulary (extensible by plugins):
 | Tag                       | Meaning                                              |
 |---------------------------|------------------------------------------------------|
 | `irreversible`            | Cannot be undone (delete, finalize).                 |
-| `requires_confirmation`   | UI flow expects a second confirm step.               |
-| `dangerous`               | Equivalent to "are you sure?" weight in HCI terms.   |
-| `long_running`            | Expected to take >2s; agent SHOULD inform user.      |
-| `costly`                  | Triggers a billable side effect (API call, doc gen). |
-| `external_side_effect`    | Touches systems outside this app (email, webhook).   |
 | `data_loss`               | Replaces data without preservation.                  |
+| `dangerous`               | Equivalent to "are you sure?" weight in HCI terms.   |
+| `external_side_effect`    | Touches systems outside this app (email, webhook).   |
+| `costly`                  | Triggers a billable side effect (API call, doc gen). |
+| `requires_confirmation`   | UI flow expects a second confirm step.               |
+| `long_running`            | Expected to take >2s; agent SHOULD inform user.      |
+| `session_boundary`        | Action ends the session (logout, tenant cut-over, sign-out). |
+| `audit_required`          | Action MUST survive compliance review (signed, logged, retained). |
 
 ```html
 <button data-nac-id="invoice.delete"
@@ -1271,6 +1273,87 @@ The bridge runs once at install + on every mutation that
 touches `data-nac-a11y-hint`. Without it, screen-reader users
 would never hear hints regardless of how many AI agents
 respect them.
+
+#### Priority ordering (normative, v1.9.0+)
+
+When an element carries multiple hint tags, consumers MUST
+interpose using the strongest one as primary and MAY mention
+the others as context. The normative order, highest first:
+
+1. `audit_required`
+2. `session_boundary`
+3. `irreversible`
+4. `data_loss`
+5. `dangerous`
+6. `external_side_effect`
+7. `costly`
+8. `requires_confirmation`
+9. `long_running`
+
+A button with `irreversible|requires_confirmation|data_loss`
+opens an interposition that leads with "This action cannot be
+undone" rather than "Confirmation will be required". The
+runtime exposes `NAC.sort_hints_by_priority(hints)` that
+returns the array sorted high-first; consumer-side localization
+walks the sorted result.
+
+The order is normative because v1.8 reviewers (Mistral, DeepSeek)
+flagged that "AI agent picks first hint in array" produces
+different interposition behaviour across implementations -- a
+button that the host happens to write as `requires_confirmation|
+irreversible` would interpose on the wrong tag. Fixing the
+order at spec level removes that variance.
+
+#### Custom hint vocabulary
+
+Hosts MAY add custom hints (e.g., `compliance_review`,
+`signs_legal_doc`) by including them in the pipe-separated
+attribute alongside the recognised set. The runtime parses
+custom tags into the `a11y_hint` array unchanged; the ARIA
+bridge falls back to the raw tag text when the localizer has
+no entry. Plugin authors who introduce a custom hint MUST
+document it in the plugin manifest's `label_i18n.a11y_hint.<tag>`
+entry so consumers can localise. Custom hints are sorted at the
+bottom of the priority order (after `long_running`); to override
+this, hosts can register a custom priority via
+`NAC.set_hint_priority(['custom_tag', 'audit_required', ...])`.
+
+### data-nac-confirmation-message
+
+Optional override for the interposition text used by
+`NAC.confirm_action()`. When present, the runtime uses this
+attribute's value (or its `i18n:` reference) instead of the
+auto-generated text from the localized hint vocabulary.
+
+```html
+<button data-nac-id="invoice.delete"
+        data-nac-role="action" data-nac-action="delete"
+        data-nac-a11y-hint="irreversible|requires_confirmation"
+        data-nac-confirmation-message="Eliminar factura permanentemente?">
+  Delete invoice
+</button>
+```
+
+Or, with an i18n key:
+
+```html
+<button data-nac-id="invoice.delete"
+        data-nac-confirmation-message="i18n:invoice.delete.confirm">
+  Delete invoice
+</button>
+```
+
+When the value starts with `i18n:`, the runtime resolves the
+remainder against `NAC.set_a11y_hint_localizer(fn)` (passing
+the key as `tag`) and uses the result. This lets hosts that
+already maintain a translation catalog reuse it without writing
+strings inline.
+
+The attribute responds to Grok's v1.8 finding that auto-generated
+hint text is too generic for high-stakes domain actions ("This
+action cannot be undone" vs "Eliminar factura #2026-04223 sin
+recuperacion?"). Both work; the second produces meaningfully
+better confirmation UX for a domain user.
 
 ### data-nac-braille-label
 
@@ -2985,19 +3068,39 @@ the cascade):
   /* MUST honour the user's reduced-motion preference. */
   [data-nac-focus-pulse="1"] { animation: none; }
 }
+
+@media (prefers-contrast: more) {
+  /* v1.9.0: REQUIRED at NAC-3. When the OS reports
+     prefers-contrast: more, the focus pulse defaults
+     are too subtle for low-vision users on high-contrast
+     themes. Override to a thicker, darker outline + larger
+     glow so the cue stays visible at 4.5:1 contrast against
+     light AND dark backgrounds. Hosts MAY further customise
+     the values; the override block MUST exist. */
+  :root {
+    --nac-focus-pulse-color: #000000;
+    --nac-focus-pulse-thickness: 5px;
+    --nac-focus-pulse-glow-radius: 26px;
+    --nac-focus-pulse-intensity: 1;
+    --nac-section-visited-color: #000000;
+  }
+}
 ```
 
 A host targeting users with ADHD or chronic-pain
 variability MAY raise `--nac-focus-pulse-thickness` to `5px`
 and `--nac-focus-pulse-duration` to `1500ms` so the cue is
-more salient, OR add an audio cue via a manifest-declared
-plugin attention profile (informative; not yet normative).
+more salient, OR declare a manifest attention profile (sec
+13.5 v1.9.0+) that automatically applies a recognised preset.
 
 **Why this exists.** v1.7 peer reviewers (Mistral, Grok)
 flagged that the default pulse was too subtle to serve
-attention-sensitive populations. v1.8 makes the parameters
-public and configurable, with reduced-motion respect as a
-non-negotiable.
+attention-sensitive populations. v1.8 made the parameters
+public and configurable, with reduced-motion respect as
+non-negotiable. v1.9 adds the `prefers-contrast: more`
+media query because DeepSeek's v1.8 review noted the
+focus pulse was invisible in OS-level high-contrast themes,
+which is the population that needs it most.
 
 ---
 
@@ -3726,10 +3829,41 @@ interface NacManifest {
     nac_id: string;          // the region where notifications surface
     severities: Array<'info' | 'success' | 'warning' | 'error'>;
   };
+
+  // v1.9.0: attention profile preset. When the manifest
+  // declares one, the runtime applies the matching CSS custom
+  // property overrides (sec 7.6) at register time. Hosts may
+  // also set custom properties directly; the manifest preset
+  // is a convenience for accessibility-tuned plugins.
+  attention_profile?:
+    'default' |          // no overrides (the v1.8 baseline)
+    'high_contrast' |    // dark thick outline, large glow
+    'reduced_motion' |   // animation: none on the pulse
+    'extended_pulse' |   // pulse_duration 1500ms, larger glow
+    'maximum_salience';  // all of the above (e.g. for ADHD-focused plugin)
 }
 ```
 
 A NAC-1.0 manifest without these fields is valid as NAC-1.1.
+
+When the runtime sees an `attention_profile` field on register,
+it sets the matching CSS custom properties on the plugin root
+element so they cascade only to that plugin's surface (other
+plugins keep the page default). Profile bindings:
+
+| Profile             | --nac-focus-pulse-thickness | --nac-focus-pulse-duration | --nac-focus-pulse-color | --nac-focus-pulse-glow-radius |
+|---------------------|-----------------------------|-----------------------------|--------------------------|-------------------------------|
+| `default`           | 3px                         | 700ms                       | #DC2626                  | 18px                          |
+| `high_contrast`     | 5px                         | 700ms                       | #000000                  | 26px                          |
+| `reduced_motion`    | 3px                         | 0ms                         | #DC2626                  | 0                             |
+| `extended_pulse`    | 4px                         | 1500ms                      | #DC2626                  | 24px                          |
+| `maximum_salience`  | 5px                         | 1500ms                      | #000000                  | 32px                          |
+
+This responds to Mistral + Grok + Copilot v1.8 finding that
+attention-sensitive populations need preset switches without
+forking the runtime. Plugin authors targeting those populations
+declare one line in the manifest and inherit the right cue
+intensity automatically.
 
 ### 13.6. State extensions
 
