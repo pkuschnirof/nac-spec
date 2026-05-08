@@ -22,6 +22,100 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [1.9.0] - 2026-05-08
+
+MINOR release. The v2.0 patch round closing the
+should-land-before-2.0 gaps the five-AI panel of v1.8 (Microsoft
+Copilot, DeepSeek, Mistral Le Chat, Grok, ChatGPT) flagged.
+Strict superset of v1.8.0 -- every v1.8 plugin remains valid.
+
+### Spec
+
+- **Sec 3.1** `data-nac-skip-reason` REQUIRED when
+  `data-nac-validate="skip"` is set. Format:
+  `<category>[;remediate-by=YYYY-MM-DD][;tracker=<id>]`. Categories:
+  `third_party_widget`, `legacy_unmodifiable`, `wip_remediation`,
+  `closed_shadow_root`, `experimental`. Closes the brownfield
+  footgun risk Mistral / Copilot / DeepSeek flagged in v1.8.
+- **Sec 3.1** ARIA bridge for `data-nac-a11y-hint`. The runtime
+  mounts one hidden `aria-live="polite"` region per page and
+  appends per-element hint text via `aria-describedby`. Screen
+  readers consume hints today, without waiting for vendor
+  support. Mistral v1.8 finding.
+- **Sec 3.1** NEW `data-nac-braille-label` attribute for
+  refreshable braille displays. Surfaced on
+  `NAC.describe()`/`find()` as `braille_label`. DeepSeek v1.8
+  finding (deaf-blind population was under-served).
+- **Sec 6.2.27** Self-test enforces ProvenanceBlock presence.
+  `validate_event_conformance` now fails when a captured event
+  detail lacks `source.type` set to a valid value
+  (`'user' | 'agent' | 'script'`). `check_canonical_shape` does
+  the same. Mistral + Copilot v1.8 finding.
+- **Sec 6.2.30** Reason taxonomy on `nac:command:rejected`
+  extended with `aria_busy`, `inert`, `readonly`.
+- **Sec 7.3.2** Drift tolerance window: validator defers
+  `aria_nac_state_mismatch` evaluation by 200 ms (configurable)
+  so async hydration on React 18 / Vue 3 / Svelte 5 does not
+  trigger false-positive failures. DeepSeek v1.8 finding.
+- **Sec 7.3.3** NEW: normative ARIA-to-NAC preflight mapping
+  table. `aria-disabled`, `aria-busy`, `aria-hidden`,
+  `aria-readonly`, `inert` reject before invocation with the
+  matching reason on `nac:command:rejected`. Copilot v1.8
+  finding.
+- **Sec 7.3.4** NEW: worked ARIA + NAC coexistence examples for
+  combobox, modal dialog, virtualized datagrid, accordion, tabs.
+
+### Runtime (`js/nac.js`)
+
+- Bumped to `1.9.0`; `spec_version` to `1.9`.
+- `_ariaPreflight(el, kind)` walks ancestors for `inert` /
+  `aria-disabled`, checks the target itself for `aria-busy` /
+  `aria-readonly`. `click()` and `fill()` invoke it before the
+  host handler runs and route rejections through
+  `_emitCommandRejected`.
+- `_dragTypesCompatible` now case-insensitive + whitespace-trimmed
+  (DeepSeek v1.8 finding).
+- A11y hint ARIA bridge: `_ensureHintRegion` mounts the hidden
+  live region; `_bridgeOneA11yHint` appends per-element hint
+  text + `aria-describedby`; `_installA11yHintBridge` runs once
+  at install + observes mutations.
+- `_localizeHintTag` with English defaults +
+  `NAC.set_a11y_hint_localizer(fn)` hook.
+- `_serializeElement` (`describe()` / `find()` output) gains
+  `braille_label`.
+- `check_canonical_shape` requires `source.type` to be one of
+  `'user'`, `'agent'`, `'script'`.
+- `validate()` emits `skip_without_reason` (error at NAC-3) and
+  `skip_remediation_overdue` (warn) findings.
+- New public API: `NAC.set_a11y_hint_localizer(fn)`.
+
+### Docs
+
+- `docs/ROADMAP.md` (NEW) -- public roadmap with three horizons
+  plus a Yujin Framework section covering scope, two-license
+  model (purchased bundles vs tenant-developed catalogues),
+  legal framework (MSA + deslinde de responsabilidades), and
+  staggered release coordination with NAC v2.0.
+- `docs/AUTHORING_PATTERNS.md` (NEW) -- worked patterns for ARIA
+  + NAC coexistence, skip-reason enforcement (right way / wrong
+  way / audit-friendly format), hint escalation semantics per
+  consumer type (voice control / screen readers / AI agents /
+  RPA bots), localisation hook, custom hints.
+- README, AI_INSTRUCTIONS, MANUAL, API_REFERENCE, IMPACT_TESTING
+  bumped from v1.8.0 -> v1.9.0 with new "What v1.9.0 adds"
+  sections.
+
+### Reviewer attribution
+
+- skip-reason requirement: Mistral, Microsoft Copilot, DeepSeek.
+- ARIA bridge for a11y_hint: Mistral.
+- braille label: DeepSeek (underserved population).
+- ProvenanceBlock conformance enforcement: Mistral, Microsoft
+  Copilot.
+- ARIA preflight + mapping table: Microsoft Copilot, DeepSeek.
+- Drift tolerance window: DeepSeek.
+- Drag-type case-insensitive: DeepSeek.
+
 ## [1.8.0] - 2026-05-07
 
 MINOR release. Lands every action item from the four-AI peer

@@ -6,14 +6,52 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.8.0](https://img.shields.io/badge/NAC-v1.8.0-violet.svg)](spec/NAC-v1.0.md)
+[![NAC v1.9.0](https://img.shields.io/badge/NAC-v1.9.0-violet.svg)](spec/NAC-v1.0.md)
 [![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v1.8.0 (2026-05-07).
-**Reference runtime:** v1.8.0 (`NAC.version === '1.8.0'`).
-**Strict superset of:** v1.7, v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
+**Spec version:** v1.9.0 (2026-05-08).
+**Reference runtime:** v1.9.0 (`NAC.version === '1.9.0'`).
+**Strict superset of:** v1.8, v1.7, v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
+**What v1.9.0 adds (the v2.0 patch round):**
+- **`data-nac-skip-reason` REQUIRED** when `data-nac-validate=
+  "skip"` is set (sec 3.1). Format:
+  `<category>[;remediate-by=YYYY-MM-DD][;tracker=<id>]`. Validator
+  emits `skip_without_reason` (error at NAC-3) and
+  `skip_remediation_overdue` (warn) so brownfield skip regions
+  cannot become permanent compliance theatre.
+- **ARIA bridge for `data-nac-a11y-hint`** (sec 3.1). Runtime mounts
+  a hidden `aria-live` region and appends per-element hint text via
+  `aria-describedby` so screen readers consume hints today, without
+  waiting for vendor support. `NAC.set_a11y_hint_localizer(fn)`
+  hook for hosts.
+- **`data-nac-braille-label`** (sec 3.1, NEW) for refreshable
+  braille displays. Surfaced on `NAC.describe()`/`find()` as
+  `braille_label`.
+- **`validate_event_conformance` enforces ProvenanceBlock**
+  (sec 6.2.27). The self-test fails when an event detail lacks a
+  valid `source.type` (`'user' | 'agent' | 'script'`).
+- **ARIA-to-NAC mapping table** (sec 7.3.3, NEW). Normative
+  preflight: `aria-disabled`, `aria-busy`, `aria-hidden`,
+  `aria-readonly`, `inert` -> `nac:command:rejected` reasons.
+- **Drift tolerance window 200 ms** (sec 7.3.2) so React 18 / Vue 3
+  / Svelte 5 hydration does not produce false-positive drift
+  errors. Configurable via
+  `NAC.set_validation_tolerance({drift_window_ms: <n>})`.
+- **Worked ARIA examples** (sec 7.3.4) for combobox, modal dialog,
+  virtualized datagrid, accordion, tabs.
+- **`docs/ROADMAP.md`** (NEW). Three horizons: v2.0 in flight,
+  v2.1 (3-6 months) deferred items, v2.x (6-12 months) post-2.1
+  research items, plus a Yujin Framework section describing the
+  first commercial NAC v2.0 reference implementation.
+- **`docs/AUTHORING_PATTERNS.md`** (NEW). Worked patterns for ARIA
+  + NAC coexistence, skip-reason enforcement, hint escalation
+  semantics by consumer type (voice / SR / AI agent / RPA bot).
+
+Strict superset of v1.8.0 -- every v1.8 plugin remains valid;
+every v1.7 plugin remains valid.
+
 **What v1.8.0 adds:**
 - **ProvenanceBlock on every event** (sec 6.2.1) --
   `source: { type: 'user' | 'agent' | 'script', id?, tool? }`.
@@ -139,7 +177,7 @@ NAC reverses the polarity: a UI that complies with NAC publishes
 its own contract -- semantic IDs, roles, states, events, and a
 programmatic API -- so any external operator can introspect,
 operate and verify it without privileged access. The current
-release line is v1.8.0; every spec version since v1.0 has been
+release line is v1.9.0; every spec version since v1.0 has been
 a strict superset (no breaking changes).
 
 Compliant systems are testable end-to-end at near-100% coverage with
@@ -761,7 +799,7 @@ python nac_runner.py --target http://localhost:3000 --plugin contact_form
 
 ```
 NAC -- Native Accessibility Contract.
-Spec v1.8.0 / runtime v1.8.0. 2026. MIT License.
+Spec v1.9.0 / runtime v1.9.0. 2026. MIT License.
 Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 https://github.com/pkuschnirof/nac-spec
 ```
