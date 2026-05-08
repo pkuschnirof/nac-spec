@@ -1,9 +1,46 @@
 /* =====================================================================
-   NAC v1.7.0 -- Native Accessibility Contract / Navegabilidad Automatica
+   NAC v1.9.0 -- Native Accessibility Contract / Navegabilidad Automatica
                  Compliance.
    Reference JavaScript implementation. Spec: spec/NAC-v1.0.md.
    MIT License -- Pablo Adrian Kuschniroff + Sumi, 2026.
    =====================================================================
+
+   AUTHORITATIVE VERSION CONSTANT: see the global.NAC export at the
+   bottom of this file. `version: '1.9.0', spec_version: '1.9'` is
+   the normative declaration. The dated changelog sections below are
+   historical notes; if they ever drift from the export, the export
+   wins.
+
+   v1.9.0 (2026-05-08) -- MINOR release. The v2.0 patch round closing
+   every gap the five-AI panel of v1.8 (Microsoft Copilot, DeepSeek,
+   Mistral Le Chat, Grok, ChatGPT) flagged as `should land before
+   2.0` plus broader patch surface. New APIs:
+     confirm_action, set_confirm_handler            (sec 6.2.32)
+     action_undoable, action_undo_window_ms         (sec 6.2.33)
+     sign_provenance, verify_provenance             (sec 6.2.1)
+     recommended_remediation                        (sec 6.2.30)
+     assert_event_fired, assert_event_count,
+     perf_probe, replay_pending                     (sec 13.10/13.11)
+     sort_hints_by_priority, set_hint_priority      (sec 3.1)
+     set_a11y_hint_localizer                        (sec 3.1)
+   New attributes (host-side):
+     data-nac-skip-reason (REQUIRED with skip)      (sec 3.1)
+     data-nac-braille-label                         (sec 3.1)
+     data-nac-confirmation-message                  (sec 3.1)
+   New manifest field: action.undoable / undo_window_ms,
+                       manifest.attention_profile (5 presets).
+   Runtime install also mounts the ARIA bridge for a11y_hint and
+   replays any window.__NAC_PENDING__ buffer. Strict superset of
+   v1.8.0 -- every v1.8 plugin remains valid.
+
+   v1.8.0 (2026-05-07) -- MINOR release. Lands every action item
+   from the four-AI peer review of v1.7 (Copilot, DeepSeek, Mistral,
+   Grok). Adds ProvenanceBlock on every event (source: type|id|tool),
+   data-nac-validate / a11y-hint / drag-type/drag-accept attributes,
+   nac:command:rejected and :failed event family with reason
+   taxonomy, attention signals (sec 7.6), migration codemod under
+   tools/migrate-legacy-events.js. Strict superset of v1.7.0 -- every
+   v1.7 plugin remains valid.
 
    v1.7.0 (2026-05-07) -- MINOR release. Spec sec 6.2 declares the
    canonical TypeScript shape for every nac:* event detail. Each
