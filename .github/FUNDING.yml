@@ -8,6 +8,7 @@
 # Sponsor $100, Enterprise $500) plus one-time sponsorship $25+.
 custom: ['https://buy.polar.sh/polar_cl_mqEuONOGSTr3bn9P8XSQRRFryST2htj4xDv1p0nNDJW']
 
-# GitHub Sponsors -- waitlist applied; will activate when GitHub
-# approves the AR setup (typically 1-2 weeks after KYC).
-github: pkuschnirof
+# GitHub Sponsors -- waitlist applied. When GitHub approves the AR
+# setup (typically 1-2 weeks after KYC) re-add: github: pkuschnirof
+# Pre-approval the line is removed because GitHub rejects the whole
+# FUNDING.yml when it references a user not in the Sponsors program.
