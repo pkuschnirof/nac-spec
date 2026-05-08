@@ -359,6 +359,33 @@
     }
   }
 
+  /* Spec sec 13.4.1 v1.9.0: drag-type registry. Recognised
+     canonical types per the spec; matchers are pattern-based
+     (e.g. 'image/*' matches 'image/png'). Custom types outside
+     the registry are accepted but validate() emits a
+     drag_type_unknown warning so authors notice ad-hoc types
+     that hurt cross-app interop. */
+  const _DRAG_TYPE_REGISTRY = [
+    /^text\/(plain|markdown|html|csv|uri-list)$/,
+    /^image\/(.+)$/,
+    /^audio\/(.+)$/,
+    /^video\/(.+)$/,
+    /^application\/(json|pdf|json\+card|json\+row|json\+task)$/,
+    /^card\/[a-z][a-z0-9_]*$/,
+    /^row\/[a-z][a-z0-9_]*$/,
+    /^file\/[a-z0-9]+$/,
+    /^(tag|note|event|chart-series|tree-node|\*)$/,
+  ];
+  function _isRegisteredDragType(t) {
+    if (!t || typeof t !== 'string') return false;
+    const norm = t.trim().toLowerCase();
+    if (!norm) return false;
+    for (let i = 0; i < _DRAG_TYPE_REGISTRY.length; i++) {
+      if (_DRAG_TYPE_REGISTRY[i].test(norm)) return true;
+    }
+    return false;
+  }
+
   /* Spec sec 13.4 v1.8.0: drag_drop type validation.
      Source declares data-nac-drag-type (e.g. "card", "row").
      Target declares data-nac-drag-accept (CSV: "card,row,*"
@@ -730,6 +757,16 @@
          element does not declare data-nac-braille-label; consumers
          should fall back to aria-label / label. */
       braille_label: el.getAttribute('data-nac-braille-label') || null,
+      /* v1.9.0: surface manifest's undoable flag (sec 6.2.33) on
+         describe()/find() output so AI agents can decide
+         interposition pressure based on whether the action is
+         recoverable. Reads from the registered manifest. */
+      undoable: (function () {
+        const id = el.getAttribute('data-nac-id');
+        if (!id) return false;
+        const a = _findActionInManifests(id);
+        return !!(a && a.undoable === true);
+      })(),
     };
   }
 
@@ -1543,6 +1580,39 @@
       if (extra) for (const k in extra) e[k] = extra[k];
       errors.push(e);
     }
+    /* v1.9.0 (sec 13.4.1): warn on data-nac-drag-type or
+       data-nac-drag-accept values that fall outside the registry.
+       Custom types still work (the runtime accepts them) but the
+       warning surfaces ad-hoc types that hurt cross-app interop. */
+    Array.prototype.forEach.call(
+      root.querySelectorAll('[data-nac-drag-type], [data-nac-drag-accept]'),
+      function (el) {
+        const stype = el.getAttribute('data-nac-drag-type');
+        if (stype && !_isRegisteredDragType(stype)) {
+          pushErr('warn', 'drag_type_unknown',
+            el.getAttribute('data-nac-id'),
+            'data-nac-drag-type=' + JSON.stringify(stype) +
+            ' is not in the v1.9 registry (sec 13.4.1). Custom types ' +
+            'work but hurt cross-app interop. Consider proposing the ' +
+            'type as a registry addition.',
+            { type: stype, attr: 'data-nac-drag-type' });
+        }
+        const accept = el.getAttribute('data-nac-drag-accept');
+        if (accept) {
+          const types = accept.split(',').map(function (s) { return s.trim(); });
+          for (let i = 0; i < types.length; i++) {
+            if (types[i] && !_isRegisteredDragType(types[i])) {
+              pushErr('warn', 'drag_type_unknown',
+                el.getAttribute('data-nac-id'),
+                'data-nac-drag-accept entry ' + JSON.stringify(types[i]) +
+                ' is not in the v1.9 registry (sec 13.4.1).',
+                { type: types[i], attr: 'data-nac-drag-accept' });
+            }
+          }
+        }
+      }
+    );
+
     /* v1.8.0: surface skip-validate regions that contain interactive
        elements as a structured warning (not an error). Authors who
        legitimately wrap a third-party widget can ignore it; authors
@@ -3558,6 +3628,10 @@
     'nac:timeline:loaded':       { required: ['plugin', 'timeline_id'] },
     'nac:command:rejected':      { required: ['command_method', 'reason'] },
     'nac:command:failed':        { required: ['command_method'] },
+    /* v1.9.0 (sec 6.2.32): action confirmation event family. */
+    'nac:action:confirm:requested': { required: ['action_id', 'verb', 'confirm_id'] },
+    'nac:action:confirm:granted':   { required: ['action_id', 'confirm_id'] },
+    'nac:action:confirm:denied':    { required: ['action_id', 'confirm_id'] },
   };
 
   /* NAC.check_canonical_shape(eventType, detail) -> { ok, missing }
@@ -3658,6 +3732,311 @@
       pass: pass, fail: fail, miss: miss,
       total_captured: total, details: details,
     };
+  }
+
+  /* ---------- v1.9.0: test harness utilities (sec 13.10) --------- */
+
+  /* NAC.assert_event_fired(eventType, opts)
+     Resolves with the matched event detail when an event of the
+     given type fires AND every predicate in opts.match passes.
+     Rejects with NacError('timeout', ...) after opts.timeout_ms
+     (default 5000). The match object pins specific detail fields
+     so a test can assert on a precise variant of the event. */
+  function assert_event_fired(eventType, opts) {
+    opts = opts || {};
+    const timeout_ms = opts.timeout_ms || 5000;
+    const match = opts.match || {};
+    const since = (typeof opts.since_ms === 'number')
+      ? Date.now() - opts.since_ms : 0;
+    return new Promise(function (resolve, reject) {
+      let settled = false;
+      function onEvt(e) {
+        if (settled) return;
+        const d = e.detail || {};
+        /* Match every predicate. */
+        for (const k in match) {
+          if (Object.prototype.hasOwnProperty.call(match, k) &&
+              d[k] !== match[k]) return;
+        }
+        settled = true;
+        document.removeEventListener(eventType, onEvt);
+        clearTimeout(t);
+        resolve({ event: eventType, detail: d, t: Date.now() });
+      }
+      const t = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener(eventType, onEvt);
+        reject(NacError('timeout',
+          'assert_event_fired(' + eventType + ') did not match within '
+          + timeout_ms + 'ms'));
+      }, timeout_ms);
+      document.addEventListener(eventType, onEvt);
+      /* since_ms unsupported in this minimal impl: events fired
+         BEFORE addEventListener cannot be replayed. The opt is
+         accepted for API stability and ignored at runtime;
+         consumers that need pre-call replay use replay_pending
+         (sec 13.11) instead. */
+      void since;
+    });
+  }
+
+  /* NAC.assert_event_count(eventType, n, opts)
+     Captures events for opts.window_ms (default 250) AFTER the
+     call. Resolves with { count, samples } when count === n,
+     rejects otherwise. The window MUST capture for the full
+     duration even after n fires (so it can detect n+1). */
+  function assert_event_count(eventType, n, opts) {
+    opts = opts || {};
+    const window_ms = opts.window_ms || 250;
+    const match = opts.match || {};
+    return new Promise(function (resolve, reject) {
+      const samples = [];
+      function onEvt(e) {
+        const d = e.detail || {};
+        for (const k in match) {
+          if (Object.prototype.hasOwnProperty.call(match, k) &&
+              d[k] !== match[k]) return;
+        }
+        samples.push(d);
+      }
+      document.addEventListener(eventType, onEvt);
+      setTimeout(function () {
+        document.removeEventListener(eventType, onEvt);
+        if (samples.length === n) {
+          resolve({ count: samples.length, samples: samples });
+        } else {
+          reject(NacError('count_mismatch',
+            'assert_event_count(' + eventType + ', ' + n + ') saw '
+            + samples.length + ' events in ' + window_ms + 'ms',
+            { count: samples.length, samples: samples }));
+        }
+      }, window_ms);
+    });
+  }
+
+  /* NAC.perf_probe(opts)
+     Synthetic 1000-element fixture that exercises describe(),
+     validate(), validate_event_conformance() once each and
+     returns a structured timing report against the sec 6.2.27
+     performance budget. */
+  async function perf_probe(opts) {
+    opts = opts || {};
+    const N = opts.element_count || 1000;
+    const BUDGETS = {
+      describe_ms: 30,
+      validate_ms: 50,
+      conformance_ms: 10,
+      emit_ms_avg: 0.5,
+    };
+    /* Build the fixture: a single hidden plugin root with N
+       data-nac-id elements distributed across role types. */
+    const root = document.createElement('div');
+    root.setAttribute('data-nac-plugin', '__nac_perf_probe__');
+    root.setAttribute('data-nac-plugin-state', 'ready');
+    root.style.cssText = 'position:absolute;width:1px;height:1px;'
+      + 'overflow:hidden;clip:rect(0,0,0,0);';
+    const roles = ['action', 'field', 'tab', 'region', 'option'];
+    let html = '';
+    for (let i = 0; i < N; i++) {
+      const r = roles[i % roles.length];
+      html += '<button data-nac-id="probe.' + r + '.' + i +
+              '" data-nac-role="' + r + '"' +
+              (r === 'action' ? ' data-nac-action="apply"' : '') +
+              ' aria-label="probe ' + i + '"></button>';
+    }
+    root.innerHTML = html;
+    document.body.appendChild(root);
+    /* Register a synthetic manifest so validate() has work to do. */
+    const actions = [];
+    const fields = [];
+    for (let i = 0; i < N; i++) {
+      const r = roles[i % roles.length];
+      const id = 'probe.' + r + '.' + i;
+      const lbl = { es: 'p' + i, en: 'p' + i, pt: 'p' + i, fr: 'p' + i,
+                    it: 'p' + i, de: 'p' + i, ja: 'p' + i, zh: 'p' + i,
+                    hi: 'p' + i, ar: 'p' + i };
+      if (r === 'action') {
+        actions.push({ nac_id: id, verb: 'apply', label_i18n: lbl });
+      } else if (r === 'field') {
+        fields.push({ nac_id: id, type: 'text', label_i18n: lbl });
+      }
+    }
+    register({
+      plugin_slug: '__nac_perf_probe__',
+      version: '1.0.0', nac_version: '1.9',
+      actions: actions, fields: fields, kpis: [],
+    });
+    function _now() { return performance && performance.now ? performance.now() : Date.now(); }
+    /* describe() */
+    const t1 = _now(); describe(); const describe_ms = _now() - t1;
+    /* validate() */
+    const t2 = _now(); validate('__nac_perf_probe__'); const validate_ms = _now() - t2;
+    /* validate_event_conformance: zero driver -- measures
+       runtime overhead only. */
+    const t3 = _now(); await validate_event_conformance(undefined,
+      { timeout_ms: 100 }); const conformance_ms = _now() - t3;
+    /* _emit avg: 100 emits, then divide. */
+    const t4 = _now();
+    for (let i = 0; i < 100; i++) {
+      _emit('nac:state:changed', {
+        plugin: '__nac_perf_probe__', plugin_instance_id: null,
+        nac_id: 'probe.action.' + (i % N), state: 'idle',
+      });
+    }
+    const emit_ms_avg = (_now() - t4) / 100;
+    /* Tear down. */
+    unregister('__nac_perf_probe__');
+    document.body.removeChild(root);
+    /* Build report. */
+    const breakdown = [
+      { op: 'describe', ms: describe_ms, budget_ms: BUDGETS.describe_ms },
+      { op: 'validate', ms: validate_ms, budget_ms: BUDGETS.validate_ms },
+      { op: 'validate_event_conformance', ms: conformance_ms,
+        budget_ms: BUDGETS.conformance_ms },
+      { op: 'emit_ms_avg', ms: emit_ms_avg, budget_ms: BUDGETS.emit_ms_avg },
+    ];
+    const within_budget = breakdown.every(function (b) { return b.ms <= b.budget_ms; });
+    return {
+      element_count: N,
+      describe_ms: describe_ms,
+      validate_ms: validate_ms,
+      conformance_ms: conformance_ms,
+      emit_ms_avg: emit_ms_avg,
+      within_budget: within_budget,
+      breakdown: breakdown,
+    };
+  }
+
+  /* ---------- v1.9.0: action confirmation (sec 6.2.32) ---------- */
+
+  /* The runtime maintains an in-memory map of in-flight confirm
+     requests keyed by confirm_id. confirm_action() emits the
+     requested event, awaits the host's handler decision (or the
+     default window.confirm), then emits granted/denied. */
+  let _confirmHandler = null;
+  function set_confirm_handler(fn) {
+    _confirmHandler = (typeof fn === 'function') ? fn : null;
+  }
+  function _newConfirmId() {
+    return 'cfm-' + Date.now().toString(36) + '-' +
+           Math.random().toString(36).slice(2, 8);
+  }
+  async function confirm_action(action_id, opts) {
+    opts = opts || {};
+    /* Resolve the element + its declared a11y_hint. */
+    const el = _findElement(action_id, {});
+    let hints = opts.hints;
+    if (!hints && el) {
+      const raw = el.getAttribute('data-nac-a11y-hint') || '';
+      hints = raw.split('|').map(function (s) { return s.trim(); })
+                 .filter(function (s) { return s.length > 0; });
+    }
+    hints = hints || [];
+    const locale = (document.documentElement.lang || 'en').split('-')[0];
+    const hint_text = opts.hint_text ||
+      hints.map(function (t) { return _localizeHintTag(t, locale); }).join(' ') ||
+      'Confirm this action?';
+    const verb = (el && el.getAttribute('data-nac-action')) || 'apply';
+    const confirm_id = _newConfirmId();
+    const pluginRoot = el && el.closest('[data-nac-plugin]');
+    const plugin = pluginRoot ? pluginRoot.getAttribute('data-nac-plugin') : null;
+    const reqDetail = {
+      plugin: plugin, plugin_instance_id: null,
+      action_id: action_id,
+      verb: verb,
+      hints: hints,
+      hint_text: hint_text,
+      confirm_id: confirm_id,
+      expires_at: Date.now() + (opts.timeout_ms || 60000),
+    };
+    /* opts.source defaults to {type:'script'} via _emit's normalisation. */
+    if (opts.source) reqDetail.source = opts.source;
+    _emit('nac:action:confirm:requested', reqDetail);
+    let resp;
+    try {
+      if (_confirmHandler) {
+        resp = await _confirmHandler(reqDetail);
+      } else if (typeof window.confirm === 'function') {
+        const ok = window.confirm(hint_text);
+        resp = { granted: !!ok, granted_via: 'window_confirm' };
+      } else {
+        resp = { granted: false, reason: 'no_handler' };
+      }
+    } catch (err) {
+      resp = { granted: false, reason: 'handler_error',
+        error: err && err.message };
+    }
+    if (resp.granted) {
+      _emit('nac:action:confirm:granted', {
+        plugin: plugin, plugin_instance_id: null,
+        action_id: action_id,
+        confirm_id: confirm_id,
+        granted_by: opts.source && opts.source.type === 'agent' ? 'agent' : 'user',
+        granted_via: resp.granted_via || 'modal_button',
+        source: opts.source || { type: 'user' },
+      });
+    } else {
+      _emit('nac:action:confirm:denied', {
+        plugin: plugin, plugin_instance_id: null,
+        action_id: action_id,
+        confirm_id: confirm_id,
+        reason: resp.reason || 'user_cancelled',
+        source: opts.source || { type: 'user' },
+      });
+    }
+    return {
+      confirm_id: confirm_id,
+      granted: !!resp.granted,
+      granted_by: resp.granted ?
+        (opts.source && opts.source.type === 'agent' ? 'agent' : 'user') : undefined,
+      granted_via: resp.granted ? (resp.granted_via || 'modal_button') : undefined,
+      reason: resp.granted ? undefined : (resp.reason || 'user_cancelled'),
+    };
+  }
+
+  /* ---------- v1.9.0: action undoable flag (sec 6.2.33) --------- */
+
+  function _findActionInManifests(action_id) {
+    for (const slug in _manifests) {
+      const m = _manifests[slug];
+      if (!m || !m.actions) continue;
+      for (let i = 0; i < m.actions.length; i++) {
+        if (m.actions[i].nac_id === action_id) {
+          return m.actions[i];
+        }
+      }
+    }
+    return null;
+  }
+  function action_undoable(action_id) {
+    const a = _findActionInManifests(action_id);
+    return !!(a && a.undoable === true);
+  }
+  function action_undo_window_ms(action_id) {
+    const a = _findActionInManifests(action_id);
+    if (!a || a.undoable !== true) return null;
+    return typeof a.undo_window_ms === 'number' ? a.undo_window_ms : null;
+  }
+
+  /* ---------- v1.9.0: event replay buffer (sec 13.11) ----------- */
+
+  /* NAC.replay_pending(buffer)
+     Re-emits each entry of the buffer through the event bus.
+     Used by hosts that capture user actions before the runtime
+     loads. Each replayed event is tagged with detail._replayed
+     = true so audit consumers can distinguish from live emits. */
+  function replay_pending(buffer) {
+    if (!buffer || !Array.isArray(buffer) || buffer.length === 0) return 0;
+    let count = 0;
+    for (let i = 0; i < buffer.length; i++) {
+      const entry = buffer[i];
+      if (!entry || typeof entry.event !== 'string') continue;
+      const detail = Object.assign({}, entry.detail || {}, { _replayed: true });
+      _emit(entry.event, detail);
+      count++;
+    }
+    return count;
   }
 
   /* ---------- Install -------------------------------------------- */
@@ -3789,6 +4168,17 @@
     validate_event_conformance:  validate_event_conformance,
     /* v1.9.0 -- a11y_hint localizer override */
     set_a11y_hint_localizer:     set_a11y_hint_localizer,
+    /* v1.9.0 -- test harness (sec 13.10) + event replay (sec 13.11) */
+    assert_event_fired:          assert_event_fired,
+    assert_event_count:          assert_event_count,
+    perf_probe:                  perf_probe,
+    replay_pending:              replay_pending,
+    /* v1.9.0 -- action confirmation (sec 6.2.32) */
+    confirm_action:              confirm_action,
+    set_confirm_handler:         set_confirm_handler,
+    /* v1.9.0 -- action undoable flag (sec 6.2.33) */
+    action_undoable:             action_undoable,
+    action_undo_window_ms:       action_undo_window_ms,
     /* v1.2 -- error codes */
     errors: {
       RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',
@@ -3813,4 +4203,16 @@
      Runs after install so existing host-level aria-describedby
      values are preserved (we append, not overwrite). */
   _installA11yHintBridge();
+
+  /* v1.9.0: auto-replay any window.__NAC_PENDING__ buffer the
+     host staged before the runtime loaded (sec 13.11). The host
+     pushes {event, detail} entries during boot; we replay them
+     once the runtime is ready, then clear so hot reloads do not
+     double-replay. */
+  if (global && Array.isArray(global.__NAC_PENDING__)) {
+    try {
+      replay_pending(global.__NAC_PENDING__);
+      global.__NAC_PENDING__ = [];
+    } catch (e) { /* swallow; hosts can call replay_pending() themselves */ }
+  }
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

@@ -26,6 +26,9 @@ before 2.0`.
 
 ### v1.8 -> v1.9 patches (closed in v1.9.0)
 
+All of the following landed in v1.9.0 (commits in `nac-spec`
+main tagged 2026-05-08):
+
 - **Sec 3.1** `data-nac-skip-reason` REQUIRED when `data-nac-validate=
   "skip"` is set. Format: `<category>[;remediate-by=YYYY-MM-DD][;tracker=
   <id>]`. Validator emits `skip_without_reason` (error at NAC-3) and
@@ -36,28 +39,47 @@ before 2.0`.
   waiting for vendors to learn NAC.
 - **Sec 3.1** `data-nac-braille-label` for refreshable braille
   displays. Surfaced by `NAC.describe()`/`find()` as `braille_label`.
+- **Sec 6.2.27** Normative performance budget table: validate <= 50ms
+  for 1000 elements, describe <= 30ms, _emit overhead <= 0.5ms per
+  event. `NAC.perf_probe()` produces a structured timing report.
 - **Sec 6.2.27** `validate_event_conformance` and
   `check_canonical_shape` enforce ProvenanceBlock presence
   (`source.type` in `'user' | 'agent' | 'script'`).
 - **Sec 6.2.30** Reason taxonomy extended: `aria_busy`, `inert`,
   `readonly`.
+- **Sec 6.2.32 NEW** `nac:action:confirm:requested` /
+  `:granted` / `:denied` event family. `NAC.confirm_action(action_id,
+  opts)` and `NAC.set_confirm_handler(fn)` runtime API. NAC-3
+  conformant pages MUST route any action with `irreversible` /
+  `requires_confirmation` / `data_loss` hint through this flow.
+- **Sec 6.2.33 NEW** Action `undoable` flag in manifest. Surfaced on
+  `describe()`/`find()` output. `NAC.action_undoable(action_id)` and
+  `NAC.action_undo_window_ms(action_id)` runtime API.
 - **Sec 7.3.2** Drift tolerance window 200 ms (configurable) to avoid
   false positives on React 18 / Vue 3 / Svelte 5 hydration.
 - **Sec 7.3.3** Normative ARIA-to-NAC mapping table:
   `aria-disabled`, `aria-busy`, `aria-hidden`, `aria-readonly`,
   `inert` -> `nac:command:rejected` reasons.
-- **Sec 7.3.4** Worked examples (combobox, modal, datagrid).
-- **Sec 13.4** Drag-type registry (case-insensitive, whitespace-trimmed).
-- **Sec 13.9** New event family `nac:action:confirm` (enforces
-  confirmation when `a11y_hint=requires_confirmation` is present)
-  and `nac:action:undoable` flag.
-- Codemod (`tools/migrate-legacy-events.js`) extended to rewrite
-  `NAC.click()` call sites for `opts.source` defaults.
-- Performance benchmark normative target: validator < 50 ms for 1000
-  elements.
-- Test harness utilities: `NAC.assert_event_fired`,
-  `NAC.assert_event_count`.
-- Event replay buffer for actions taken before the runtime initialised.
+- **Sec 7.3.4** Worked examples (combobox, modal, datagrid, accordion,
+  tabs).
+- **Sec 13.4** Drag-type case-insensitive + whitespace-trimmed
+  matching.
+- **Sec 13.4.1 NEW** Drag-type registry. 24 canonical type patterns
+  (`text/*`, `image/*`, `application/json+card`, `card/<slug>`,
+  `row/<entity>`, `file/<ext>`, `tag`, `note`, `event`,
+  `chart-series`, `tree-node`). Validator emits `drag_type_unknown`
+  warning for ad-hoc types so cross-app interop is preserved.
+- **Sec 13.10 NEW** Test harness utilities normative:
+  `NAC.assert_event_fired`, `NAC.assert_event_count`,
+  `NAC.perf_probe`.
+- **Sec 13.11 NEW** Event replay buffer (informative).
+  `window.__NAC_PENDING__` array, `NAC.replay_pending(buffer)` helper,
+  runtime auto-replays at install.
+- Codemod (`tools/migrate-legacy-events.js`) extended with
+  `--inject-source-script` flag that scans `NAC.click()` /
+  `fill()` / `drag_drop()` / `expand()` / `sort()` / `set_slider()` /
+  `go_to_section()` call sites that lack `opts.source` and injects
+  `{ source: { type: 'script' } }`.
 
 ---
 
@@ -97,17 +119,13 @@ land as a single MINOR release within ~3 months of v2.0.
   interposition text. Grok v1.8 finding.
 - **`session_boundary` and `audit_required`** added to the
   `data-nac-a11y-hint` vocabulary. DeepSeek v1.8 finding.
-- **Hint priority ordering**: spec rule for which hint takes
-  precedence when multiple apply (e.g. `irreversible` always
-  outranks `requires_confirmation`).
+- **Hint priority ordering normative**: spec rule for which hint
+  takes precedence when multiple apply (currently advisory in
+  AUTHORING_PATTERNS.md sec 3.1; promote to normative in v2.1).
 - **`emit_dual` polyfill** for older NAC runtimes (gradual rollout).
 - **Runtime warning** when a legacy event fires without a canonical
   counterpart (helps catch incomplete migrations).
 - **CI dashboard / reporting tool** for conformance results.
-- **Drag-type registry normative**: canonical set of types
-  (`text/plain`, `image/*`, `application/json+card`, `card/...`).
-  Mistral v1.8 finding (we shipped the case-insensitive matching in
-  v1.9; the registry waits for v2.1).
 
 ---
 

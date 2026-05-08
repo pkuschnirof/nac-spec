@@ -2007,6 +2007,34 @@ MUST also return `ok: false` when `detail.source.type` is
 absent or not one of the three allowed values, regardless of
 whether the widget id fields are present.
 
+#### Performance budget (normative, v1.9.0+)
+
+A NAC-3 conformant runtime MUST satisfy the following timing
+budgets on a midrange consumer device (representative target:
+2024 mid-tier laptop, JS engine V8 / SpiderMonkey current
+release, no concurrent CPU pressure):
+
+| Operation                                    | Budget                           |
+|----------------------------------------------|----------------------------------|
+| `validate(slug)` for a plugin with 50 elements | <= 20 ms                       |
+| `validate_global()` over a page with 1000 elements | <= 50 ms                  |
+| `describe()` for a page with 1000 elements   | <= 30 ms                         |
+| `validate_event_conformance(driver)` -- runtime overhead beyond the driver | <= 10 ms |
+| Single `NAC.click()` round trip (target visible, no animation) | <= 80 ms     |
+| `_emit()` overhead per event                 | <= 0.5 ms                        |
+
+Hosts MAY exceed these on slower devices or larger pages but
+MUST document the operating envelope. Implementations SHOULD
+ship a CI benchmark fixture so regressions are caught before
+release. The reference runtime exposes a `NAC.perf_probe()`
+test utility (sec 13.10) that produces a structured timing
+report against a synthetic 1000-element fixture.
+
+Reviewer attribution: DeepSeek v1.8 finding ("no normative
+performance requirements -- the validator could regress
+silently"). Without a documented envelope, a five-minute
+validation pass would still ship as conformant.
+
 ### 6.2.30. Command events (v1.8.0, normative)
 
 `nac:command:rejected` and `nac:command:failed` close the
@@ -2080,7 +2108,140 @@ DeepSeek) that voice control + agentic delegation collapse on
 virtualized 5000-row autocompletes when "pick Berlin" is mapped
 to "click position 437" rather than "click option_id=opt-de-berlin".
 
-### 6.2.32. Why this remains a strict superset
+### 6.2.32. Action confirmation event family (v1.9.0, normative)
+
+`nac:action:confirm:requested`, `nac:action:confirm:granted`,
+and `nac:action:confirm:denied` close the gap reviewers (Mistral
++ ChatGPT + Grok) flagged in v1.8: `data-nac-a11y-hint=
+"requires_confirmation"` was advisory, so an AI agent could
+ignore it and still claim conformance. v1.9.0 promotes
+confirmation to a wire-level contract.
+
+```typescript
+interface NacActionConfirmRequestedDetail extends NacEventBase {
+  action_id: string;       // the action awaiting user confirmation
+  verb: string;            // from manifest.actions[].verb
+  hints: string[];         // resolved data-nac-a11y-hint array
+  hint_text: string;       // localized human-readable text
+  confirm_id: string;      // ephemeral correlation id (UUID)
+  expires_at?: number;     // timeout, optional
+}
+
+interface NacActionConfirmGrantedDetail extends NacEventBase {
+  action_id: string;
+  confirm_id: string;
+  granted_by: 'user' | 'agent';   // who issued the grant
+  granted_via?: string;           // 'modal_button' | 'voice_phrase' |
+                                  // 'agent_policy' | 'biometric' etc
+  source: ProvenanceBlock;        // who decided
+}
+
+interface NacActionConfirmDeniedDetail extends NacEventBase {
+  action_id: string;
+  confirm_id: string;
+  reason?: 'user_cancelled' | 'timeout' | 'policy_blocked' | string;
+  source: ProvenanceBlock;
+}
+```
+
+#### NAC.confirm_action(action_id, opts)
+
+The runtime exposes a helper that emits the requested event,
+opens a host-defined confirmation UI (or the runtime's default
+when none is registered), waits for the host to call back, and
+emits the granted or denied event. The Promise resolves
+`{ confirm_id, granted: true|false, granted_by, reason? }`.
+
+```typescript
+interface NAC {
+  confirm_action(
+    action_id: string,
+    opts?: {
+      hints?: string[];          // override the parsed a11y_hint
+      hint_text?: string;        // override the localized text
+      timeout_ms?: number;       // default 60_000
+      source?: ProvenanceBlock;  // who is requesting confirmation
+    }
+  ): Promise<{
+    confirm_id: string;
+    granted: boolean;
+    granted_by?: 'user' | 'agent';
+    granted_via?: string;
+    reason?: string;
+  }>;
+
+  // Hosts register a custom confirmation UI here. Default is
+  // window.confirm(hint_text). Voice tools and AI agents register
+  // their own dialog so they can record the consent in a way that
+  // survives the audit trail.
+  set_confirm_handler(
+    fn: (req: NacActionConfirmRequestedDetail) =>
+      Promise<{ granted: boolean; granted_via?: string; reason?: string }>
+  ): void;
+}
+```
+
+A NAC-3 conformant page that exposes any element with
+`data-nac-a11y-hint` containing `requires_confirmation`,
+`irreversible`, or `data_loss` MUST route the action through
+`NAC.confirm_action()` (or an equivalent in the host that emits
+the same wire shape) before the destructive side-effect runs. AI
+agents and voice tools MUST set
+`opts.source = { type: 'agent', tool: '...' }` so the audit
+trail records who initiated the confirmation request.
+
+### 6.2.33. Action undo flag (v1.9.0, normative)
+
+For actions whose effects can be reversed, the manifest MAY
+declare `undoable: true`:
+
+```javascript
+NAC.register({
+  plugin_slug: 'invoices',
+  actions: [
+    { nac_id: 'invoice.delete', verb: 'delete',
+      label_i18n: { /* ... */ },
+      a11y_hint: ['irreversible', 'requires_confirmation'],
+      undoable: false }, // hard delete; cannot undo
+    { nac_id: 'invoice.archive', verb: 'archive',
+      label_i18n: { /* ... */ },
+      undoable: true,    // can be unarchived
+      undo_window_ms: 60000 },  // optional: 60s undo window
+  ],
+});
+```
+
+A NAC.describe() / find() output exposes the flag as
+`undoable: boolean`. Runtime helpers:
+
+```typescript
+interface NAC {
+  // Returns true if the action declares undoable: true in its
+  // manifest, false otherwise (default).
+  action_undoable(action_id: string): boolean;
+
+  // Returns the undo window declared by the manifest, in ms.
+  // Null when the action is not undoable or the manifest does
+  // not specify a window (treat null as "use host default" --
+  // typically 0 = no undo, host UX decides whether to surface).
+  action_undo_window_ms(action_id: string): number | null;
+}
+```
+
+The flag is consumed by:
+- AI agents that surface "this action can be undone within 60s"
+  before invocation, allowing more aggressive autonomy on
+  recoverable actions.
+- Voice tools that downgrade interposition pressure (e.g. omit
+  the confirm step for `undoable: true`).
+- Audit pipelines that distinguish recoverable from
+  unrecoverable agent actions for retention policy.
+
+The flag does NOT alter the `nac:action:succeeded` event shape
+or the action's runtime behaviour. It is metadata for downstream
+consumers, not a runtime feature.
+
+### 6.2.34. Why this remains a strict superset
 
 Existing v1.6.x and v1.7.x plugins continue to validate at NAC-3
 because the runtime matcher accepts legacy field names with a
@@ -3421,6 +3582,11 @@ interface NAC {
   // drag_type=<source's type>, drag_accept=<target's accept>.
   // Untyped sources (no data-nac-drag-type) are treated as
   // compatible with all targets, preserving v1.7 behaviour.
+  // v1.9.0 normative registry (informative below): hosts SHOULD
+  // pick types from the registry when a recognised one fits;
+  // hosts MAY define custom types but the runtime emits a
+  // 'drag_type_unknown' validator warning so cross-app
+  // interoperability is preserved.
   drag_drop(source_nac_id: string,
             target_nac_id: string,
             opts?: { to_index?: number; value?: any;
@@ -3445,6 +3611,61 @@ Implementations MAY route some of the new functions through
 named function is callable and that the corresponding event from
 section 13.3 is emitted as a side effect. Operators MAY use
 either path.
+
+#### 13.4.1. Drag-type registry (v1.9.0, normative)
+
+`data-nac-drag-type` and `data-nac-drag-accept` (sec 13.4 v1.8)
+declare types as opaque strings. To improve cross-app
+interoperability, v1.9.0 declares a recognised registry of
+canonical drag types. Hosts SHOULD pick from the registry when
+a recognised type fits; hosts MAY define custom types but the
+runtime emits a `drag_type_unknown` validator warning at NAC-3
+so an audit pipeline notices when a drag flow uses an ad-hoc
+type that no other app understands.
+
+The registry follows MIME-like dotted notation. Forward-slash
+groupings (`text/plain`) match MIME conventions; `card/*` and
+`row/*` are NAC-specific groupings for in-app data shapes.
+
+| Type pattern             | Use                                                  |
+|--------------------------|------------------------------------------------------|
+| `text/plain`             | Plain string payload (free text, address, etc).      |
+| `text/markdown`          | Markdown source.                                     |
+| `text/html`              | HTML fragment (richtext drag).                       |
+| `text/csv`               | CSV cell or row payload.                             |
+| `text/uri-list`          | One or more URIs (file URIs, web URLs).              |
+| `image/*`                | Any image bitmap (use `image/png`, `image/jpeg` etc). |
+| `image/svg+xml`          | Vector image as SVG source.                          |
+| `audio/*`                | Audio clip (use `audio/wav`, `audio/mpeg` etc).      |
+| `video/*`                | Video clip (use `video/mp4`, `video/webm` etc).      |
+| `application/json`       | JSON object payload.                                 |
+| `application/json+card`  | Card-shaped JSON: `{ id, title, body, meta? }`.      |
+| `application/json+row`   | Row-shaped JSON for table reorder.                   |
+| `application/json+task`  | Task-shaped JSON for kanban reorder.                 |
+| `application/pdf`        | Full PDF document.                                   |
+| `card/<plugin_slug>`     | Card from a specific plugin (custom shape).          |
+| `row/<entity_slug>`      | Row from a specific entity table.                    |
+| `file/<extension>`       | Generic file (use `file/xlsx`, `file/zip` etc).      |
+| `tag`                    | Tag chip (label, severity, label_i18n).              |
+| `note`                   | Note attachment (text + optional metadata).          |
+| `event`                  | Calendar event (start, end, title).                  |
+| `chart-series`           | Chart data series (for re-grouping across charts).   |
+| `tree-node`              | Tree node (for cross-tree drag).                     |
+| `*`                      | Wildcard (matches anything).                         |
+
+Custom types outside the registry remain valid; the runtime
+treats them as opaque and accepts them in `data-nac-drag-type`
+and `data-nac-drag-accept`. Validators MUST emit
+`drag_type_unknown` (severity: `warn` at all NAC levels) when
+a type does not match any registry entry pattern, so the
+operator notices and decides whether to formalise the type
+upstream.
+
+The registry is appendable. Hosts that need a frequently-used
+custom type SHOULD propose it as a registry addition rather
+than ship it under their own namespace. The MIME-style dotted
+syntax means an addition is a one-line PR that does not break
+existing apps.
 
 ### 13.5. Manifest extensions
 
@@ -3625,6 +3846,149 @@ each manifest-declared action / field / tab. The CI gate fails
 when `pass` plus `miss` is less than the count of declared
 event families OR when `fail > 0`. The reference demo at
 `yujin.app/nac-spec/example.php` ships a worked example.
+
+### 13.10. Test harness utilities (v1.9.0, normative)
+
+Plugin authors writing automated tests against NAC-driven UIs
+need primitives narrower than `wait_for` and richer than raw
+`document.addEventListener`. v1.9.0 adds three normative
+helpers exposed on `window.NAC`.
+
+```typescript
+interface NAC {
+  // ... v1.0..v1.8 functions unchanged.
+
+  // assert_event_fired(eventType, opts?)
+  // Returns a Promise that resolves with the matched event
+  // detail when an event of the given type fires AND every
+  // predicate in opts.match passes. Rejects with NacError
+  // ('timeout', ...) after opts.timeout_ms (default 5000).
+  // The match object can pin specific detail fields:
+  //   { match: { action_id: 'invoice.send', verb: 'submit' } }
+  // Reusing the helper across tests removes the per-test
+  // listener boilerplate.
+  assert_event_fired(
+    eventType: string,
+    opts?: {
+      match?: Record<string, any>;
+      timeout_ms?: number;
+      since_ms?: number;  // ignore events older than this
+    }
+  ): Promise<{ event: string; detail: any; t: number }>;
+
+  // assert_event_count(eventType, n, opts?)
+  // Captures events for opts.window_ms (default 250 ms after
+  // the call), then resolves { count, samples } if count === n
+  // and rejects otherwise. Useful for asserting "exactly one
+  // succeeded fired" or "no failed events fired".
+  assert_event_count(
+    eventType: string,
+    n: number,
+    opts?: {
+      window_ms?: number;
+      match?: Record<string, any>;
+    }
+  ): Promise<{ count: number; samples: any[] }>;
+
+  // perf_probe(opts?)
+  // Runs a synthetic 1000-element fixture against
+  // describe(), validate(), validate_event_conformance() and
+  // returns a structured timing report. Used by the
+  // performance budget check (sec 6.2.27). The fixture is
+  // generated in-memory and torn down before return.
+  perf_probe(
+    opts?: { element_count?: number }
+  ): Promise<{
+    element_count: number;
+    describe_ms: number;
+    validate_ms: number;
+    conformance_ms: number;
+    emit_ms_avg: number;
+    within_budget: boolean;
+    breakdown: Array<{ op: string; ms: number; budget_ms: number }>;
+  }>;
+}
+```
+
+**Why these three.** DeepSeek's v1.8 review listed missing
+test harness utilities and missing performance benchmarks as
+two separate gaps; v1.9 ships them as one cohesive surface.
+`assert_event_fired` removes the most repeated boilerplate in
+existing test suites; `assert_event_count` covers the
+"exactly N fired" assertion that one-shot listeners cannot
+do; `perf_probe` produces the timing data sec 6.2.27 demands
+for the performance budget.
+
+**Reference runtime guarantees.**
+- `assert_event_fired` MUST resolve at the first matching
+  event, not at the last; subscribers are torn down on resolve.
+- `assert_event_count` MUST capture for the full window even
+  after `n` events fire (so it can reject when N+1 fires).
+- `perf_probe` MUST tear down the synthetic fixture before
+  resolving so subsequent runs are independent.
+
+### 13.11. Event replay buffer (v1.9.0, informative)
+
+Hosts that load NAC asynchronously (deferred script, dynamic
+import, micro-frontend boot) face a window where actions occur
+BEFORE the runtime is installed. v1.9.0 ships a small replay
+buffer pattern hosts can use; the runtime exposes the API
+but the design is informative -- hosts pick whether to wire
+it up.
+
+The pattern, in three steps:
+
+1. **Stage** events on `window.__NAC_PENDING__` before the
+   runtime loads.
+
+   ```javascript
+   // In page <head> before nac.js loads:
+   window.__NAC_PENDING__ = window.__NAC_PENDING__ || [];
+
+   // A user click during boot:
+   window.__NAC_PENDING__.push({
+     event: 'nac:action:dispatching',
+     detail: { plugin: 'patch_manager', action_id: 'apply_all',
+               verb: 'apply',
+               source: { type: 'user' } }
+   });
+   ```
+
+2. **Replay** when the runtime installs. The runtime's
+   `nac:installed` handler walks the pending array and
+   re-emits each entry through `_emit`, then clears the array.
+
+   ```javascript
+   document.addEventListener('nac:installed', function () {
+     NAC.replay_pending(window.__NAC_PENDING__);
+     window.__NAC_PENDING__ = [];
+   });
+   ```
+
+3. **Subscribe** as usual. Late subscribers see the replayed
+   events on the document bus exactly as if they had fired
+   live.
+
+The runtime API:
+
+```typescript
+interface NAC {
+  // Re-emit each entry of the array through the event bus.
+  // Detail.source defaults to {type:'script'} per the usual
+  // _emit normalisation. Replays are tagged with detail._replayed
+  // = true so consumers can distinguish if they want.
+  replay_pending(buffer: Array<{ event: string; detail: any }>): number;
+}
+```
+
+The replay buffer is informative (not required at NAC-3) so
+hosts that do not need it can ignore it. Audit pipelines that
+DO consume `_replayed: true` get a clean signal that the event
+came from pre-init capture rather than live emission.
+
+Reviewer attribution: Microsoft Copilot v1.8 finding ("when
+user actions occur while NAC runtime is not yet loaded, they
+are lost").
 
 ---
 

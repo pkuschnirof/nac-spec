@@ -24,10 +24,47 @@ Nothing yet.
 
 ## [1.9.0] - 2026-05-08
 
-MINOR release. The v2.0 patch round closing the
-should-land-before-2.0 gaps the five-AI panel of v1.8 (Microsoft
-Copilot, DeepSeek, Mistral Le Chat, Grok, ChatGPT) flagged.
-Strict superset of v1.8.0 -- every v1.8 plugin remains valid.
+MINOR release. The v2.0 patch round closing every gap the
+five-AI panel of v1.8 (Microsoft Copilot, DeepSeek, Mistral Le
+Chat, Grok, ChatGPT) flagged as `should land before 2.0` plus
+the broader patch surface (test harness, event replay,
+performance budget, drag-type registry, action confirmation
+event family, action undoable flag). Strict superset of v1.8.0
+-- every v1.8 plugin remains valid.
+
+### Spec sec 6.2
+
+- **6.2.27** Performance budget normative table: validate <=
+  50ms for 1000 elements, describe <= 30ms, _emit overhead <=
+  0.5ms per event, etc. DeepSeek v1.8 finding.
+- **6.2.32 NEW** Action confirmation event family
+  (`nac:action:confirm:requested` / `granted` / `denied`)
+  promotes confirmation from advisory hint to wire-level
+  contract. NAC-3 conformant pages MUST route any action with
+  `requires_confirmation` / `irreversible` / `data_loss` hint
+  through `NAC.confirm_action()`. Mistral + ChatGPT + Grok
+  v1.8 finding.
+- **6.2.33 NEW** Action undoable flag in manifest. Surfaced on
+  `describe()`/`find()` as `undoable`. AI agents can downgrade
+  interposition pressure on recoverable actions; voice tools
+  can omit confirm step.
+
+### Spec sec 13
+
+- **13.4.1 NEW** Drag-type registry: 24 canonical type patterns
+  (text/*, image/*, application/json, card/*, row/*, file/*,
+  tag, note, event, chart-series, tree-node). Custom types still
+  work; validator emits `drag_type_unknown` warning so cross-app
+  interop is preserved. Mistral v1.8 finding.
+- **13.10 NEW** Test harness utilities normative:
+  `NAC.assert_event_fired(eventType, opts)`,
+  `NAC.assert_event_count(eventType, n, opts)`,
+  `NAC.perf_probe(opts)` for the perf budget check. DeepSeek
+  v1.8 finding.
+- **13.11 NEW** Event replay buffer pattern (informative).
+  `window.__NAC_PENDING__` array, `NAC.replay_pending(buffer)`
+  helper, runtime auto-replays at install. Microsoft Copilot
+  v1.8 finding.
 
 ### Spec
 

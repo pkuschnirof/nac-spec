@@ -48,6 +48,44 @@
 - **`docs/AUTHORING_PATTERNS.md`** (NEW). Worked patterns for ARIA
   + NAC coexistence, skip-reason enforcement, hint escalation
   semantics by consumer type (voice / SR / AI agent / RPA bot).
+- **Performance budget** (sec 6.2.27, normative). Validator <=
+  50 ms for 1000 elements, describe() <= 30 ms, _emit overhead
+  <= 0.5 ms per event. `NAC.perf_probe()` produces a structured
+  timing report against a synthetic fixture.
+- **Test harness utilities** (sec 13.10, normative).
+  `NAC.assert_event_fired(eventType, opts)` and
+  `NAC.assert_event_count(eventType, n, opts)` remove the
+  per-test listener boilerplate; `NAC.perf_probe()` drives the
+  performance budget.
+- **Event replay buffer** (sec 13.11, informative).
+  `window.__NAC_PENDING__` lets hosts capture user actions
+  before the runtime loads; `NAC.replay_pending(buffer)` re-emits
+  them when the runtime installs.
+- **`nac:action:confirm` event family** (sec 6.2.32, NEW).
+  `requested` / `granted` / `denied` promotes confirmation from
+  advisory hint to wire-level contract. NAC-3 conformant pages
+  MUST route any action with `irreversible` / `requires_confirmation`
+  / `data_loss` hint through `NAC.confirm_action()` (or an
+  equivalent emitting the same shape).
+- **Action undoable flag** (sec 6.2.33, NEW). Manifest's
+  `actions[i].undoable: true` surfaces on `describe()`/`find()` as
+  `undoable: boolean` so AI agents downgrade interposition
+  pressure on recoverable actions.
+- **Drag-type registry** (sec 13.4.1, NEW). 24 canonical type
+  patterns (`text/*`, `image/*`, `application/json+card`,
+  `card/<plugin_slug>`, `row/<entity_slug>`, `file/<extension>`,
+  `tag`, `note`, `event`, `chart-series`, `tree-node`). Custom
+  types still work; validator emits `drag_type_unknown` warning
+  for ad-hoc types.
+- **Codemod extension `--inject-source-script`**
+  (`tools/migrate-legacy-events.js`). Scans `NAC.click()` /
+  `fill()` / `drag_drop()` / `expand()` / `sort()` / `set_slider()`
+  / `go_to_section()` call sites that lack `opts.source` and
+  injects `{ source: { type: 'script' } }` so existing codebases
+  satisfy the v1.9 NAC-3 ProvenanceBlock requirement without
+  per-line audit. Heuristic skips lines that look like agent
+  callers (presence of `agent` / `tool` / `claude` / `voice` /
+  `talon` keywords).
 
 Strict superset of v1.8.0 -- every v1.8 plugin remains valid;
 every v1.7 plugin remains valid.
