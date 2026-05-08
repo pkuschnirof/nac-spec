@@ -363,15 +363,176 @@
      Source declares data-nac-drag-type (e.g. "card", "row").
      Target declares data-nac-drag-accept (CSV: "card,row,*"
      or "*" for any). Mismatch -> nac:command:rejected with
-     reason: 'drag_type_mismatch'. Used by drag_drop() below. */
+     reason: 'drag_type_mismatch'. Used by drag_drop() below.
+     v1.9: case-insensitive + whitespace-trimmed matching. */
   function _dragTypesCompatible(source_el, target_el) {
     if (!source_el || !target_el) return false;
-    const stype = (source_el.getAttribute('data-nac-drag-type') || '').trim();
-    const accept = (target_el.getAttribute('data-nac-drag-accept') || '*').trim();
+    const stype = (source_el.getAttribute('data-nac-drag-type') || '').trim().toLowerCase();
+    const accept = (target_el.getAttribute('data-nac-drag-accept') || '*').trim().toLowerCase();
     if (!stype) return true; /* untyped source: assume compatible */
     if (accept === '*' || accept === '') return true;
     const types = accept.split(',').map(function (s) { return s.trim(); });
     return types.indexOf(stype) >= 0 || types.indexOf('*') >= 0;
+  }
+
+  /* ---------- v1.9.0: ARIA preflight + ARIA bridge ---------------- */
+
+  /* Spec sec 7.3.3: before invoking the host handler on NAC.click /
+     fill / drag_drop, the runtime walks the target's ancestors for
+     inert + aria-disabled (which inherit) and checks the target
+     itself for aria-busy / aria-hidden / aria-readonly. Returns
+     null if the element is operable, or a {reason, message} struct
+     if a preflight check rejects.
+     The drift tolerance window (sec 7.3.2) does NOT apply here --
+     this is a preflight gate, not a state-mismatch detector. */
+  function _ariaPreflight(el, kind) {
+    if (!el) return null;
+    /* aria-disabled and inert inherit from ancestors. */
+    var anc = el;
+    while (anc && anc !== document.body) {
+      if (anc.hasAttribute && anc.hasAttribute('inert')) {
+        return { reason: 'inert',
+          message: 'Element ancestor is inert' };
+      }
+      if (anc.getAttribute && anc.getAttribute('aria-disabled') === 'true') {
+        return { reason: 'disabled',
+          message: 'Element or ancestor has aria-disabled=true' };
+      }
+      anc = anc.parentElement;
+    }
+    /* aria-busy / aria-hidden / aria-readonly check the target only. */
+    if (el.getAttribute && el.getAttribute('aria-busy') === 'true') {
+      return { reason: 'aria_busy',
+        message: 'Element has aria-busy=true' };
+    }
+    /* readonly only blocks fill (clicks on a readonly button are fine). */
+    if (kind === 'fill' &&
+        (el.hasAttribute('readonly') ||
+         el.getAttribute('aria-readonly') === 'true')) {
+      return { reason: 'readonly',
+        message: 'Field is readonly' };
+    }
+    return null;
+  }
+
+  /* Spec sec 3.1 v1.9.0: ARIA bridge for data-nac-a11y-hint.
+     Screen readers do not read data-nac-* attributes. To make
+     a11y_hint consumable today, the runtime mounts a hidden
+     live region per page and appends per-element hint text via
+     aria-describedby. */
+  const _A11Y_HINT_DEFAULTS = {
+    'irreversible':         'This action cannot be undone.',
+    'requires_confirmation':'Confirmation will be required.',
+    'dangerous':            'Dangerous action.',
+    'long_running':         'May take a while.',
+    'costly':               'Triggers a billable side effect.',
+    'external_side_effect': 'Affects external systems.',
+    'data_loss':            'Replaces data without preservation.',
+  };
+  let _a11y_hint_localizer = null;
+  function set_a11y_hint_localizer(fn) {
+    _a11y_hint_localizer = (typeof fn === 'function') ? fn : null;
+    /* Re-render any existing bridges so the new locale takes effect. */
+    _bridgeAllA11yHints();
+  }
+  function _localizeHintTag(tag, locale) {
+    if (_a11y_hint_localizer) {
+      try {
+        var v = _a11y_hint_localizer(tag, locale);
+        if (typeof v === 'string' && v) return v;
+      } catch (e) { /* fall through */ }
+    }
+    return _A11Y_HINT_DEFAULTS[tag] || tag;
+  }
+  function _ensureHintRegion() {
+    var r = document.getElementById('nac-a11y-hint-region');
+    if (r) return r;
+    r = document.createElement('div');
+    r.id = 'nac-a11y-hint-region';
+    r.setAttribute('role', 'status');
+    r.setAttribute('aria-live', 'polite');
+    /* Visually hidden but readable by AT. Inline so hosts don't
+       have to ship our CSS. */
+    r.style.cssText =
+      'position:absolute;width:1px;height:1px;padding:0;margin:-1px;'
+    + 'overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;'
+    + 'border:0;';
+    document.body.appendChild(r);
+    return r;
+  }
+  function _bridgeOneA11yHint(el) {
+    if (!el || !el.getAttribute) return;
+    var hintRaw = el.getAttribute('data-nac-a11y-hint');
+    if (!hintRaw) return;
+    var tags = hintRaw.split('|').map(function (s) { return s.trim(); })
+                                 .filter(function (s) { return s.length > 0; });
+    if (!tags.length) return;
+    var locale = (document.documentElement.lang || 'en').split('-')[0];
+    var text = tags.map(function (t) { return _localizeHintTag(t, locale); })
+                   .join(' ');
+    /* Find or create a per-element span carrying the hint text. */
+    var spanId = el.getAttribute('data-nac-a11y-hint-span-id');
+    if (!spanId) {
+      spanId = 'nac-hint-' + Math.random().toString(36).slice(2, 10);
+      el.setAttribute('data-nac-a11y-hint-span-id', spanId);
+    }
+    var region = _ensureHintRegion();
+    var span = document.getElementById(spanId);
+    if (!span) {
+      span = document.createElement('span');
+      span.id = spanId;
+      region.appendChild(span);
+    }
+    span.textContent = text;
+    /* Append to existing aria-describedby (preserve any host value). */
+    var describedBy = el.getAttribute('aria-describedby') || '';
+    var ids = describedBy.split(/\s+/).filter(function (s) { return s.length > 0; });
+    if (ids.indexOf(spanId) < 0) {
+      ids.push(spanId);
+      el.setAttribute('aria-describedby', ids.join(' '));
+    }
+  }
+  function _bridgeAllA11yHints() {
+    var els = document.querySelectorAll('[data-nac-a11y-hint]');
+    Array.prototype.forEach.call(els, _bridgeOneA11yHint);
+  }
+  /* Run the bridge once at install + observe future mutations. */
+  function _installA11yHintBridge() {
+    if (typeof MutationObserver === 'undefined') {
+      _bridgeAllA11yHints();
+      return;
+    }
+    var run = function () { _bridgeAllA11yHints(); };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run);
+    } else {
+      run();
+    }
+    var mo = new MutationObserver(function (mutations) {
+      var dirty = false;
+      mutations.forEach(function (m) {
+        if (m.type === 'attributes' &&
+            m.attributeName === 'data-nac-a11y-hint') {
+          dirty = true;
+        } else if (m.type === 'childList' && m.addedNodes.length) {
+          for (var i = 0; i < m.addedNodes.length; i++) {
+            var n = m.addedNodes[i];
+            if (n.nodeType === 1 &&
+                (n.hasAttribute && n.hasAttribute('data-nac-a11y-hint') ||
+                 n.querySelector && n.querySelector('[data-nac-a11y-hint]'))) {
+              dirty = true; break;
+            }
+          }
+        }
+      });
+      if (dirty) _bridgeAllA11yHints();
+    });
+    mo.observe(document.body || document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-nac-a11y-hint'],
+      childList: true,
+      subtree: true,
+    });
   }
 
   /* ---------- Registry -------------------------------------------- */
@@ -562,6 +723,13 @@
         return raw.split('|').map(function (s) { return s.trim(); })
                   .filter(function (s) { return s.length > 0; });
       })(),
+      /* v1.9.0: braille_label for refreshable braille displays.
+         Voice tools / AT producing braille output prefer this over
+         aria-label (~40 char width on typical Bristol Braille
+         Canute / NVDA braille mode). Falls back to null when the
+         element does not declare data-nac-braille-label; consumers
+         should fall back to aria-label / label. */
+      braille_label: el.getAttribute('data-nac-braille-label') || null,
     };
   }
 
@@ -884,6 +1052,20 @@
       });
       throw NacError('hidden', 'Element ' + nac_id + ' is not visible');
     }
+    /* v1.9.0 ARIA preflight (sec 7.3.3): inert ancestor + aria-busy
+       block click before the host handler runs. Disabled is already
+       handled above; readonly only applies to fill (skipped here). */
+    var ariaPF = _ariaPreflight(el, 'click');
+    if (ariaPF) {
+      _emitCommandRejected({
+        command_method: 'click',
+        command_target: nac_id,
+        reason: ariaPF.reason,
+        message: ariaPF.message,
+        source: (opts && opts.source) || undefined,
+      });
+      throw NacError(ariaPF.reason, ariaPF.message);
+    }
     const role = el.getAttribute('data-nac-role') || 'action';
     const family = _CLICK_EVENT_FAMILY[role] || _CLICK_EVENT_FAMILY['action'];
     /* The first event in each family is the "success" signal; if a
@@ -1103,6 +1285,19 @@
         source: (opts && opts.source) || undefined,
       });
       throw NacError('disabled', 'Field ' + nac_id + ' is disabled');
+    }
+    /* v1.9.0 ARIA preflight (sec 7.3.3): inert / aria-busy /
+       readonly all reject before the host handler. */
+    var fillPF = _ariaPreflight(el, 'fill');
+    if (fillPF) {
+      _emitCommandRejected({
+        command_method: 'fill',
+        command_target: nac_id,
+        reason: fillPF.reason,
+        message: fillPF.message,
+        source: (opts && opts.source) || undefined,
+      });
+      throw NacError(fillPF.reason, fillPF.message);
     }
     _focusElement(el);
     const ft = el.getAttribute('data-nac-field-type');
@@ -1351,7 +1546,9 @@
     /* v1.8.0: surface skip-validate regions that contain interactive
        elements as a structured warning (not an error). Authors who
        legitimately wrap a third-party widget can ignore it; authors
-       who accidentally hid live UI behind the marker get a nudge. */
+       who accidentally hid live UI behind the marker get a nudge.
+       v1.9.0: also enforce data-nac-skip-reason (sec 3.1). A skip
+       without a reason is severity 'error' at NAC-3, 'warn' below. */
     Array.prototype.forEach.call(
       root.querySelectorAll('[data-nac-validate="skip"]'),
       function (skipEl) {
@@ -1367,6 +1564,28 @@
             interactives.length + ' interactive descendant(s); ' +
             'these will not be operable by NAC drivers',
             { interactive_count: interactives.length });
+        }
+        const reason = skipEl.getAttribute('data-nac-skip-reason');
+        if (!reason || !reason.trim()) {
+          pushErr('error', 'skip_without_reason',
+            skipEl.getAttribute('data-nac-id'),
+            'data-nac-validate="skip" requires a data-nac-skip-reason ' +
+            'attribute (sec 3.1, v1.9). Format: ' +
+            '"<category>[;remediate-by=YYYY-MM-DD][;tracker=<id>]"');
+        } else {
+          /* Optional: parse remediate-by and warn if past. */
+          var m = /remediate-by=(\d{4}-\d{2}-\d{2})/.exec(reason);
+          if (m) {
+            var dueDate = m[1];
+            var todayISO = new Date().toISOString().slice(0, 10);
+            if (dueDate < todayISO) {
+              pushErr('warn', 'skip_remediation_overdue',
+                skipEl.getAttribute('data-nac-id'),
+                'data-nac-validate="skip" remediate-by=' + dueDate +
+                ' is past (today ' + todayISO + ')',
+                { remediate_by: dueDate });
+            }
+          }
         }
       }
     );
@@ -3360,6 +3579,12 @@
         missing.push(f);
       }
     }
+    /* v1.9.0 (sec 6.2.27): ProvenanceBlock is REQUIRED at NAC-3.
+       Conformance fails if source is absent or its type is not in
+       the allowed enum. Reviewer action item (Mistral, Copilot). */
+    var srcOk = detail.source && typeof detail.source === 'object' &&
+                ['user', 'agent', 'script'].indexOf(detail.source.type) >= 0;
+    if (!srcOk) missing.push('source');
     return { ok: missing.length === 0, missing: missing };
   }
 
@@ -3439,8 +3664,8 @@
 
   global.NAC = {
     __nac_v1_installed: true,
-    version:      '1.8.0',
-    spec_version: '1.8',
+    version:      '1.9.0',
+    spec_version: '1.9',
     /* registry */
     register:        register,
     unregister:      unregister,
@@ -3562,6 +3787,8 @@
     command_failed:              command_failed,
     check_canonical_shape:       check_canonical_shape,
     validate_event_conformance:  validate_event_conformance,
+    /* v1.9.0 -- a11y_hint localizer override */
+    set_a11y_hint_localizer:     set_a11y_hint_localizer,
     /* v1.2 -- error codes */
     errors: {
       RemoteSourceRequiresSearch: 'RemoteSourceRequiresSearch',
@@ -3580,4 +3807,10 @@
   document.dispatchEvent(new CustomEvent('nac:installed', {
     detail: { version: global.NAC.version, spec: global.NAC.spec_version },
   }));
+
+  /* v1.9.0: install the ARIA bridge for data-nac-a11y-hint so
+     screen readers actually consume the hints today (sec 3.1).
+     Runs after install so existing host-level aria-describedby
+     values are preserved (we append, not overwrite). */
+  _installA11yHintBridge();
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

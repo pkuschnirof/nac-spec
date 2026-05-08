@@ -7,7 +7,20 @@
 > test scripts.
 
 **Status**: Stable.
-**Version**: 1.8.0 (spec) / 1.8.0 (reference runtime). v1.8.0
+**Version**: 1.9.0 (spec) / 1.9.0 (reference runtime). v1.9.0
+responds to the five-AI peer review panel of v1.8.0 (Microsoft
+Copilot, DeepSeek, Mistral Le Chat, Grok, ChatGPT) with a
+focused patch round closing the gaps the panel marked as
+should-land-before-2.0: machine-readable skip justification,
+ARIA bridge for a11y_hint, ProvenanceBlock enforcement in the
+self-test, ARIA-to-NAC mapping table, ARIA drift tolerance
+window, inert/readonly/aria-busy preflight, drag-type
+registry, nac:action:confirm + :undoable event families,
+data-nac-braille-label for deaf-blind users, and a public
+roadmap document. Strict superset of v1.8.0: every v1.8 plugin
+remains valid; every v1.7 plugin remains valid.
+
+**Earlier version**: 1.8.0 (2026-05-07). v1.8.0
 responds to the four-AI peer review panel of v1.7.0 (Microsoft
 Copilot, DeepSeek, Mistral Le Chat, Grok) and lands every
 agreed-upon action item in a single release. Highlights:
@@ -119,7 +132,7 @@ NAC-drives-ARIA-mirrors direction, 7.5 confirm-dialog contract,
 plus tightened plugin-id rule (sec 7.4) and click_by_verb
 tie-break + tab_by_label matching rules (sec P5). See
 CHANGELOG.md for the full diff.
-**Date**: 2026-05-07 (v1.8.0).
+**Date**: 2026-05-08 (v1.9.0).
 **Authors**: Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com> (lead), Sumi (collaboration).
 **License**: MIT.
 
@@ -1097,10 +1110,51 @@ The runtime guarantees:
    the marker affects validation only, not operability.
 
 ```html
-<section data-nac-validate="skip" data-nac-id="vendor.datepicker">
+<section data-nac-validate="skip"
+         data-nac-skip-reason="third_party_datepicker;remediate-by=2026-12-31"
+         data-nac-id="vendor.datepicker">
   <!-- vendor widget mounted here; not retrofitted with data-nac-* -->
 </section>
 ```
+
+#### data-nac-skip-reason (REQUIRED, v1.9.0+)
+
+A `data-nac-validate="skip"` element MUST also carry a
+`data-nac-skip-reason` attribute with a machine-readable
+justification. The format is a semicolon-separated list of
+key-value pairs and bare tags:
+
+```
+data-nac-skip-reason="<category>[;remediate-by=YYYY-MM-DD][;tracker=<id>]"
+```
+
+Where `<category>` is one of:
+
+| Category | Meaning |
+|---|---|
+| `third_party_widget` | Wrapped third-party component (vendor library, embed). |
+| `legacy_unmodifiable` | Inherited code the team cannot touch. |
+| `wip_remediation` | Active migration; team intends to retrofit. |
+| `closed_shadow_root` | Closed shadow DOM (out of scope per sec 7.4). |
+| `experimental` | Behind a feature flag, not production. |
+
+The optional `remediate-by` field is a target date (ISO 8601)
+for removing the skip marker. The optional `tracker` field is
+a free-form identifier (issue number, ticket, etc).
+
+The validator MUST emit `skip_without_reason` (severity:
+`error` at NAC-3, `warn` at NAC-2) when `data-nac-validate="skip"`
+appears without a `data-nac-skip-reason`. This requirement
+exists because reviewers (Mistral, Microsoft Copilot, DeepSeek)
+flagged that without enforced justification, "skip" becomes a
+permanent escape hatch and brownfield apps stay non-compliant
+indefinitely.
+
+Audits and CI tooling SHOULD report:
+- The total count of skip regions per page.
+- The count of skip regions whose `remediate-by` is past.
+- The count of skip regions per category (so teams see what
+  they actually skip most).
 
 This attribute exists because reviewers (DeepSeek, Microsoft
 Copilot, Mistral Le Chat) flagged sec 7.3.2's hard-error gate
@@ -1153,6 +1207,103 @@ a real risk of users-with-cognitive-disability triggering
 irreversible actions without comprehension. The attribute is
 the contract through which assistive software earns the
 right to interpose.
+
+#### ARIA bridge (REQUIRED runtime behaviour, v1.9.0+)
+
+Screen readers DO NOT read `data-nac-*` attributes. To make
+`data-nac-a11y-hint` consumable by AT today (without waiting
+for screen-reader vendors to learn NAC), the runtime MUST
+bridge each hint into ARIA at install time:
+
+1. The runtime creates one hidden live region per page:
+   `<div id="nac-a11y-hint-region" role="status"
+   aria-live="polite" class="nac-sr-only"></div>` -- visually
+   hidden via `clip:rect(0,0,0,0)` but readable by AT.
+
+2. For each `[data-nac-a11y-hint]` element, the runtime
+   appends to its `aria-describedby` (or sets it if absent)
+   the ID of a per-element hidden span containing the
+   resolved hint text.
+
+3. The hint text is the localized human-readable expansion
+   of each tag, joined by ". ":
+
+   | Hint tag | Default text (en) |
+   |---|---|
+   | `irreversible` | "This action cannot be undone." |
+   | `requires_confirmation` | "Confirmation will be required." |
+   | `dangerous` | "Dangerous action." |
+   | `long_running` | "May take a while." |
+   | `costly` | "Triggers a billable side effect." |
+   | `external_side_effect` | "Affects external systems." |
+   | `data_loss` | "Replaces data without preservation." |
+
+   Localized variants are supplied by the host via
+   `NAC.set_a11y_hint_localizer(fn)` where `fn(tag, locale)`
+   returns the localized string. Without a custom localizer,
+   the runtime emits the en defaults plus any string in
+   `<plugin>.label_i18n.a11y_hint.<tag>` if present in the
+   manifest.
+
+4. When the host clears or changes `data-nac-a11y-hint` on
+   an element, the runtime MUST update the bridged
+   `aria-describedby` and the hidden span synchronously.
+
+```html
+<!-- Author writes -->
+<button data-nac-id="invoice.delete"
+        data-nac-a11y-hint="irreversible|requires_confirmation">
+  Delete invoice
+</button>
+
+<!-- Runtime mutates DOM at install time to: -->
+<button data-nac-id="invoice.delete"
+        data-nac-a11y-hint="irreversible|requires_confirmation"
+        aria-describedby="nac-hint-invoice-delete">
+  Delete invoice
+</button>
+<span id="nac-hint-invoice-delete" class="nac-sr-only">
+  This action cannot be undone. Confirmation will be required.
+</span>
+```
+
+The bridge runs once at install + on every mutation that
+touches `data-nac-a11y-hint`. Without it, screen-reader users
+would never hear hints regardless of how many AI agents
+respect them.
+
+### data-nac-braille-label
+
+For users on refreshable braille displays (~40 chars wide) or
+deaf-blind users on screen-reader-plus-braille setups, a
+NAC element MAY declare an extra-short label specifically for
+braille output:
+
+```html
+<button data-nac-id="invoice.delete"
+        data-nac-action="delete"
+        aria-label="Delete invoice"
+        data-nac-braille-label="Del">
+  Delete invoice
+</button>
+```
+
+The runtime MUST surface `braille_label` on
+`NAC.describe()` / `NAC.find()` output. Voice tools and AT
+that produce braille output SHOULD prefer
+`data-nac-braille-label` over `aria-label` when the rendering
+medium is braille; SHOULD fall back to `aria-label` when no
+`data-nac-braille-label` exists.
+
+The runtime does NOT bridge this attribute into ARIA -- ARIA
+has no braille-specific channel. Consumers that produce
+braille (Bristol Braille Canute, refreshable displays via
+NVDA/JAWS braille mode) read it directly from
+`NAC.describe()`. Vocabulary: as short as feasible while
+unique within the page (typical: 3-8 characters).
+
+This attribute responds to DeepSeek's v1.8 review finding that
+the spec under-served deaf-blind users.
 
 ---
 
@@ -1840,6 +1991,22 @@ runs `validate()`/`validate_global()` and treat a non-zero
 demo-only source; v1.8 promotes it to a runtime method and a
 required NAC-3 gate (Mistral peer-review action item).
 
+#### ProvenanceBlock enforcement (REQUIRED at NAC-3, v1.9.0+)
+
+`validate_event_conformance` MUST verify that every captured
+event detail carries a `source` field with `type` set to one
+of `'user' | 'agent' | 'script'`. Events without a source are
+counted as failures, not passes. Reviewers (Mistral, Microsoft
+Copilot) flagged that v1.8 made source mandatory in spec but
+the self-test only checked widget id fields, leaving a gap
+where a non-compliant emitter could pass conformance. v1.9
+closes the gap.
+
+The runtime helper `check_canonical_shape(eventType, detail)`
+MUST also return `ok: false` when `detail.source.type` is
+absent or not one of the three allowed values, regardless of
+whether the widget id fields are present.
+
 ### 6.2.30. Command events (v1.8.0, normative)
 
 `nac:command:rejected` and `nac:command:failed` close the
@@ -1856,6 +2023,9 @@ interface NacCommandRejectedDetail {
   command_target: string | null;     // the requested nac_id, if any
   reason: 'not_found' | 'disabled' | 'hidden' | 'ambiguous' |
           'role_mismatch' | 'drag_type_mismatch' | 'invalid' |
+          /* v1.9.0 ARIA preflight extensions (sec 7.3.3): */
+          'aria_busy' | 'inert' | 'readonly' |
+          /* v1.9.0 host-defined: */
           string;
   message: string;                   // human-readable
   // Drag-specific fields (only when reason='drag_type_mismatch'):
@@ -2182,6 +2352,139 @@ discipline NAC needs to deliver the per-consumer authority
 contract from section 7.2. The cost (one CI failure per drift
 on commit) is paid by whoever introduced the drift, which is
 where the cost belongs.
+
+#### Drift tolerance window (v1.9.0+)
+
+DeepSeek's v1.8 review observed that on SPAs with React 18
+concurrent rendering, Vue 3 Suspense or Svelte 5 hydration,
+ARIA attributes legitimately mutate after a NAC state change
+within a small async window (typically 50-200 ms). A strict
+zero-tolerance check fired during that window produces false
+positives that have no remediation -- the team did the right
+thing, the framework just needs a tick to settle.
+
+v1.9.0 introduces a normative drift tolerance window of
+**200 ms**. The validator MUST:
+
+1. On detecting a state change on either the NAC or ARIA
+   side, defer `aria_nac_state_mismatch` evaluation by 200ms.
+2. If the mirror state has converged by the deadline, no
+   finding is raised.
+3. If divergence persists past the deadline, the finding is
+   raised with severity `error` at NAC-3 as before.
+
+The window is configurable via
+`NAC.set_validation_tolerance({drift_window_ms: <n>})`. The
+default 200 ms covers React/Vue/Svelte hydration, browser
+microtask flush, and most async batching patterns. Hosts
+running synchronous frameworks (vanilla JS, Lit) MAY set it
+to 0 for stricter enforcement.
+
+### 7.3.3. ARIA-to-NAC mapping (normative, added v1.9.0)
+
+When an element exposes both ARIA semantics AND is targeted
+by a NAC driver call (`NAC.click`, `NAC.fill`, `NAC.expand`,
+etc.), the runtime MUST honour ARIA preflight constraints
+BEFORE invoking the host handler. The mapping below is
+normative.
+
+| ARIA attribute               | NAC.click / fill behaviour          | Emitted event                                          |
+|------------------------------|-------------------------------------|--------------------------------------------------------|
+| `aria-disabled="true"`       | Reject before invocation            | `nac:command:rejected` reason=`disabled`               |
+| `aria-busy="true"`           | Reject before invocation            | `nac:command:rejected` reason=`aria_busy`              |
+| `aria-hidden="true"`         | Reject before invocation            | `nac:command:rejected` reason=`hidden`                 |
+| `aria-readonly="true"` (fill)| Reject `fill` calls only            | `nac:command:rejected` reason=`readonly`               |
+| `inert` attribute (HTML)     | Reject before invocation            | `nac:command:rejected` reason=`inert`                  |
+| `aria-haspopup="dialog"` etc | (advisory) recommend `requires_confirmation` hint | n/a -- pre-action UX guidance     |
+| `aria-live="polite"` region  | Reads from region after action      | n/a                                                    |
+| `aria-expanded`              | Honoured by `NAC.expand`/`collapse` | `nac:section:expanded`/`collapsed`                     |
+| `aria-pressed`               | Toggle reflected in next describe() | `nac:field:changed` (for toggle buttons)               |
+
+The runtime walks the target element's ancestors when checking
+`inert` and `aria-disabled` (these inherit). Other attributes
+apply only to the target element directly.
+
+The reason taxonomy on `nac:command:rejected` is therefore
+extended in v1.9 to include: `aria_busy`, `inert`, `readonly`.
+Existing reasons (`disabled`, `hidden`, `not_found`,
+`ambiguous`, `role_mismatch`, `drag_type_mismatch`) keep their
+v1.8 semantics.
+
+### 7.3.4. Worked examples (informative, added v1.9.0)
+
+#### Combobox
+
+```html
+<div data-nac-id="country.combobox" data-nac-role="field"
+     data-nac-field-type="combobox"
+     role="combobox"
+     aria-haspopup="listbox"
+     aria-expanded="false"
+     aria-controls="country.list">
+  <input type="text" data-nac-id="country.input">
+</div>
+<ul id="country.list" data-nac-id="country.list"
+    data-nac-role="region" role="listbox" hidden>
+  <li data-nac-id="country.option.ar" role="option"
+      aria-selected="false">Argentina</li>
+  <li data-nac-id="country.option.br" role="option"
+      aria-selected="false">Brazil</li>
+</ul>
+```
+
+NAC drivers operate on the `data-nac-id` IDs; ARIA mirrors
+expanded/selected for screen readers. When NAC.click on
+`country.option.ar` succeeds, the host updates BOTH
+`aria-selected="true"` on the option AND fires
+`nac:field:changed` with `field_id: 'country.combobox',
+new_value: 'ar'`.
+
+#### Modal dialog
+
+```html
+<button data-nac-id="invoice.delete"
+        data-nac-role="action" data-nac-action="delete"
+        data-nac-a11y-hint="irreversible|requires_confirmation"
+        aria-haspopup="dialog">
+  Delete
+</button>
+<div data-nac-id="confirm.delete"
+     data-nac-role="confirm-dialog"
+     role="dialog" aria-modal="true"
+     aria-labelledby="confirm.title"
+     hidden>
+  ...
+</div>
+```
+
+The `aria-haspopup="dialog"` aligns with the
+`requires_confirmation` hint -- both signal that clicking
+opens a confirmation flow. Voice tools and AI agents reading
+either layer arrive at the same conclusion.
+
+#### Datagrid with virtualization
+
+```html
+<div data-nac-id="orders.grid" data-nac-role="region"
+     role="grid"
+     aria-rowcount="50000"
+     aria-colcount="6">
+  <!-- only ~30 rows actually rendered; aria-rowcount tells AT
+       the virtual size -->
+  <div role="row" aria-rowindex="42"
+       data-nac-id="orders.row.ord-2026-04223">
+    <!-- canonical id is opaque + stable across pagination per sec 6.2.31 -->
+  </div>
+</div>
+```
+
+The `data-nac-id` (`orders.row.ord-2026-04223`) is the stable
+persistent ID. `aria-rowindex` is the visible position which
+changes with sort/filter/scroll. Voice command "click row 42"
+resolves through `aria-rowindex`; voice command "open the
+April 2026 #4223 order" resolves through `data-nac-id`. Both
+work; the first is positional and fragile, the second is
+semantic and stable.
 
 ---
 
