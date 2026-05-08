@@ -1,0 +1,367 @@
+Please give me a thorough, balanced technical review of the
+current release of NAC -- Native Accessibility Contract.
+License MIT. Repo: github.com/pkuschnirof/nac-spec.
+
+This evaluation targets release v1.8.0 (spec v1.8.0, runtime
+v1.8.0). v1.8.0 is pushed and live on main; the README,
+spec, runtime version constant, CHANGELOG, AI_INSTRUCTIONS
+and all docs report 1.8.0 consistently. There is no drift
+between the prompt and the repo. Read the actual files at
+the raw URLs below; every link resolves to the v1.8.0
+release.
+
+Earlier rounds reviewed v1.4.0, v1.6.0 and v1.7.0 against
+similar task sets; their reviews live in
+docs/AI_REVIEWS_OF_NAC_SPEC_v1.4.md,
+docs/AI_REVIEWS_OF_NAC_SPEC_v1.6.md and
+PromptEvaluacion2.txt (v1.7 round, with the four reviewer
+responses inline). Read them ONLY for context -- do not let
+prior reviewers anchor your own judgment.
+
+### Before you start: who this is actually for
+
+NAC is described in technical terms (HTML attributes, JSON
+manifest, JavaScript runtime, event contract). That framing
+is correct but incomplete. The downstream beneficiary of
+every NAC primitive is, more often than not, a human with a
+disability whose access to the UI depends on assistive
+technology that NEEDS a stable, machine-readable contract:
+
+- People with motor disabilities (limited dexterity, tremor,
+  paralysis, RSI) who operate UIs through voice control
+  software (Talon, Voice Access, Dragon, browser voice modes).
+  Their tools collapse on UIs without stable semantic IDs.
+  NAC's data-nac-id + label_i18n is exactly that contract.
+- People with visual disabilities (blindness, low vision,
+  dyschromatopsia) whose screen readers consume ARIA but
+  benefit from NAC.describe()'s richer manifest-grade
+  introspection.
+- People with cognitive disabilities, chronic illness, ADHD,
+  executive-function variation, autism spectrum, who delegate
+  multi-step UI work to AI assistants when they cannot
+  navigate alone. NAC's agentic loop pattern (sec 9.1, 9.2)
+  makes that delegation auditable.
+- People whose capabilities vary day-to-day (chronic pain,
+  medication side effects, mental health). On a hard day,
+  the same person who navigates fluently on a good day can
+  delegate the work and not lose access to the system.
+
+The cost of a sloppy contract is not a CI failure. It is a
+user locked out of a system they need.
+
+The PHILOSOPHY.md section "What NAC does for people with
+disabilities" develops this in depth. **Please read it
+before you start your review** -- the technical evaluation
+that follows means more when you carry the stakes. Treat
+the engineering critique as seriously as you would for any
+other spec, and add a layer that asks: does this contract
+actually deliver on the promise to those humans?
+
+### What changed since v1.7.0 (the v1.8 incorporations)
+
+v1.8.0 lands every action item the four-AI peer review of
+v1.7.0 (Microsoft Copilot, DeepSeek, Mistral Le Chat, Grok)
+agreed on. Strict superset of v1.7.0 -- every v1.7 plugin
+remains valid; the new primitives are additive and opt-in.
+
+1. **ProvenanceBlock on every event** (spec sec 6.2.1).
+   Every nac:* event detail now carries
+   `source: { type: 'user' | 'agent' | 'script', id?, tool? }`.
+   The runtime defaults to {type:'script'} when no caller
+   sets it. AI agents and voice tools MUST set
+   {type:'agent', tool:'...'} so audit pipelines can
+   distinguish human from automated traffic. This was the
+   Copilot + DeepSeek + Grok action item: silent failure was
+   not the only audit gap, lack of provenance was the deeper
+   one.
+
+2. **Command events: nac:command:rejected and
+   nac:command:failed** (spec sec 6.2.30, NEW). The runtime
+   emits these from NAC.click / fill / drag_drop when:
+   rejected = preflight detected (target disabled, hidden,
+              not_found, ambiguous, role_mismatch,
+              drag_type_mismatch).
+   failed   = unexpected throw during execution.
+   Public helpers NAC.command_rejected() and
+   NAC.command_failed() let plugin authors surface their own
+   preflight rejections + execution failures with the same
+   wire shape. This was DeepSeek's "AI claims success based
+   on event emission while the UI silently ignored the
+   command" finding.
+
+3. **data-nac-validate="skip"** declarative attribute (spec
+   sec 3.1, NEW). Marks a third-party-widget subtree as out
+   of scope for NAC-3 hard-error gating. The validator does
+   NOT raise drift / missing-required findings on the subtree
+   but DOES emit a structured warning if the region contains
+   operable surface ([data-nac-id] elements or interactive
+   native controls). This was the brownfield-abandonment
+   escape hatch DeepSeek + Copilot + Mistral all asked for.
+
+4. **data-nac-a11y-hint** declarative attribute (spec sec 3.1,
+   NEW). Pipe-separated semantic tags declaring what voice
+   tools, screen readers and AI agents should warn about
+   BEFORE invoking the action. Recognised vocabulary:
+   irreversible | requires_confirmation | dangerous |
+   long_running | costly | external_side_effect | data_loss.
+   The runtime parses these into an array on
+   NAC.describe()/find() output. Plugin manifests can read
+   them. Mistral's specific recommendation for cognitive
+   disability + irreversible-action interposition.
+
+5. **Drag-drop type validation** (spec sec 13.4 v1.8
+   addition). data-nac-drag-type on source +
+   data-nac-drag-accept (CSV or "*") on target. Mismatch
+   rejects with NacError('drag_type_mismatch') AND emits
+   nac:command:rejected with reason='drag_type_mismatch'.
+   Closes DeepSeek's finding that drag_drop did not validate
+   operation kind (reorder vs move vs copy).
+
+6. **Migration helpers** (spec sec 13.9, NEW).
+   - NAC.emit_dual(canonical, legacy, detail) fires both
+     names with the same detail, canonical first
+     synchronously, same task tick.
+   - NAC.command_rejected(detail) and NAC.command_failed(detail)
+     public wrappers around the internal emitters.
+   - NAC.check_canonical_shape(eventType, detail) -> {ok,
+     missing[]} pure utility that asserts a detail satisfies
+     the required canonical fields per sec 6.2.
+   - NAC.validate_event_conformance(driver, opts) -> Promise.
+     Runtime equivalent of the v1.7 demo's "event conformance"
+     self-test, now part of the contract per Mistral's
+     specific recommendation. The self-test is now a
+     NAC-3 normative requirement (sec 6.2.27).
+   Plus tools/migrate-legacy-events.js: a Node 14+ codemod,
+   no external deps, that walks a project tree and rewrites
+   detail.<legacy> reads to detail.<canonical> with a
+   fallback (or with --strict drops the fallback).
+   docs/MIGRATION_v1_to_v2.md is the user-facing migration
+   guide for the v2.0 hard-break.
+
+7. **Public CSS custom properties** (spec sec 7.6, NEW).
+   --nac-focus-pulse-color, --nac-focus-pulse-duration,
+   --nac-focus-pulse-thickness, --nac-focus-pulse-intensity,
+   --nac-focus-pulse-glow-radius, --nac-section-visited-color,
+   --nac-section-visited-duration. Hosts targeting users with
+   ADHD, attention or chronic-pain variability can crank the
+   cue salience without forking. prefers-reduced-motion
+   respect is normative. Mistral + Grok action item.
+
+8. **Stable persistent IDs for paginated/virtualized
+   collections** (spec sec 6.2.31, NEW). Canonical id fields
+   on collection events MUST be stable across pagination and
+   virtualization. Voice control + AI delegation collapse on
+   virtualized 5000-row autocompletes when "pick Berlin" is
+   mapped to "click position 437" rather than "click
+   option_id=opt-de-berlin". Grok + DeepSeek action item.
+
+Quality-of-life additions tied to the above:
+- legacy_event_field warning is now deduplicated by
+  (event_type, field) per session (DeepSeek's "400 identical
+  warnings per single user action" finding).
+- skip_subtree_contains_interactives validator finding
+  (severity warn) when a skip region contains operable surface.
+- Demo gained 3 cards (skip-validate region; dangerous
+  action with a11y_hint; drag-types accept/reject) plus the
+  v1.7 conformance self-test was extended to assert
+  canonical shape on the new command events.
+
+### Materials to read
+
+- README.md (v1.8 highlights + recap):
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/README.md
+- PHILOSOPHY.md, particularly the "What NAC does for people
+  with disabilities" section -- READ THIS FIRST:
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/PHILOSOPHY.md
+- Specification (~3000 lines, sec 6.2.1 expanded; sec 3.1,
+  6.2.30, 6.2.31, 6.2.32, 7.6, 13.9 new):
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/spec/NAC-v1.0.md
+- Reference implementation (~3300 lines, MIT, no deps):
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/js/nac.js
+- Authoring manual:
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/MANUAL.md
+- API reference:
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/API_REFERENCE.md
+- AI_INSTRUCTIONS.md (the file Claude Code reads on session
+  start to author NAC plugins):
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/AI_INSTRUCTIONS.md
+- CHANGELOG.md (v1.8.0 entry with reviewer-attribution):
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/CHANGELOG.md
+- Migration guide v1.x -> v2.0:
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/MIGRATION_v1_to_v2.md
+- Codemod source:
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/tools/migrate-legacy-events.js
+- IMPACT_TESTING.md and IMPACT_RPA.md (downstream
+  cost/benefit narratives):
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/IMPACT_TESTING.md
+  https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/IMPACT_RPA.md
+
+The reference demo at https://yujin.app/nac-spec/example.php
+exercises every event family in sec 6.2 plus the three
+v1.8 cards (skip-validate region, dangerous action with
+a11y_hint, drag-types accept/reject). The "v1.7+v1.8
+conformance" self-test on the demo asserts 34 canonical
+event shapes and currently lands 34 PASS / 0 FAIL / 0 MISS.
+The demo's autopilot ("Watch Yujin do it") drives every
+card end-to-end with voice narration in 10 locales; cards
+that previously rendered as static text (map, chart,
+calendar, tree) are live in v1.8 (sumi-e world map with
+selectable markers, animated bar chart, week-grid calendar
+with selectable event dots, three-level expandable tree).
+
+### Tasks
+
+T1. SUMMARY (under 120 words). Capture, in your own words,
+    what NAC v1.8.0 is, who it serves, and what the v1.8
+    incorporations mean for the contract.
+
+T2. ARCHITECTURAL REVIEW (200-400 words).
+    - Strongest design decision in v1.8.0.
+    - Weakest design decision.
+    - The section most likely to face friction in production.
+    Cite specific spec section numbers.
+
+T3. PROGRAMMING WALKTHROUGH (200-400 words). For a developer
+    consuming NAC v1.8 from a JavaScript host, sketch how
+    they would:
+    a) Subscribe to nac:command:rejected and decide which
+       reasons to surface to the user vs swallow.
+    b) Drive a delete action that carries
+       data-nac-a11y-hint="irreversible|requires_confirmation"
+       so a voice tool, screen reader, or AI agent
+       interposes BEFORE invocation.
+    c) Wrap a third-party widget in
+       data-nac-validate="skip" without losing
+       operability for NAC drivers.
+    d) Run NAC.validate_event_conformance() in CI.
+    e) Use NAC.emit_dual() in a plugin that must support
+       both v1.6.x and v1.7+ consumers.
+    Where the spec leaves room for ambiguity, name it.
+
+T4. RELATIONSHIP TO ARIA + ACCESSIBILITY (150-300 words).
+    Sec 7.3.2 (aria/nac drift hard-error) was the v1.7
+    review's biggest friction point; sec 3.1
+    data-nac-validate="skip" is the v1.8 escape hatch.
+    Does the new attribute correctly resolve the brownfield
+    abandonment risk, or does it shift the problem (e.g.
+    by encouraging teams to "skip" too liberally)? How does
+    data-nac-a11y-hint interact with ARIA aria-haspopup,
+    aria-disabled, aria-live? Does it duplicate what ARIA
+    already does, or fill a gap ARIA cannot?
+
+T5. ADOPTION ANALYSIS (150-300 words).
+    - Minimum work to adopt NAC v1.8.0 on a brownfield app
+      with one third-party widget that needs the skip
+      attribute.
+    - The most-likely-to-be-underestimated cost of adopting
+      ProvenanceBlock across a codebase where existing
+      emitters do not pass opts.source.
+    - The most-likely cause of mid-adoption abandonment.
+    - Marginal cost vs. v1.7.0.
+
+T6. SCORES AND CLOSING LINE.
+    Score 1-10 each. One sentence per axis.
+    - Clarity of the specification.
+    - Usefulness for automated test or assistant tooling.
+    - Ease of adoption for a typical web team.
+    - Ambition versus feasibility.
+    - Readiness for a public 2.0 announce.
+    Closing recommendation: would you recommend NAC v1.8.0
+    today for a team building an enterprise app for users
+    with motor / cognitive disabilities? Why or why not?
+
+T7. v1.8 PILLAR RATINGS (200-400 words). Rate each addition
+    on 1 to 10 with one sentence per axis:
+    a) Sec 6.2.1 ProvenanceBlock -- right vocabulary
+       (user/agent/script), or merging/splitting opportunities?
+    b) Sec 6.2.30 nac:command:rejected + :failed -- right
+       distinction between preflight and execution
+       failures, or false dichotomy?
+    c) Sec 3.1 data-nac-validate="skip" -- right escape
+       hatch, or a footgun that will be misused?
+    d) Sec 3.1 data-nac-a11y-hint -- right vocabulary
+       (irreversible / requires_confirmation / dangerous /
+       long_running / costly / external_side_effect /
+       data_loss), or under/over-specified?
+    e) Sec 13.4 drag-type validation -- right model
+       (CSV accept list + "*"), or should the spec mandate
+       a known type registry?
+    f) Sec 13.9 migration helpers (emit_dual,
+       command_rejected, command_failed,
+       check_canonical_shape, validate_event_conformance)
+       + the codemod -- enough to make the v2.0 hard-break
+       a non-event, or still missing pieces?
+    g) Sec 7.6 CSS custom properties for the focus pulse +
+       section-visited highlight -- right level of
+       configurability for attention-sensitive populations,
+       or under-specified (e.g. should manifest declare an
+       attention profile)?
+    h) Sec 6.2.31 stable persistent IDs for
+       paginated/virtualized collections -- enforceable as
+       a normative requirement, or aspirational?
+
+T8. v1.7 -> v1.8 ACTION-ITEM AUDIT (150-300 words). The
+    v1.7 review (Microsoft Copilot, DeepSeek, Mistral
+    Le Chat, Grok) produced ~15 action items, 8 of which
+    became the v1.8 release. List the items you (if you
+    were one of the v1.7 reviewers) or your peers raised
+    in v1.7 that are NOT addressed in v1.8.0. For each:
+    flag whether it should land in v1.9 (still patchable
+    pre-2.0), v2.0 (hard break), or post-2.0 (not blocking).
+    Be specific.
+
+T9. v2.0 READINESS (150-300 words). The author has not yet
+    publicly announced NAC and is considering whether
+    v1.8.0 + a few patches is enough for a 2.0 release.
+    From your review, list:
+    - Things ready for public consumption today.
+    - Things that should land BEFORE a 2.0 announce.
+    - Things that can wait for v2.x patches.
+    Be specific. If you would announce as 2.0 today, say so;
+    if you would wait for one or two specific items, name
+    them. Note: the v1.7 reviewer panel split 1-2-1 on this
+    question (Grok yes-with-patches, Mistral yes-after-helper,
+    Copilot + DeepSeek not-yet). Where do you fall now that
+    v1.8 has landed the migration helper, the codemod, and
+    the escape hatch?
+
+T10. ACCESSIBILITY IMPACT ASSESSMENT (200-400 words). Read
+     PHILOSOPHY.md "What NAC does for people with
+     disabilities" carefully, then answer:
+     - For a user with motor disability who depends on voice
+       control: does v1.8.0 deliver a contract their tools
+       can actually consume? What specific section / primitive
+       makes the difference, and where does it still break
+       down?
+     - For a user with cognitive disability or chronic illness
+       who delegates multi-step UI work to an AI assistant:
+       does ProvenanceBlock + sec 6.2.30 command events +
+       data-nac-a11y-hint amount to a real, auditable
+       accommodation? Or is the user still trusting the AI
+       more than the contract justifies?
+     - For a developer who genuinely wants to ship an
+       accessible product: does NAC v1.8.0 lower the cost of
+       doing the right thing, or add another layer of
+       compliance theater?
+     - One specific recommendation that, if added, would
+       meaningfully improve the accessibility of NAC-3
+       systems for a population the spec currently
+       under-serves.
+
+### Style requests
+
+- Be specific. Cite section numbers and line ranges.
+- Include both strengths and limitations. Limitations are
+  especially useful. Generic praise is not.
+- Where you are uncertain, say so rather than guessing.
+- Reply in English so multiple AI reviews can be compared.
+- Stay under 2800 words total (T7, T8, T9, T10 need
+  headroom).
+- T10 in particular: ground your answer in concrete
+  primitives from the spec. "It helps disabled people because
+  it's accessible" is not a useful sentence; "Sec 3.1
+  data-nac-a11y-hint=\"irreversible\" lets a screen reader
+  warn a user with cognitive disability before the AI
+  invokes a delete that cannot be undone" is.
+
+Thank you.
