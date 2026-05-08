@@ -3,9 +3,10 @@
 # spec stays MIT regardless. These are the rails to keep the
 # maintainer above water:
 
-# Polar.sh -- recurring sponsorship tiers (Supporter / Backer /
-# Sponsor / Enterprise) plus one-time sponsorship.
-custom: ['https://polar.sh/pablo-adrian-kuschniroff']
+# Polar.sh -- single checkout that lets the visitor choose between
+# the recurring sponsorship tiers (Supporter $5/mo, Backer $25,
+# Sponsor $100, Enterprise $500) plus one-time sponsorship $25+.
+custom: ['https://buy.polar.sh/polar_cl_mqEuONOGSTr3bn9P8XSQRRFryST2htj4xDv1p0nNDJW']
 
 # GitHub Sponsors -- waitlist applied; will activate when GitHub
 # approves the AR setup (typically 1-2 weeks after KYC).

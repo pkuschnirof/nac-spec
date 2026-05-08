@@ -878,8 +878,9 @@ NAC and wants the maintainer to keep building, porting the runtime
 to other languages, and responding to issues, here is how to keep
 that work funded:
 
-- **Polar.sh** (recurring + one-time sponsorship):
-  https://polar.sh/pablo-adrian-kuschniroff
+- **Polar.sh** (recurring + one-time sponsorship, single checkout
+  with all 5 options):
+  https://buy.polar.sh/polar_cl_mqEuONOGSTr3bn9P8XSQRRFryST2htj4xDv1p0nNDJW
   - Supporter $5/mo -- recognition in `CONTRIBUTORS.md`
   - Backer $25/mo -- + GitHub badge, recognition across launch
   - Sponsor $100/mo -- + logo in README, priority issue triage
