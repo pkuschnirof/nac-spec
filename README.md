@@ -870,6 +870,36 @@ This is an open standard. Forks, suggestions, language ports
 spec is intentionally minimal; new attribute types or roles MUST go
 through a spec PR with at least one production reference deployment.
 
+## Supporting NAC
+
+NAC is built and maintained by one person (Pablo Adrian Kuschniroff)
+who needs to eat to keep shipping. If your team or company adopts
+NAC and wants the maintainer to keep building, porting the runtime
+to other languages, and responding to issues, here is how to keep
+that work funded:
+
+- **Polar.sh** (recurring + one-time sponsorship):
+  https://polar.sh/pablo-adrian-kuschniroff
+  - Supporter $5/mo -- recognition in `CONTRIBUTORS.md`
+  - Backer $25/mo -- + GitHub badge, recognition across launch
+  - Sponsor $100/mo -- + logo in README, priority issue triage
+  - Enterprise $500/mo -- + 1h call/month + adoption support
+  - One-time sponsor $25+ -- single contribution, enterprise PO,
+    bug bounty, conference tip
+
+- **GitHub Sponsors** (waitlist; will activate when GitHub approves
+  the maintainer's setup): https://github.com/sponsors/pkuschnirof
+
+- **Commercial adoption help**: pablo.kuschnirof@gmail.com
+
+- **Yujin** (the production showcase using NAC end-to-end --
+  buy a SaaS subscription if NAC's contract is what your team
+  needs in production tomorrow): https://yujin.app
+
+The spec stays MIT regardless. The funding rails above exist to
+keep the maintainer working on NAC instead of selling time
+elsewhere -- not as a paywall.
+
 ## Related work
 
 - **ARIA / WAI-ARIA (W3C)** -- the dominant accessibility contract.

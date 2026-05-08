@@ -1,0 +1,12 @@
+# NAC is built and maintained by one solo developer (Pablo Adrian
+# Kuschniroff) who needs sustaining income to keep shipping. The
+# spec stays MIT regardless. These are the rails to keep the
+# maintainer above water:
+
+# Polar.sh -- recurring sponsorship tiers (Supporter / Backer /
+# Sponsor / Enterprise) plus one-time sponsorship.
+custom: ['https://polar.sh/pablo-adrian-kuschniroff']
+
+# GitHub Sponsors -- waitlist applied; will activate when GitHub
+# approves the AR setup (typically 1-2 weeks after KYC).
+github: pkuschnirof
