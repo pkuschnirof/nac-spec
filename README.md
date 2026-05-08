@@ -844,17 +844,24 @@ https://github.com/pkuschnirof/nac-spec
 
 ## Status
 
-NAC v1.8 is **stable**. The first production deployment ships
-with the Yujin CRM (yujin.app) Control Center plugins; the
-public reference demo at https://yujin.app/nac-spec/example.php
-exercises every primitive in the spec (v1.0 piano + modal +
-form, v1.1 tabs + accordion + combobox + slider + table +
-drag-drop, v1.2 remote autocomplete + window chrome + system
-map + section navigation, v1.3 toast + banner + confirm +
-stepper + tree + tag-input + drawer + calendar + chart + map +
-richtext, v1.4 breadcrumb + carousel + timeline + reorder, v1.5
-agentic chat loop with Claude Sonnet primary + DeepSeek free
-fallback). May 2026.
+NAC v1.9 is **stable** (the v2.0 patch round; v2.0 cuts shortly
+after the closing AI peer review pass). The first production
+deployment ships with the Yujin CRM (yujin.app) Control Center
+plugins; the public reference demo at
+https://yujin.app/nac-spec/example.php exercises every primitive
+in the spec (v1.0 piano + modal + form, v1.1 tabs + accordion +
+combobox + slider + table + drag-drop, v1.2 remote autocomplete
++ window chrome + system map + section navigation, v1.3 toast +
+banner + confirm + stepper + tree + tag-input + drawer +
+calendar + chart + map + richtext, v1.4 breadcrumb + carousel +
+timeline + reorder, v1.5 agentic chat loop with Claude Sonnet
+primary + DeepSeek free fallback, v1.6 reset primitive +
+sec 7.3.2 ARIA-NAC drift hard-error, v1.7 sec 6.2 canonical
+event detail shapes, v1.8 ProvenanceBlock + command:rejected/
+failed + skip-validate + a11y-hint + drag-types, v1.9 ARIA
+bridge + braille label + HMAC signing + nac:action:confirm +
+recommended_remediation + skip-reason + drag-type registry +
+test harness + replay buffer + perf budget). May 2026.
 
 ## Contributing
 

@@ -80,6 +80,44 @@ main tagged 2026-05-08):
   `fill()` / `drag_drop()` / `expand()` / `sort()` / `set_slider()` /
   `go_to_section()` call sites that lack `opts.source` and injects
   `{ source: { type: 'script' } }`.
+- **Sec 6.2.1** `source.signature` optional HMAC field +
+  `source.parent` recursive ProvenanceBlock for nested delegation
+  chains. Helpers `NAC.sign_provenance(detail, secret)` +
+  `NAC.verify_provenance(detail, secret)` using HMAC-SHA256 +
+  constant-time compare. Microsoft Copilot + ChatGPT v1.8 findings.
+- **Sec 6.2.30** `recommended_remediation` field auto-populated on
+  every emitted `nac:command:rejected` / `:failed` event. 13-entry
+  normative lookup table mapping each reason to its canonical
+  next-action verb. ChatGPT v1.8 finding. Helper
+  `NAC.recommended_remediation(reason)`.
+- **Sec 7.6** Normative `@media (prefers-contrast: more)` override
+  block (black 5px outline + 26px glow when OS reports high-contrast).
+  DeepSeek v1.8 finding.
+- **Sec 13.5** `manifest.attention_profile` field with 5 presets
+  (`default` / `high_contrast` / `reduced_motion` / `extended_pulse`
+  / `maximum_salience`). Runtime applies CSS custom properties on
+  the plugin root at register time. Mistral + Grok + Copilot v1.8
+  finding.
+- **Sec 3.1** `data-nac-confirmation-message` attribute (literal
+  text or `i18n:<key>`) for per-element override of the
+  auto-generated interposition text used by `confirm_action`.
+  Grok v1.8 finding.
+- **Sec 3.1** Hint vocabulary additions: `session_boundary`,
+  `audit_required`. PHILOSOPHY.md narrative connects each tag to a
+  specific disability population. DeepSeek v1.8 finding.
+- **Sec 3.1** Hint priority ordering normative. 9-entry order
+  (audit_required > session_boundary > irreversible > data_loss >
+  dangerous > external_side_effect > costly > requires_confirmation
+  > long_running). Custom hints sort to bottom unless a host
+  registers a custom priority. Helpers `NAC.sort_hints_by_priority`,
+  `NAC.set_hint_priority`. Mistral + DeepSeek v1.8 finding.
+- **Sec 3.1** `skip_no_remediate_date` validator finding (warn at
+  NAC-3) when `data-nac-skip-reason` has a category but no
+  `remediate-by=YYYY-MM-DD` token. Closes the "skip drifts to
+  permanent" risk Mistral flagged.
+- **Runtime warning** `legacy_event_without_canonical` when a legacy
+  event fires without its canonical pair in the same task tick
+  (deduped per (legacy, canonical) pair per session). DeepSeek v1.8.
 
 ---
 
@@ -88,14 +126,6 @@ main tagged 2026-05-08):
 These items are valuable but did NOT block the v2.0 announce. They
 land as a single MINOR release within ~3 months of v2.0.
 
-- **Provenance authenticity**: optional HMAC signing of
-  `source: { type: 'agent', tool, ... }` so an audit pipeline can
-  verify the agent identity is not forged. Spec extension to
-  ProvenanceBlock + reference helpers `NAC.sign_provenance(detail,
-  key)` and `NAC.verify_provenance(detail, key)`.
-- **Hierarchical provenance chains**: support for nested delegation
-  (`browser-extension -> local-orchestrator -> cloud-agent`) via
-  `source.parent` recursive field. ChatGPT v1.8 finding.
 - **Capability/version negotiation**: plugin manifests declare their
   required `nac_version_range`, host runtime validates compatibility
   before mounting, plugin can declare optional capabilities the host
@@ -109,23 +139,8 @@ land as a single MINOR release within ~3 months of v2.0.
 - **Independent interoperability test suite**: separate repo /
   package containing canonical scenarios that any NAC runtime must
   pass. ChatGPT v1.8 finding.
-- **Manifest attention profile**: presets (`high_contrast`,
-  `reduced_motion`, `extended_pulse_duration`) declared per plugin
-  manifest, runtime applies the matching CSS custom properties
-  automatically. Mistral + Grok + Copilot v1.8 finding.
-- **`prefers-contrast` media query integration** for the focus
-  pulse + section-visited highlight CSS (sec 7.6).
-- **`data-nac-confirmation-message`** i18n key for standardised
-  interposition text. Grok v1.8 finding.
-- **`session_boundary` and `audit_required`** added to the
-  `data-nac-a11y-hint` vocabulary. DeepSeek v1.8 finding.
-- **Hint priority ordering normative**: spec rule for which hint
-  takes precedence when multiple apply (currently advisory in
-  AUTHORING_PATTERNS.md sec 3.1; promote to normative in v2.1).
-- **`emit_dual` polyfill** for older NAC runtimes (gradual rollout).
-- **Runtime warning** when a legacy event fires without a canonical
-  counterpart (helps catch incomplete migrations).
 - **CI dashboard / reporting tool** for conformance results.
+  Microsoft Copilot v1.8 finding.
 
 ---
 
