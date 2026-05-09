@@ -140,9 +140,36 @@
   var _lastGestureTime = 0;
   var GESTURE_FRESH_MS = 100;
 
+  /* v2.0-rc2 (Mistral T4-F1): mobile WebView contexts (Cordova,
+     Capacitor, React Native WebView) have inconsistent isTrusted
+     semantics. Hosts running in those environments register a
+     custom derivation function via setMobileWebViewAttestation so
+     the platform-specific signal substitutes for browser
+     event.isTrusted. */
+  var _mobileWebViewAttestor = null;
+
+  function setMobileWebViewAttestation(fn) {
+    if (fn != null && typeof fn !== 'function') {
+      throw new Error('[NAC v2] setMobileWebViewAttestation expects function|null');
+    }
+    _mobileWebViewAttestor = fn;
+  }
+
   function _captureGestureFromDom() {
     var handler = function (e) {
-      _lastGestureTrusted = !!e.isTrusted;
+      /* When a custom WebView attestor is registered, its return
+         value (or function call given the event) substitutes the
+         raw isTrusted reading. */
+      if (_mobileWebViewAttestor) {
+        try {
+          var attested = !!_mobileWebViewAttestor(e);
+          _lastGestureTrusted = attested;
+        } catch (err) {
+          _lastGestureTrusted = !!e.isTrusted;
+        }
+      } else {
+        _lastGestureTrusted = !!e.isTrusted;
+      }
       _lastGestureTime = Date.now();
     };
     ['click','keydown','keyup','touchstart','pointerdown'].forEach(function (n) {
@@ -169,6 +196,53 @@
       ts: Date.now()
     };
   }
+
+  /* ------------------------------------------------------------- perf tolerance */
+
+  /* v2.0-rc2 (Grok+Mistral T6-F1): default throttle bumped 50ms ->
+     100ms after concurrent reviewer feedback that 50ms drops
+     events on bursty UIs. set_perf_tolerance({mutation_throttle_ms,
+     describe_target_ms, etc}) lets hosts tune for their workload. */
+  var _perfTolerance = {
+    mutation_throttle_ms: 100,        /* was 50 in rc1 */
+    describe_target_ms: 50,            /* was 30 in rc1 (Mistral T6-F2) */
+    describe_hard_fail_ms: 150,        /* was 100 in rc1 */
+    adopt_hard_fail_ms: 20,            /* was 15 in rc1 */
+    autoregister_hard_fail_ms: 5
+  };
+
+  function set_perf_tolerance(opts) {
+    if (!opts || typeof opts !== 'object') {
+      throw new Error('[NAC v2] set_perf_tolerance expects object');
+    }
+    Object.keys(opts).forEach(function (k) {
+      if (k in _perfTolerance && typeof opts[k] === 'number' && opts[k] > 0) {
+        _perfTolerance[k] = opts[k];
+      }
+    });
+  }
+  function get_perf_tolerance() { return Object.assign({}, _perfTolerance); }
+
+  /* ------------------------------------------------------------- validation tolerance */
+
+  /* v2.0-rc2 (Grok T5-F1 + Mistral T5-F2): NAC-3 default i18n
+     severity bumped from 'error' to 'warn' after concurrent
+     reviewer feedback that mandatory at NAC-3 blocks incremental
+     SaaS rollouts. Hosts that want strict 'error' behaviour opt
+     in via set_validation_tolerance({i18n_strict: 'error'}). */
+  var _validationTolerance = {
+    i18n_strict: 'warn'  /* 'warn' (default) | 'error' | 'silent' */
+  };
+
+  function set_validation_tolerance(opts) {
+    if (!opts || typeof opts !== 'object') {
+      throw new Error('[NAC v2] set_validation_tolerance expects object');
+    }
+    if (opts.i18n_strict && ['warn', 'error', 'silent'].indexOf(opts.i18n_strict) >= 0) {
+      _validationTolerance.i18n_strict = opts.i18n_strict;
+    }
+  }
+  function get_validation_tolerance() { return Object.assign({}, _validationTolerance); }
 
   /* ------------------------------------------------------------- scope */
 
@@ -460,7 +534,9 @@
   var _watchObservers = [];
   autoRegister.watch = function (containerEl, opts) {
     opts = opts || {};
-    var throttleMs = opts.throttleMs || 50;
+    /* v2.0-rc2: default throttle pulled from _perfTolerance (100ms),
+       caller may still override per-watch via opts.throttleMs. */
+    var throttleMs = opts.throttleMs || _perfTolerance.mutation_throttle_ms;
     var pending = false;
     var queue = [];
 
@@ -796,35 +872,47 @@
   function validate_global_v2(opts) {
     opts = opts || {};
     var findings = { errors: [], warnings: [] };
-    /* i18n_strict */
+    /* v2.0-rc2 (Grok T5-F1 + Mistral T5-F2): severity for missing-
+       locale findings now honours the tolerance setting. Default
+       at NAC-3 is 'warn'; hosts that need NAC-4-equivalent strict
+       mode opt in via set_validation_tolerance({i18n_strict:'error'})
+       OR pass opts.i18n_strict_severity explicitly. */
+    var severity = opts.i18n_strict_severity || _validationTolerance.i18n_strict;
+    if (severity === 'silent') return findings;
+    var bucket = severity === 'error' ? findings.errors : findings.warnings;
+
     if (opts.i18n_strict) {
       Object.keys(_catalog).forEach(function (key) {
         var entry = _catalog[key];
         var missing = _supported.filter(function (loc) { return !entry[loc]; });
         if (missing.length) {
-          findings.errors.push({
+          bucket.push({
             code: 'i18n_missing_locale',
             key: key,
-            missing: missing
+            missing: missing,
+            severity: severity
           });
         }
         Object.keys(entry).forEach(function (loc) {
           if (_supported.indexOf(loc) < 0) {
+            /* invalid_locale always error: catalog has nonsense key */
             findings.errors.push({
               code: 'i18n_invalid_locale',
               key: key,
               locale: loc
             });
           }
+          /* empty_string honours severity tolerance too */
           if (typeof entry[loc] === 'string' && entry[loc].length === 0) {
-            findings.errors.push({ code: 'i18n_string_empty', key: key, locale: loc });
+            bucket.push({ code: 'i18n_string_empty', key: key, locale: loc, severity: severity });
           }
           if (typeof entry[loc] === 'string' && entry[loc].length > 1000) {
             findings.warnings.push({ code: 'i18n_string_too_long', key: key, locale: loc });
           }
         });
       });
-      /* Mono-locale autoderived warn */
+      /* Mono-locale autoderived warn (always warn -- this is a
+         drift signal, not a correctness signal). */
       Object.keys(_scopes).forEach(function (slug) {
         if (_scopes[slug].autoderived) {
           findings.warnings.push({ code: 'i18n_mono_locale_autoderived', slug: slug });
@@ -847,12 +935,17 @@
   NAC.setTenantPrefix        = setTenantPrefix;
   NAC.getTenantPrefix        = getTenantPrefix;
   NAC.attestUserGesture      = attestUserGesture;
+  NAC.setMobileWebViewAttestation = setMobileWebViewAttestation;
   NAC.t                      = t;
   NAC.registerCatalog        = registerCatalog;
   NAC.locale                 = locale;
   NAC.setSupportedLocales    = setSupportedLocales;
   NAC.setRTLLocales          = setRTLLocales;
   NAC.set_provenance_secret  = set_provenance_secret;
+  NAC.set_perf_tolerance     = set_perf_tolerance;
+  NAC.get_perf_tolerance     = get_perf_tolerance;
+  NAC.set_validation_tolerance = set_validation_tolerance;
+  NAC.get_validation_tolerance = get_validation_tolerance;
   NAC.describe_v2            = describe_v2;
   NAC.validate_global_v2     = validate_global_v2;
 
@@ -868,7 +961,7 @@
   };
 
   /* Bump version constants */
-  NAC.version_v2      = '2.0.0';
+  NAC.version_v2      = '2.0.0-rc2';
   NAC.spec_version_v2 = '2.0';
 
   document.dispatchEvent(new CustomEvent('nac:v2_installed', {

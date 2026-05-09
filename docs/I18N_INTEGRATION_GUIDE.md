@@ -99,14 +99,37 @@ The contract NAC v2.0 normalises:
 
 ### 2.3 NAC strict mode (NAC-3)
 
-At NAC-3, the validator emits **error**-severity findings if any
-key is missing any locale in the supported list. NAC-2 emits warns;
-NAC-1 ignores.
+**Updated v2.0-rc2** (Grok T5-F1 + Mistral T5-F2 concurrent
+finding): at NAC-3 the validator emits **warn**-severity findings
+by default for missing locales, NOT error. The original rc1
+behaviour (error severity) blocked incremental SaaS rollouts where
+languages are added after launch one at a time. Hosts that need
+strict-error semantics opt in:
 
 ```javascript
+// Default (rc2): missing locales surface as warnings.
 NAC.validate_global({i18n_strict: true});
-// Returns: { errors: [{code: 'i18n_missing_locale', key: 'foo', missing: ['ja']}], warnings: [...] }
+// Returns: { errors: [], warnings: [{code: 'i18n_missing_locale', ...}] }
+
+// Opt-in to strict error severity:
+NAC.set_validation_tolerance({i18n_strict: 'error'});
+NAC.validate_global({i18n_strict: true});
+// Returns: { errors: [{code: 'i18n_missing_locale', ...}], warnings: [] }
+
+// Or opt-out entirely:
+NAC.set_validation_tolerance({i18n_strict: 'silent'});
 ```
+
+**Severity semantics**:
+- `'warn'` (default at NAC-3): findings are visible but do not
+  fail conformance. Adopters can deploy at NAC-3 with incomplete
+  catalog and fill gaps incrementally.
+- `'error'` (opt-in): findings fail conformance. Use when a
+  release gate requires 100% locale coverage.
+- `'silent'` (escape hatch): no findings emitted. Use only when
+  i18n is intentionally deferred (e.g. early greenfield prototype).
+
+NAC-2 keeps `warn` semantics; NAC-1 ignores.
 
 ---
 

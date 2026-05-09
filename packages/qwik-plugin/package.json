@@ -1,0 +1,9 @@
+{
+  "name": "@nac-spec/qwik-plugin",
+  "version": "2.0.0-rc2",
+  "description": "Qwik plugin: auto-inject data-nac-id from component$ name + key",
+  "main": "src/index.js",
+  "license": "MIT",
+  "peerDependencies": { "@builder.io/qwik": "^1.5.0" },
+  "keywords": ["nac", "accessibility", "qwik", "ai-operability"]
+}

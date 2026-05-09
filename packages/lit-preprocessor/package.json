@@ -1,0 +1,9 @@
+{
+  "name": "@nac-spec/lit-preprocessor",
+  "version": "2.0.0-rc2",
+  "description": "Lit preprocessor: auto-inject data-nac-id into html``-template tags",
+  "main": "src/index.js",
+  "license": "MIT",
+  "peerDependencies": { "lit": "^3.0.0" },
+  "keywords": ["nac", "accessibility", "lit", "web-components", "shadow-dom"]
+}

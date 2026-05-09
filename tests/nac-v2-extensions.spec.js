@@ -176,8 +176,9 @@ function test(name, fn) {
   });
 
   /* ----- validate_global_v2 with i18n_strict ----- */
-  await test('validate_global_v2 detects missing locale', () => {
-    /* Need a key missing locales */
+  await test('validate_global_v2 detects missing locale (under error tolerance)', () => {
+    /* rc2 defaults to warn; opt-in to error to confirm error path. */
+    NAC.set_validation_tolerance({ i18n_strict: 'error' });
     NAC.setSupportedLocales(['es', 'en', 'ja']);
     NAC.registerCatalog({
       'incomplete.key': { es: 'Hola', en: 'Hello' /* ja missing */ }
@@ -187,16 +188,65 @@ function test(name, fn) {
       f.code === 'i18n_missing_locale' && f.key === 'incomplete.key');
     assert.ok(missingFinding);
     assert.deepStrictEqual(missingFinding.missing, ['ja']);
+    /* Reset for following tests */
+    NAC.set_validation_tolerance({ i18n_strict: 'warn' });
   });
 
-  await test('validate_global_v2 detects empty string', () => {
+  await test('validate_global_v2 detects empty string (under error tolerance)', () => {
+    NAC.set_validation_tolerance({ i18n_strict: 'error' });
     NAC.registerCatalog({
-      'empty.key': { es: 'Hola', en: '', ja: 'こんにちは' }
+      'empty.key.r2': { es: 'Hola', en: '', ja: 'kon' }
     });
     const findings = NAC.validate_global_v2({ i18n_strict: true });
     const emptyFinding = findings.errors.find(f =>
-      f.code === 'i18n_string_empty' && f.key === 'empty.key');
+      f.code === 'i18n_string_empty' && f.key === 'empty.key.r2');
     assert.ok(emptyFinding);
+    NAC.set_validation_tolerance({ i18n_strict: 'warn' });
+  });
+
+  await test('validate_global_v2 default i18n severity is warn (rc2)', () => {
+    /* Reset tolerance to default */
+    NAC.set_validation_tolerance({ i18n_strict: 'warn' });
+    NAC.setSupportedLocales(['es','en','ja']);
+    NAC.registerCatalog({
+      'rc2.warn.test': { es: 'Hola', en: 'Hello' /* ja missing */ }
+    });
+    const findings = NAC.validate_global_v2({ i18n_strict: true });
+    const inWarnings = findings.warnings.find(f =>
+      f.code === 'i18n_missing_locale' && f.key === 'rc2.warn.test');
+    const inErrors = findings.errors.find(f =>
+      f.code === 'i18n_missing_locale' && f.key === 'rc2.warn.test');
+    assert.ok(inWarnings, 'missing locale should land in warnings (rc2 default)');
+    assert.ok(!inErrors, 'missing locale should NOT be in errors at default tolerance');
+  });
+
+  await test('set_validation_tolerance({i18n_strict:error}) escalates', () => {
+    NAC.set_validation_tolerance({ i18n_strict: 'error' });
+    NAC.registerCatalog({
+      'rc2.error.test': { es: 'Hola' /* en + ja missing */ }
+    });
+    const findings = NAC.validate_global_v2({ i18n_strict: true });
+    const inErrors = findings.errors.find(f =>
+      f.code === 'i18n_missing_locale' && f.key === 'rc2.error.test');
+    assert.ok(inErrors, 'missing locale escalated to error when opt-in');
+    /* Reset for following tests */
+    NAC.set_validation_tolerance({ i18n_strict: 'warn' });
+  });
+
+  await test('set_perf_tolerance updates throttle defaults', () => {
+    const before = NAC.get_perf_tolerance();
+    assert.strictEqual(before.mutation_throttle_ms, 100, 'rc2 default = 100ms');
+    NAC.set_perf_tolerance({ mutation_throttle_ms: 200 });
+    const after = NAC.get_perf_tolerance();
+    assert.strictEqual(after.mutation_throttle_ms, 200);
+    NAC.set_perf_tolerance({ mutation_throttle_ms: 100 });
+  });
+
+  await test('setMobileWebViewAttestation accepts function or null', () => {
+    NAC.setMobileWebViewAttestation(function (e) { return false; });
+    NAC.setMobileWebViewAttestation(null);
+    assert.throws(() => NAC.setMobileWebViewAttestation('not-a-function'),
+      /expects function|null/);
   });
 
   /* ----- summary ----- */

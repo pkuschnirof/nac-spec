@@ -1,0 +1,8 @@
+{
+  "name": "@nac-spec/telemetry",
+  "version": "2.0.0-rc2",
+  "description": "Telemetry interface for NAC events: hooks for Sentry, Datadog, OpenTelemetry, etc.",
+  "main": "src/index.js",
+  "license": "MIT",
+  "keywords": ["nac", "accessibility", "telemetry", "observability", "sentry", "datadog", "opentelemetry"]
+}

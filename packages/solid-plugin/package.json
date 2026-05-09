@@ -1,0 +1,9 @@
+{
+  "name": "@nac-spec/solid-plugin",
+  "version": "2.0.0-rc2",
+  "description": "SolidJS Babel/Vite plugin: auto-inject data-nac-id from component name + key",
+  "main": "src/index.js",
+  "license": "MIT",
+  "peerDependencies": { "solid-js": "^1.7.0" },
+  "keywords": ["nac", "accessibility", "solid", "ai-operability"]
+}

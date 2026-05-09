@@ -512,6 +512,32 @@ before announcement to avoid overpromising."*
 Verbatim Mistral response retained at
 `docs/peer-review-round3-mistral.txt`.
 
+### Round 3 -- closed concurrent conditions (rc1 -> rc2, 2026-05-09)
+
+Per author decision (option 2 of three options), conditions raised
+**concurrently** by Grok 4 + Mistral Le Chat are closed in
+v2.0.0-rc2. Conditions raised by only one reviewer remain open
+until a second reviewer concurs or disputes (arbitrage path).
+
+| Concurrent condition | Closed in rc2 via |
+|---|---|
+| T4-F1 mobile_webview_attestation_gap | `setMobileWebViewAttestation(fn)` runtime hook + spec annex sec 15.10 with platform-behaviour table |
+| T5-F1+F2 i18n_strict default too aggressive | Default severity `error` -> `warn` at NAC-3; opt-in to `error` via `set_validation_tolerance({i18n_strict: 'error'})`. Spec sec 15.12 + I18N_INTEGRATION_GUIDE.md sec 2.3 updated. |
+| T6-F1 mutationobserver_throttle_too_low | Default 50ms -> 100ms; tunable via `set_perf_tolerance({mutation_throttle_ms: <n>})`. Spec sec 15.13. |
+| T7-F1 missing_framework_support | 5 new package skeletons: `solid-plugin`, `qwik-plugin`, `lit-preprocessor`, `playwright-fixture`, `telemetry`. Roadmap phase 4 expanded. |
+
+Plus T6-F2 (Mistral solo, perf budget tightness) absorbed into
+the same rc2 perf budget revision since it was the same area.
+
+### Round 3 -- conditions held open (awaiting arbitrage)
+
+| Open condition | Severity | Reviewer | Held until |
+|---|---|---|---|
+| T2-F1 missing_second_tightening_change | high | Mistral solo | second reviewer concurs |
+| T2-F2 provenance_block_field_addition | medium | Mistral solo | second reviewer concurs |
+| T8-F1 convergence_timeline_overly_optimistic | high | Mistral high vs Grok "defensible" | DISPUTE -- third reviewer breaks tie |
+| T9-F1 boilerplate_reduction_overstated | medium | Mistral solo | Yujin migration produces real numbers (phase 5.5) |
+
 ### DeepSeek, ChatGPT, MS Copilot, Claude arbiter -- pending
 
 Pending re-attempt. The author distributed

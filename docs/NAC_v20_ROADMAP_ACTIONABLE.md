@@ -175,6 +175,11 @@ section signatures are stable. Probably week 2-3 of phase 3.
 | `@nac-spec/babel-plugin-react` | F | 3 | injects `data-nac-id` from React component name + key prop. Tests against React 17/18/19. |
 | `@nac-spec/vue-plugin` | G | 2 | analogous for Vue 3 SFC. |
 | `@nac-spec/svelte-preprocessor` | H | 2 | analogous. |
+| `@nac-spec/solid-plugin` | F | 2 | **NEW rc2 (Mistral T7-F1)**. SolidJS auto-anotation. |
+| `@nac-spec/qwik-plugin` | G | 2 | **NEW rc2 (Mistral T7-F1)**. Qwik component$ auto-anotation. |
+| `@nac-spec/lit-preprocessor` | H | 2.5 | **NEW rc2 (Mistral T7-F1)**. Lit + auto bridgeShadowRoot. |
+| `@nac-spec/playwright-fixture` | I | 3 | **NEW rc2 (Mistral T7-F2)**. NAC-aware Playwright + manifest snapshot diff. |
+| `@nac-spec/telemetry` (interface) | I | 1.5 | **NEW rc2 (Mistral T7-F3)**. Base interface for Sentry/Datadog/OTel adapters. |
 | `@nac-spec/devtools` (Chrome ext) | I | 5 | live manifest tree, validate, fix suggestions. Manifest V3, Firefox port follows. |
 | `@nac-spec/codemod` (CLI tool) | F | 4 | scan codebase, infer NAC annotations, output PR. ~60% auto-coverage target. |
 | `@nac-spec/cookbook` (30 patterns) | Sumi + asistido AI | 5 | each pattern: HTML + manifest + tests + 1-paragraph explanation. |
@@ -183,10 +188,28 @@ section signatures are stable. Probably week 2-3 of phase 3.
 | `@nac-spec/rules-mapbox` | community + Sumi seed | 1 | reference rule. |
 | Repo packaging (npm publishing config) | Sumi | 2 | monorepo with lerna or nx, CI publishes on tag. |
 
-**Total wall-clock with 4 workers parallel**: ~14-16 days.
+**Total wall-clock with 4 workers parallel**: ~17-19 days (was
+14-16 in rc1; rc2 adds Solid + Qwik + Lit + Playwright + telemetry
+interface from Mistral T7).
 
-**Realistic**: 21 days incl. testing on real codebases (greenfield
+**Realistic**: 24 days incl. testing on real codebases (greenfield
 demo + Yujin brownfield).
+
+### 6.2 Deferred to v2.0.x post-tag (per Mistral T7-F2/F4)
+
+These ship as patch releases v2.0.1 / v2.0.2 / v2.0.3 after the
+v2.0.0 tag, so the announce can disclose them honestly without
+delaying the tag:
+
+| Tool | Notes |
+|---|---|
+| `@nac-spec/cypress-plugin` | Cypress integration; Playwright is the priority since AI-driven testing aligns with NAC. |
+| `@nac-spec/storybook-addon` | per-story manifest validation. |
+| `@nac-spec/vscode-ls` | VS Code language server for manifest schema (low effort, high value, Mistral T7-F4). |
+| `@nac-spec/telemetry-sentry` | reference Sentry adapter (Sumi seeds). |
+| `@nac-spec/telemetry-datadog` | community adapter. |
+| `@nac-spec/telemetry-otel` | community adapter. |
+| `@nac-spec/codemod-i18n` | gettext .po -> NAC catalog converter (Mistral T5-F1). |
 
 ### 6.2 Optional (nice-to-have, can defer to v2.0.x patches)
 

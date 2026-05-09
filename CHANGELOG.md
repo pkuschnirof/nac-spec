@@ -22,6 +22,123 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [2.0.0-rc2] - 2026-05-09
+
+PATCH-style update on top of rc1. Closes the four concurrent
+conditions raised by Round 3 reviewers Grok 4 and Mistral Le Chat
+(both reviewers independently flagged the same issues). Conditions
+flagged by only one reviewer (4 from Mistral) await a second
+reviewer for arbitrage and stay open at rc2.
+
+### Closed concurrent conditions
+
+- **T4-F1 mobile_webview_attestation_gap** (Grok high + Mistral
+  medium). Added `NAC.setMobileWebViewAttestation(fn)` runtime
+  hook (sec 15.10). When registered, the function substitutes
+  `Event.isTrusted` derivation per platform requirements
+  (Capacitor, Cordova, RN WebView, Flutter, Tauri). Spec annex
+  with platform-specific behaviour table added (non-normative).
+  Implementation in `js/nac-v2-extensions.js`.
+
+- **T5-F1 + T5-F2 i18n_strict default too aggressive** (Grok
+  medium + Mistral high). Default NAC-3 i18n severity changed
+  from `error` to `warn`. Hosts opt in to error severity via
+  `NAC.set_validation_tolerance({i18n_strict: 'error'})`. Spec
+  sec 15.12 + I18N_INTEGRATION_GUIDE.md sec 2.3 updated.
+
+- **T6-F1 mutationobserver_throttle_too_low** (Grok medium +
+  Mistral high). Default MutationObserver throttle bumped from
+  50ms to 100ms for `autoRegister.watch` and `captureEphemeral`.
+  Tunable per-page via new `NAC.set_perf_tolerance({
+  mutation_throttle_ms: <n> })`. Spec sec 15.13 perf budget
+  table updated.
+
+- **T6-F2 describe_perf_budget_too_tight** (Mistral medium). Perf
+  budget revised: describe() target 30ms -> 50ms, hard-fail
+  100ms -> 150ms. adopt hard-fail 15ms -> 20ms. Numbers align
+  with real Snapdragon 6 Gen 1 benchmarks Mistral cited.
+
+- **T7-F1 missing_framework_support** (Grok high + Mistral high).
+  Five new tooling skeletons added in `packages/`:
+  - `@nac-spec/solid-plugin`
+  - `@nac-spec/qwik-plugin`
+  - `@nac-spec/lit-preprocessor`
+  - `@nac-spec/playwright-fixture` (Mistral T7-F2)
+  - `@nac-spec/telemetry` (interface for Sentry/Datadog/OTel,
+    Mistral T7-F3)
+
+  Roadmap phase 4 expanded to include them (~17-19 days wall-clock
+  with 4 workers, was 14-16 in rc1).
+
+  Cypress + Storybook + VSCode-LS + Sentry/Datadog/OTel adapters
+  + i18n codemod deferred to v2.0.x patch series (sec 6.2 of
+  roadmap).
+
+- **T7-F2 missing_testing_integrations** (Mistral high).
+  Playwright fixture skeleton added (`@nac-spec/playwright-
+  fixture`). Cypress + Storybook deferred to v2.0.x.
+
+- **T7-F3 missing_telemetry_export** (Mistral medium). Base
+  interface skeleton added (`@nac-spec/telemetry`). Sentry +
+  Datadog + OpenTelemetry adapters land as separate community
+  packages in v2.0.x.
+
+### Open conditions awaiting second reviewer (NOT closed at rc2)
+
+These were raised by a single reviewer; held open until a second
+reviewer concurs or disputes:
+
+- **T2-F1 missing_second_tightening_change** (Mistral high) --
+  RFC claims one NAC-3 tightening change but i18n_strict was a
+  second. Easy doc fix; held for arbitrage to confirm framing.
+- **T2-F2 provenance_block_field_addition** (Mistral medium) --
+  warn that v1.9 clients with strict shape validation may break.
+- **T8-F1 convergence_timeline_overly_optimistic** (Mistral high
+  vs Grok "defensible") -- ACTIVE DISPUTE between reviewers.
+  Held for third reviewer to break tie.
+- **T9-F1 boilerplate_reduction_overstated** (Mistral medium) --
+  the "5200 lines" claim revision held until Yujin migration
+  produces real numbers (phase 5.5).
+
+### Runtime API additions
+
+- `NAC.setMobileWebViewAttestation(fn)` -- mobile WebView
+  attestation hook.
+- `NAC.set_perf_tolerance(opts)` -- runtime perf tunables.
+- `NAC.get_perf_tolerance()` -- read current values.
+- `NAC.set_validation_tolerance(opts)` -- runtime validation
+  severity tunables (i18n_strict: warn | error | silent).
+- `NAC.get_validation_tolerance()` -- read current values.
+
+### Test suite
+
+22/22 unit tests pass (was 18/18 in rc1; 4 new tests added for
+the rc2 APIs).
+
+### Reviewer attribution
+
+- Grok-4-2026 (first responder, 2026-05-09):
+  T4-F1, T5-F1, T6-F1, T7-F1.
+- Le Chat (Mistral AI, 2026-05-09):
+  T4-F1, T4-F2, T5-F2, T6-F1, T6-F2, T7-F1, T7-F2, T7-F3.
+
+Verbatim reviews retained at:
+- `docs/peer-review-round3-grok.txt`
+- `docs/peer-review-round3-mistral.txt`
+
+### Migration impact rc1 -> rc2
+
+- **Plugin code**: NO change required.
+- **Tests against rc1**: any test asserting i18n_missing_locale in
+  `findings.errors` array MUST update to either check
+  `findings.warnings` OR call
+  `set_validation_tolerance({i18n_strict: 'error'})` first.
+- **Perf benchmarks**: budgets eased. No previously-failing
+  measurement should newly fail under rc2 numbers.
+- **WebView hosts**: SHOULD register
+  `setMobileWebViewAttestation` if running in
+  Cordova/Capacitor/RN/Flutter/Ionic context.
+
 ## [2.0.0-rc1] - 2026-05-09
 
 MAJOR release candidate. v2.0 is a strict superset of v1.9.0.

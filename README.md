@@ -6,16 +6,17 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v2.0.0-rc1](https://img.shields.io/badge/NAC-v2.0.0--rc1-violet.svg)](spec/NAC-v2.0.md)
+[![NAC v2.0.0-rc2](https://img.shields.io/badge/NAC-v2.0.0--rc2-violet.svg)](spec/NAC-v2.0.md)
 [![NAC v1.9.0 stable](https://img.shields.io/badge/v1.9.0-stable-success.svg)](spec/NAC-v1.0.md)
 [![Status: RC](https://img.shields.io/badge/status-release--candidate-amber.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v2.0.0-rc1 (2026-05-09) -- pending Round 3 peer review.
+**Spec version:** v2.0.0-rc2 (2026-05-09) -- closes 4 concurrent
+                  conditions from Grok 4 + Mistral Le Chat (Round 3).
                   v1.9.0 stable (2026-05-08, tag `v1.9.0`).
 **Reference runtime:** v1.9.0 (`NAC.version === '1.9.0'`) + v2.0 extensions
-  (`NAC.version_v2 === '2.0.0'` after `js/nac-v2-extensions.js` is loaded).
+  (`NAC.version_v2 === '2.0.0-rc2'` after `js/nac-v2-extensions.js` is loaded).
 
 **What v2.0.0-rc1 adds** (full detail in `RFC_v2.0.0.md`):
 - `NAC.scope()` hierarchical constructor

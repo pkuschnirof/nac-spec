@@ -309,6 +309,69 @@ to declare an upcoming synthetic interaction as a script. The
 runtime MUST honour this override for the next NAC action invocation
 (within 100ms freshness window) and ignore it thereafter.
 
+### Mobile WebView attestation hook (v2.0-rc2, Mistral T4-F1)
+
+Mobile WebView contexts (Cordova, Capacitor, React Native WebView,
+Ionic, Flutter WebView) have inconsistent `Event.isTrusted`
+semantics across platforms. Some platforms always return false for
+synthesised events from the host shell; others propagate the OS-
+level trust status; others depend on the WebView engine version.
+
+Hosts running in those environments MUST register a custom
+attestation function via:
+
+```javascript
+NAC.setMobileWebViewAttestation(function (event) {
+  // Return true if this gesture corresponds to a real user touch
+  // verifiable through the platform's native APIs (e.g.,
+  // Capacitor's Haptics plugin event timestamp, RN's
+  // GestureResponderEvent, Cordova's touch event with native
+  // signature). Return false otherwise.
+  return platformVerifiedUserGesture(event);
+});
+
+// Or restore default isTrusted-based derivation:
+NAC.setMobileWebViewAttestation(null);
+```
+
+The custom attestor receives the raw DOM event and returns the
+attested value. If the function throws, the runtime falls back to
+`event.isTrusted`. Implementations MUST log a `nac:webview_attestor_error`
+event in this case so the host can detect bugs in the attestor.
+
+### Known WebView behaviours (non-normative)
+
+This is a non-normative annex documenting platform behaviour
+observed by the spec authors and review panel. Hosts SHOULD
+verify against their target platform.
+
+| Platform | `isTrusted` for real touch | Recommended attestor source |
+|---|---|---|
+| Capacitor (iOS) | `true` | `event.isTrusted` (default ok) |
+| Capacitor (Android) | `true` (since v5.0) | `event.isTrusted` (default ok) |
+| Cordova / PhoneGap | inconsistent across versions | platform-specific touch event handler |
+| React Native WebView | `false` for JS-bridged events | `react-native-gesture-handler` event ID |
+| Flutter WebView | `false` for synthesised | Flutter platform channel timestamp |
+| Ionic Capacitor 6+ | `true` | `event.isTrusted` (default ok) |
+| Tauri | `true` | `event.isTrusted` (default ok) |
+| Electron | `true` | `event.isTrusted` (default ok) |
+
+OS-level Computer Use (Anthropic's Computer Use, Talon in
+privileged mode, Voice Access OS-level): produces `isTrusted=true`
+because the OS dispatches real input events. The matrix in this
+section permits this case as `type='agent' + attested=true`; hosts
+that want to distinguish API-driven agents from OS-level agents
+SHOULD set `source.os_level: true` as optional metadata (added in
+v2.0-rc2 per Mistral T4-F2).
+
+### `os_level` metadata field (v2.0-rc2, Mistral T4-F2)
+
+Optional ProvenanceBlock field. When `source.type === 'agent'`,
+hosts MAY set `source.os_level: true` to indicate the agent is
+operating via OS-level events (Computer Use, Talon privileged,
+Voice Access OS-level). The spec validator does not enforce this
+field; it is for audit-log clarity only.
+
 ---
 
 ## 15.11 i18n contract (L1: format + resolver + lint)
@@ -386,8 +449,12 @@ See `docs/I18N_INTEGRATION_GUIDE.md` for the integration playbook.
 ### NAC-3 (strict)
 - HMAC MANDATORY for `source.type='agent'`.
 - isTrusted attestation MANDATORY (per matrix in 15.10).
-- i18n_strict MANDATORY.
-- Validator emits errors on missing.
+- i18n_strict RECOMMENDED at default `warn` severity (v2.0-rc2,
+  Grok T5-F1 + Mistral T5-F2: error severity blocks incremental
+  SaaS rollouts; default eased to warn). Hosts that need full
+  strictness opt in via
+  `set_validation_tolerance({i18n_strict: 'error'})`.
+- Validator emits findings per the configured severity.
 - Perf budget enforced (15.13).
 - Duplicate-id lint MAY be set to error severity.
 
@@ -395,15 +462,29 @@ See `docs/I18N_INTEGRATION_GUIDE.md` for the integration playbook.
 
 ## 15.13 Performance budget at NAC-3
 
-| Operation | Target (low-tier mobile 2026) | Hard fail |
-|---|---|---|
-| Boot register 1000 elements | 50ms | 100ms |
-| `autoRegister` per mutation | 2ms | 5ms |
-| `adopt` selector match per mutation | 5ms | 15ms |
-| `describe()` any size (with pagination) | 30ms | 100ms |
-| HMAC sign per command | 3ms | 10ms |
-| `NAC.t()` resolution | <0.1ms | 1ms |
-| Virtual resolver per call | <10ms | 50ms |
+Revised in v2.0-rc2 per concurrent reviewer feedback (Grok T6-F1
+medium + Mistral T6-F1 high + Mistral T6-F2 medium): targets and
+hard-fail thresholds eased to match real Snapdragon 6 Gen 1
+benchmarks. The previous rc1 numbers were tighter than typical
+React/Svelte reconciliation overhead, risking false negatives in
+conformance.
+
+| Operation | Target (low-tier mobile 2026) | Hard fail | rc1 -> rc2 change |
+|---|---|---|---|
+| Boot register 1000 elements | 50ms | 100ms | unchanged |
+| `autoRegister` per mutation | 2ms | 5ms | unchanged |
+| `adopt` selector match per mutation | 5ms | **20ms** | was 15ms |
+| `describe()` any size (with pagination) | **50ms** | **150ms** | was 30ms / 100ms |
+| HMAC sign per command | 3ms | 10ms | unchanged |
+| `NAC.t()` resolution | <0.1ms | 1ms | unchanged |
+| Virtual resolver per call | <10ms | 50ms | unchanged |
+| MutationObserver throttle (default) | **100ms** | tunable | was 50ms |
+
+The MutationObserver throttle default is now **100ms** for
+`autoRegister.watch` and `captureEphemeral` (was 50ms in rc1).
+Hosts tune via `set_perf_tolerance({mutation_throttle_ms: <n>})`
+when their workload requires lower latency. Going below 50ms is
+discouraged on mid- and low-tier devices.
 
 Implementations MUST expose `perf_probe` for conformance suite
 measurement. Findings of type `perf_budget_exceeded` MUST emit at
