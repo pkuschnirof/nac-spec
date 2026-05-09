@@ -39,7 +39,27 @@ contents. The output format is in section D.
 
 ## A. Documents to fetch and read (authoritative order)
 
-Fetch ALL of these. They are all under `https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/`.
+**IF YOUR MODEL CAN FETCH URLs:** fetch every file listed in
+A1..A9 below. They are under
+`https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/`
+(plus the cross-repo URLs in A8/A9 explicitly listed there).
+
+**IF YOUR MODEL CANNOT FETCH URLs OR FETCHING FAILS:** you have
+a fallback. The bundle file
+`docs/R6_BUNDLE_INLINE.md` (in the same repo, also at
+`https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/R6_BUNDLE_INLINE.md`)
+contains EVERY file listed in A1..A9 embedded as a single
+~20k-line markdown document, generated from the latest commits
+on both repos with the relevant SHAs printed at the top. Read
+that bundle once and treat it as the source of truth; cite by
+"file: path/in/bundle" in your verdicts. The bundle is the
+canonical artifact for offline / fetch-blocked review.
+
+ChatGPT and Mistral specifically reported being unable to
+retrieve external URLs in earlier R6 attempts -- they should
+use the bundle. Grok succeeded with direct fetch. Both paths
+are equally valid; do not penalise yourself for choosing the
+bundle path.
 
 ### A1. Specification (normative)
 - `spec/NAC-v2.0.md` -- the spec itself (sec 1..18). Sec 16
