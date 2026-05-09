@@ -18,9 +18,17 @@
 > system disappears for humans BECAUSE every operator class accesses
 > it through the manifest layer. NAC v2.0 (RFC sec 0a, spec sec 16)
 > formalises this; v1.9 implied it.
+>
+> **Security follows from equality.** Routing AI / bot / agent
+> operators through the same UI surface humans use (instead of via
+> a privileged backend channel) contracts the attack surface to a
+> single boundary. A compromised agent's blast radius is bounded by
+> the same UI scope a malicious human user could reach -- no
+> privilege escalation primitive is offered. RFC sec 0a.1 + spec sec
+> 16.6 carry the full framing.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v2.0.0-rc4](https://img.shields.io/badge/NAC-v2.0.0--rc4-violet.svg)](spec/NAC-v2.0.md)
+[![NAC v2.0.0-rc5](https://img.shields.io/badge/NAC-v2.0.0--rc5-violet.svg)](spec/NAC-v2.0.md)
 [![NAC v1.9.0 stable](https://img.shields.io/badge/v1.9.0-stable-success.svg)](spec/NAC-v1.0.md)
 [![Status: RC](https://img.shields.io/badge/status-release--candidate-amber.svg)](#)
 

@@ -838,6 +838,44 @@ A NAC-3-conformant intermediary integration MUST pass:
 The validator MAY ship these tests as part of `@nac-spec/cookbook`
 patterns 12 + 13 (target rc6+).
 
+### 16.6 Security framing of equality of access (added rc5)
+
+NAC's intermediary contract has a non-obvious security
+property: by routing AI / bot / agent operators through the
+SAME UI surface that humans use -- and refusing to provide a
+privileged backend channel for "convenience" -- the host
+contracts the attack surface to a single boundary.
+
+NAC-3-conformant deployments MUST NOT:
+
+- Issue admin API keys, raw DB credentials, or service-account
+  bearer tokens to AI/bot/agent operators when the same task
+  could be accomplished by dispatching NAC events on the UI the
+  human user is already authorised against.
+- Define a privileged operator class (e.g. `source.type='admin'`,
+  `source.type='superuser'`) outside the three already specified
+  in section 9 (`user`, `agent`, `bot`). Any operator class
+  added by extension MUST go through the same HMAC + isTrusted
+  + audit pipeline.
+- Maintain a parallel "agent-only" endpoint surface that bypasses
+  the manifest. If an action is reachable by an agent, an
+  authorised human MUST be able to reach the same action through
+  the same manifest entry.
+
+Conformance: a deployment claiming NAC-3 conformance with an
+agent integration MUST document that the agent's authorisation
+boundary is identical to the human user's authorisation boundary
+on the same session. Auditors look for one boundary, not two.
+
+Rationale: a compromised agent (prompt injection, supply-chain
+attack, model jailbreak) has a blast radius bounded by the
+operator's UI scope -- the same scope a malicious human user
+could reach. No privilege escalation primitive is offered. This
+is the same security envelope that makes the "system disappears"
+principle (16.1) safe to ship -- a system that disappears for
+the user disappears equally for an attacker who took over the
+agent. RFC sec 0a.1 carries the full framing.
+
 ---
 
 ## 17. Sitemap primitive (NEW v2.0-rc4, OPTIONAL)

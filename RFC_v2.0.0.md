@@ -85,6 +85,54 @@ plugin that was correctly registered in the manifest. The bug was
 in the intermediary, not the spec, but the spec did not yet
 formalise the intermediary contract. v2.0-rc4 closes that gap.
 
+### 0a.1 Security implication of equality of access (added rc5)
+
+A direct consequence of principle 2 is a **measurable security
+benefit**: when AI / bot / agent operators are routed through the
+same UI surface that humans use, instead of through a privileged
+backend channel, the attack surface contracts.
+
+The contrast:
+
+| Privileged-backend access (anti-pattern) | NAC equality of access |
+|---|---|
+| Agent receives an admin API key + raw DB credentials. | Agent dispatches NAC events on the same UI a human operates. |
+| Agent bypasses every front-end role check, MFA prompt, rate limit, validation hook, and audit-log binding. | Agent inherits ALL of those checks: the front-end is the security boundary, identical for every operator class. |
+| Security review must cover two surfaces: the human UI and the agent API; divergence between them is a vulnerability. | One surface, one security review. The manifest IS the permission boundary. |
+| If the agent is compromised (prompt injection, supply-chain attack, model jailbreak), the blast radius is the API privilege envelope -- typically larger than any single user could touch. | The blast radius is bounded by the operator's UI scope -- the same scope a malicious human user could reach. No privilege escalation primitive is offered to the agent. |
+| `audit_required` events on the agent path must be reconstructed from API logs, often without UI context (which form, which view, which prior step). | Every agent action carries the same `nac:provenance` envelope a human action carries: nac_id + composedPath + isTrusted attestation + HMAC. Auditors see one trail. |
+
+This security framing motivates several v2.0 design choices that
+might otherwise look defensive:
+
+- **HMAC at NAC-3 is non-negotiable** (sec 9): the agent must
+  declare itself as such, signed. A compromised agent that tries
+  to claim `source.type='user'` fails attestation; a compromised
+  agent that signs honestly is still bounded by the UI scope.
+- **isTrusted binding to composedPath within a 16ms window**
+  (sec 9): forecloses the "agent dispatches on element X with the
+  attested gesture from element Y" attack. The gesture stays
+  pinned to the element under the user's pointer.
+- **Sitemap is metadata only, never authority** (sec 17.3): an
+  attacker who pollutes the sitemap declaration cannot extend
+  their reach -- the visible tree is still the only surface that
+  dispatch validates against. The sitemap is a planning aid, not
+  a permission layer.
+- **No backdoor for admin agents**: NAC does not specify a
+  privileged operator class. There is no `source.type='admin'`,
+  no agent-only API, no superuser mode. If a human admin can
+  reach a slug, the admin's agent can; if the human cannot, the
+  agent cannot. This keeps the security model explainable to
+  auditors without per-operator-class carve-outs.
+
+Practical guidance for adopters: when you ship an AI feature
+(chat assistant, autopilot, voice agent), default to driving it
+through your existing UI via NAC events. Resist the request to
+"give the agent an admin key for convenience" -- the convenience
+is bought at the cost of a security boundary that is later very
+expensive to re-establish. NAC keeps the boundary uniform from
+day one.
+
 ## 0. Abstract
 
 NAC v2.0 is a **strict superset** of v1.9.0:

@@ -116,6 +116,30 @@ binding-text status across spec/RFC/migration-guide/README.
 - `rc5: getSitemap returns defensive copy (no mutation leak)`
 - `rc5: describe_v2 includes nac_version=2.0.0-rc5`
 
+### Security framing additions (rc5 follow-up)
+
+- **RFC sec 0a.1 -- Security implication of equality of access. NEW.**
+  Codifies the user-surfaced insight that routing AI / bot /
+  agent operators through the same UI surface humans use
+  contracts the attack surface to a single boundary. Lists the
+  privileged-backend anti-pattern vs NAC-equality contrast in
+  table form, and ties existing v2.0 design choices (HMAC,
+  isTrusted, sitemap-as-metadata, no admin operator class) to
+  the security framing.
+- **Spec sec 16.6 -- Security framing of equality of access. NEW
+  (normative).** NAC-3 deployments MUST NOT issue admin API keys
+  or service-account bearer tokens to agents that could
+  otherwise dispatch via the manifest. MUST NOT define a
+  privileged operator class outside `user`/`agent`/`bot`. MUST
+  NOT maintain agent-only endpoint surfaces bypassing the
+  manifest. Conformance requires documenting that the agent's
+  authorisation boundary equals the human user's on the same
+  session.
+- **README header** now explicitly states that security follows
+  from equality of access -- so adopters see the security
+  framing in the first 30 lines, not buried in the RFC.
+- README badge bumped to `NAC-v2.0.0--rc5`.
+
 ### Backend reference fix (Yujin nac-demo)
 
 The Yujin demo intermediary (`crm_desa/api/v1/yujin.php`
