@@ -649,7 +649,138 @@ reviewer are held for arbitrage with a 4th reviewer.
 | perf hard-fail 5%/5s too lax (T6-F1 DS) | -- | -- | medium | 1/3 | OPEN -- await arbiter |
 | `data-nac-action` SHOULD vs MUST (Q9 DS) | -- | -- | open Q | 1/3 | OPEN -- await arbiter |
 
-### Pending: ChatGPT (full app), Claude arbiter
+### Claude-Opus-4.7 -- 2026-05-09 (closing arbiter)
+
+**Verdict:** `yes-with-conditions` with **1 BLOCKER + 8 conditions**.
+**Score axes:**
+- Spec clarity: 7/10
+- AI/test tooling: 8/10
+- Adoption ease: 7/10
+- Ambition vs feasibility: 7/10
+- v2 announce ready: **7/10** (matches Mistral; one notch below Grok and DeepSeek)
+
+**One-liner:** *"NAC v2.0 (rc2 in artifact, rc1 in prompt label) is
+structurally sound and closes major Mistral/Grok concurrent
+findings, but the gesture-buffer leak in the rc2 isTrusted
+attestation runtime is a fourth impersonation path that nullifies
+the user-attestation defence within 100ms of any user gesture and
+must be fixed before tag."*
+
+**THE BLOCKER -- T4-F1 gesture_buffer_leak_breaks_user_attestation**
+
+This is the most consequential finding of the entire Round 3.
+None of Grok, Mistral, or DeepSeek detected it. Author verified
+it on 2026-05-09: the bug is real in
+`js/nac-v2-extensions.js:158-188`.
+
+**Bug**: `_captureGestureFromDom` captures `event.isTrusted` from
+ANY click/keydown/touchstart on `document` into a single global
+variable `_lastGestureTrusted` with a 100ms freshness window. The
+`_readGestureAttested()` function checks only the time window, NOT
+the identity of the originating element. When `_invoke(slug)` runs
+within 100ms of any user gesture anywhere, it reads the leaked
+`true` and accepts `source.type='user'` for ANY element the
+attacker chooses.
+
+**Cost-of-attack reduction**: from "kernel access or browser
+exploit" (claimed in scope doc sec 4b) to "any script that can time
+itself within 100ms of any user gesture" (trivial in practice).
+This is a FOURTH impersonation path the threat model in sec 4b
+does not cover.
+
+**Why this is critical**: the v2.0 user-attestation defence (the
+single most-load-bearing security primitive added in v2.0)
+collapses to v1.9's "trust the declared source.type" baseline
+during ~50% of any active user session. Audit pipelines accepting
+`type='user' + attested=true` based on this leak are back where
+v1.9 was -- which is exactly the gap the closing v1.9 arbiter
+called critical-path.
+
+**Fix scope**: ~30 LOC in runtime + 1-paragraph spec patch.
+Strategy:
+1. Capture not just `isTrusted` but also `e.target` and
+   `e.composedPath()`.
+2. In `_invoke(slug)`, verify that `entry.element` is in the
+   captured composed path before honoring `attested`.
+3. Drop `GESTURE_FRESH_MS` from 100ms to 16ms (one frame), or
+   require synchronous handler chain from the originating event.
+
+This finding is a blocker against tag. Author MUST fix in rc3
+before any closing arbitration on a public release.
+
+**8 CONDITIONS (high + medium)**:
+
+| ID | Severity | Code | Concurrence |
+|---|---|---|---|
+| T2-F1 | medium | `changelog_missing_v1_7_through_v2_0_entries` | Claude solo (verified true) |
+| T2-F2 | high | `provenanceblock_field_addition_unannounced` | Claude + Mistral T2-F2 = **2/4** |
+| T2-F3 | high | `second_tightening_change_at_nac3_undisclosed` | Claude + Mistral T2-F1 = **2/4** |
+| T4-F2 | medium | `bridgeIframe_no_handshake_signature` | Claude solo (real runtime bug) |
+| T6-F1 | medium | `cumulative_batch_cost_unbudgeted` | Claude solo |
+| T8-F1 | high | `convergence_timeline_arbitrage_breaker` | Claude TIE-BREAKS dispute: 3/4 weak (Mistral + DeepSeek + Claude) vs Grok defensible |
+| T9-F1 | high | `yujin_case_study_unpopulated_blocks_brownfield_validation` | Claude solo + roadmap reads same way |
+| T9-F2 | medium | `boilerplate_5200_lines_implausible` | Claude + Mistral + DeepSeek = **3/4** |
+
+**Plus 7 medium/low findings new from Claude (no concurrence)**:
+T4-F3 os_level field unenforced, T4-F4 os_level matrix gate, T5-F1
+L1 claim violated by DOM writes (proposes "L1.5" framing), T5-F2
+gettext bridge missing, T5-F3 gender-neutral example contested,
+T5-F4 RTL dir global scope, T6-F2 HMAC sign 3ms cold-start, T7-F1
+codemod 60% optimistic (also DeepSeek), T7-F2 cookbook 30 patterns
+unscoped, T7-F3 Storybook deferred, T9-F3 greenfield 10h skips
+i18n catalog cost, T10-F1 demo inaccessible.
+
+**Important Claude observation (OBS-1 + OBS-3)**: this Claude
+review is NOT the v2.0 final closing arbiter. The roadmap
+phase 6 closing review is supposed to consume the Yujin case
+study (phase 5.5) which is currently a TEMPLATE with all metrics
+TBD. So the present Round 3 is "interim closing" pending case
+study; a Round 4 final closing happens post-Yujin migration.
+
+**Verdict comparison v1.9 closing vs Round 3 (Claude pass)**:
+
+| Pass | Verdict | Conditions | Severity |
+|---|---|---|---|
+| v1.9 closing (May 2026) | yes-with-conditions | 3 (tag verify, deferral disclosure, single-impl disclosure) | all reasonable |
+| v2.0 Round 3 (Claude pass) | yes-with-conditions | **1 BLOCKER + 8 conditions** | 1 critical + others process/honest disclosure |
+
+Claude notes: "condition density is higher because the surface is
+larger (8 primitives + i18n contract + threat model + tooling vs
+v1.9's spec polish); the verdict shape is the same."
+
+Verbatim Claude review at:
+`docs/peer-review-round3-claude.txt`.
+
+### CONCURRENCE MATRIX (4 reviewers complete: Grok + Mistral + DeepSeek + Claude)
+
+After Claude's pass, the Round 3 verdict pool stabilises with
+4 valid reviewers (Microsoft Copilot insufficient-evidence, see
+below; ChatGPT pending). Concurrence threshold ≥2/4 makes the
+condition author-actionable.
+
+| Condition | Grok | Mistral | DeepSeek | Claude | Concurrence | Status |
+|---|---|---|---|---|---|---|
+| isTrusted WebView quirks (T4-F1 from earlier rounds) | high | medium | high | (closed in rc2) | 3/4 | ✅ closed rc2 |
+| i18n_strict default too aggressive | medium | high | medium | (closed in rc2) | 3/4 | ✅ closed rc2 |
+| Tooling gaps (Solid/Qwik/Lit/etc) | high | high+ | high | (rc2 expansion confirmed) | 3/4 | ✅ closed rc2 |
+| MutationObserver throttle 50ms | medium | high | -- | -- | 2/4 | ✅ closed rc2 |
+| describe perf budget tight | -- | medium | -- | -- | 1/4 | ✅ closed rc2 |
+| **GESTURE BUFFER LEAK (BLOCKER)** | -- | -- | -- | **blocker** | **1/4 BLOCKER** | ⚠️ MUST FIX rc3 |
+| **Convergence assumption WEAK (T8-F1)** | "defensible" | high | medium | high | **3/4 (Grok minority)** | ⏳ ACT NOW rc3 |
+| **Boilerplate 5200 implausible (T9-F2)** | -- | medium | medium | medium | **3/4** | ⏳ ACT NOW rc3 |
+| **Adoption cost optimistic (T9-F1)** | -- | medium | medium | -- | 2/4 | ⏳ ACT NOW rc3 |
+| **2nd tightening i18n_strict (T2-F3)** | -- | high | -- | high | 2/4 | ⏳ ACT NOW rc3 |
+| **ProvenanceBlock fields warning (T2-F2)** | -- | medium | -- | high | 2/4 | ⏳ ACT NOW rc3 |
+| **codemod 60% optimistic (T7-F1)** | -- | -- | medium | medium | 2/4 | ⏳ ACT NOW rc3 |
+| **bridgeIframe HMAC missing (T4-F2)** | -- | -- | -- | medium | 1/4 | ⏳ ACT runtime bug |
+| **CHANGELOG missing entries (T2-F1)** | -- | -- | -- | medium | 1/4 | ⏳ ACT verifiable doc bug |
+| **Cumulative batch cost (T6-F1)** | -- | -- | -- | medium | 1/4 | held pending arbiter (low priority) |
+| **L1 claim violated by DOM writes (T5-F1)** | -- | -- | -- | medium | 1/4 | ACT-doc-fix (L1.5 framing) |
+| **Yujin case study unpopulated (T9-F1)** | -- | -- | T9-F1-DS | high | 2/4 | already gated to phase 5.5 |
+| **OS-level metadata (T4-F2 from earlier)** | -- | low | medium | (rc2 partial) | 2-3/4 | ✅ closed rc2 (partial) |
+| 6 DeepSeek runtime bugs/gaps | -- | -- | low/medium | -- | 1/4 | scheduled rc3 cheap fixes |
+
+### Pending: ChatGPT (full app)
 
 The Round 3 verdict pool stabilises with ChatGPT (full chat app)
 + Claude as the closing arbiter. Once those two respond, all

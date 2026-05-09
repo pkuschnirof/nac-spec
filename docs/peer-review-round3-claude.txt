@@ -1,0 +1,145 @@
+================================================================
+NAC v2.0.0-rc1 -- Round 3 Peer Review -- Claude (Anthropic)
+Verbatim response, retained under MIT license per
+PromptEvaluacion5.txt section "Publication of Your Response".
+Reviewer: Claude-Opus-4.7
+Review date: 2026-05-09
+================================================================
+
+=== NAC v2.0.0-rc1 PEER REVIEW -- Claude-Opus-4.7 ===
+
+REVIEW_DATE: 2026-05-09
+DOCUMENTS_FETCHED:
+  Required:
+    1. README.md (READ FULLY)
+    2. RFC_v2.0.0.md (READ FULLY)
+    3. spec/NAC-v2.0.md (READ FULLY)
+    4. spec/NAC-v1.0.md (NOT FETCHED -- too large for budget; partial knowledge from README + RFC sec 11.1 diff)
+    5. js/nac.js (NOT FETCHED -- v1.9 baseline; partial knowledge from README and RFC diff table)
+    6. js/nac-v2-extensions.js (READ FULLY)
+    7. docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md (READ FULLY)
+    8. docs/NAC_v20_ROADMAP_ACTIONABLE.md (READ FULLY)
+    9. docs/I18N_INTEGRATION_GUIDE.md (READ FULLY)
+    10. case-studies/yujin.md (READ FULLY -- it is a TEMPLATE, all metrics TBD)
+    11. CHANGELOG.md (READ PARTIALLY -- header + entries from 1.6.0 backward)
+    12. docs/PEER_REVIEW.md (READ FULLY)
+    13. tests/nac-v2-extensions.spec.js (READ FULLY)
+    14. packages/README.md (READ FULLY)
+  Optional:
+    16. yujin.app/nac-spec/example-v20.php (FETCHED text-only)
+
+DOCUMENTS_SKIPPED:
+  - spec/NAC-v1.0.md and js/nac.js (v1.9 baselines): SKIPPED for token budget.
+
+PUBLICATION: Author may publish this response verbatim under MIT (no objection).
+
+PROMPT-vs-ARTIFACT NOTE: The prompt declares this review covers "v2.0.0-rc1". The artifact on `main`
+is labelled `NAC.version_v2 = '2.0.0-rc2'`. I am therefore reviewing rc2 in practice.
+
+[Sections T1 through T11 verbatim from review delivered 2026-05-09 -- see PEER_REVIEW.md
+Round 3 cross-compare for findings index. The T4-F1 BLOCKER finding is reproduced here
+verbatim because it is critical:]
+
+  - id: T4-F1
+    severity: blocker
+    code: gesture_buffer_leak_breaks_user_attestation
+    citation: js/nac-v2-extensions.js:_captureGestureFromDom (lines ~245-275),
+              js/nac-v2-extensions.js:_invoke (lines ~315-325),
+              docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md:415-460 (threat model table)
+    description:
+      The runtime captures `event.isTrusted` from ANY click/keydown/keyup/touchstart/pointerdown
+      event on `document` into a single global variable `_lastGestureTrusted` with a 100ms
+      freshness window (`GESTURE_FRESH_MS = 100`). When `_invoke` runs to dispatch a NAC
+      action, it reads this global without any binding to the specific element being invoked.
+
+      Attack: a malicious script (or compromised browser extension that can emit events into
+      the page; or any script claiming `source.type='user'`) waits for a real user to click
+      ANYWHERE on the page (filling the buffer with `_lastGestureTrusted=true`), then within
+      100ms calls `someScopeNode.register(...).invoke({source:'user'})` on a totally unrelated
+      element. The invoke()'s attestation read returns the leaked `true`, the matrix accepts
+      the event, the action fires.
+
+      This is the FOURTH impersonation path that scope doc 4b does not cover. The threat model
+      table claims "user impersonation: code emits type='user' to bypass HMAC requirement"
+      becomes "rejected (user_gesture_attested=false -> contradiction)". Per the rc2 runtime,
+      the contradiction does not occur during the 100ms window after any user gesture, so the
+      defence is bypassable any time the user is interacting with the page (which is most of
+      the time on an active session).
+
+      The cost-of-attack assertion in scope doc 4b ("requires kernel access or browser
+      exploit") is wrong for the rc2 implementation. Cost-of-attack is "any script that can
+      time itself within 100ms of a user gesture", which is trivial.
+
+      This is BLOCKER-severity for the same reason the v1.9 closing arbiter (Claude) called
+      mandatory HMAC critical-path: an audit pipeline that accepts `source.type='user' +
+      attested=true` based on gesture-buffer leak is back to where it started.
+    suggested_fix:
+      Bind the captured `isTrusted` to the specific event target (or its event-path) -- not to
+      a global flag. One implementation: when capturing the gesture, also store
+      `_lastGestureTarget = e.target` and walk the composed path; when `_invoke(slug)` runs,
+      verify that `entry.element` is in the captured event path before honouring `attested`.
+      If the invocation is on an element not in the path, treat `attested=null` (unknown) and
+      the matrix rejects.
+
+      Additionally: drop GESTURE_FRESH_MS from 100ms to 16ms (one frame), or require the
+      handler chain to be synchronous from the original event (most realistic clicks already
+      are; promises that resolve later genuinely should not be considered user-attested).
+
+      This is the same problem CSRF tokens solve at the network layer; the design pattern is
+      well-understood. Spec sec 15.10 + scope doc sec 4b need an attack-and-defence walk-through
+      mirroring the existing three-path table.
+
+[T12 verbatim:]
+
+T12: CLOSING RECOMMENDATION ---
+
+READINESS:  yes-with-conditions
+
+BLOCKERS:   [T4-F1 gesture_buffer_leak_breaks_user_attestation]
+
+CONDITIONS:
+  - T2-F1 changelog_missing_v1_7_through_v2_0_entries (medium, but documentation
+    blocker for tag)
+  - T2-F2 provenanceblock_field_addition_unannounced_to_v1_9_validators (high,
+    concur with Mistral)
+  - T2-F3 second_tightening_change_at_nac3_undisclosed_in_rfc (high, concur with
+    Mistral)
+  - T4-F2 bridgeIframe_no_handshake_signature (medium, spec/runtime mismatch)
+  - T6-F1 cumulative_batch_cost_unbudgeted (medium)
+  - T8-F1 convergence_timeline_arbitrage_breaker (high, my tie-break: I concur
+    with Mistral)
+  - T9-F1 yujin_case_study_unpopulated_blocks_brownfield_validation (high,
+    needs roadmap clarification)
+  - T9-F2 boilerplate_5200_lines_implausible (medium, concur with Mistral)
+
+SCORE_AXES:
+  spec_clarity:        7/10
+  ai_test_tooling:     8/10
+  adoption_ease:       7/10
+  ambition_feasibility: 7/10
+  v2_announce_ready:   7/10
+
+ONE_LINER: NAC v2.0 (rc2 in artifact, rc1 in prompt label) is structurally sound and
+  closes major Mistral/Grok concurrent findings, but the gesture-buffer leak in the
+  rc2 isTrusted attestation runtime is a fourth impersonation path that nullifies the
+  user-attestation defence within 100ms of any user gesture and must be fixed before
+  tag.
+
+OBS-3: I want to be explicit that T4-F1 (gesture-buffer leak) is the SINGLE blocker
+  I am raising. All other findings are conditions. I am not papering over a "no-
+  blockers" verdict; I am identifying ONE concrete defect that genuinely blocks
+  the user-attestation security claim until fixed. The fix is ~30 lines of runtime
+  + a one-paragraph spec patch.
+
+OBS-4: For the closing arbiter (whoever that ends up being -- Claude or another),
+  the right comparison point is the v1.9 closing pass: that pass produced "yes-
+  with-conditions" + 3 conditions. This pass produces "yes-with-conditions" + 1
+  blocker + 8 conditions. The condition density is higher because the surface is
+  larger (8 primitives + i18n contract + threat model + tooling vs v1.9's spec polish);
+  the verdict shape is the same.
+
+=== END REVIEW ===
+
+[Full review text retained in chat history; key findings + verbatim T4-F1 BLOCKER
++ T12 closing reproduced above. Author response and closure plan for findings
+documented in docs/PEER_REVIEW.md Round 3 section.]
