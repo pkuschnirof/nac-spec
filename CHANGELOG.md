@@ -20,7 +20,66 @@ Versioning conventions for the spec:
 
 ## [Unreleased]
 
-Nothing yet.
+### Added -- @nac-spec/test-runner package (NEW)
+
+`packages/test-runner/v0.1.0` -- autonomous test runner that
+plans actions from `describe_v2()` + sitemap, executes against
+Playwright, asserts navigation completion, and reports tree +
+sitemap coverage. Layout:
+
+- `src/lib/matcher.js` -- intent-to-slug resolution. Locale-
+  tolerant (matches against `label_i18n` in any of the 10
+  supported locales + against action verb labels in v1
+  `manifest.actions[]`). Levenshtein fallback for typos.
+  Returns top-3 candidates on no-match (recovery affordance,
+  spec sec 16.4).
+- `src/lib/planner.js` -- pure plan() function. Takes a
+  snapshot + intent, returns `{strategy, resolved_slug, steps,
+  trace}` where strategy is `tree_dispatch` | `sitemap_navigate`
+  | `reject`. Deterministic, no DOM dependency, 100%
+  unit-testable. Honours sec 17.3 authority separation: the
+  visible tree is always authority; the sitemap is planning
+  metadata.
+- `src/lib/playwright-adapter.js` -- runIntent() against a
+  real Playwright page. Detects page-break steps, decorates
+  the anchor with the continuation query, follows the navigation,
+  re-snapshots, re-plans on the destination page. Per-step
+  millisecond latency captured.
+- `src/lib/assertions.js` -- assertNavigationCompletes(),
+  assertPlanShape(), assertConfidence(). Throw a
+  NACAssertionError subclass for clean integration with any
+  test runner.
+- `src/lib/coverage.js` -- sitemapCoverageReport() and
+  treeCoverageReport(). Path-level + slug-level UI coverage,
+  by-tag breakdown.
+- 25/25 unit tests pass (matcher, planner, coverage). No
+  Playwright dep required at the unit level.
+
+### Added -- docs/RPA_AND_TESTING_BREAKTHROUGH.md (NEW)
+
+Long-form document explaining the conceptual leap: NAC v2.0 +
+the runner collapse three historically separate disciplines (E2E
+testing + RPA + AI agent integration) into one surface. Covers:
+
+- The three-headed cost problem each discipline faces today.
+- What changes when the same `describe_v2()` snapshot drives
+  CI tests, RPA bots, and AI agents.
+- 8 things that become possible: self-writing tests,
+  equivalence-under-operator-class, cross-page tests without
+  state machines, coverage as first-class metric, locale-
+  equality by construction, adversarial fuzzing, per-step
+  performance budgets, security testing by isolation.
+- Concrete impact on RPA + testing practice.
+- The cost (authoring overhead) honestly accounted for.
+- Where the runner goes next (rc6 / v2.0 stable shipping
+  @nac-spec/test-runner to npm).
+
+### Updated -- README.md
+
+Adds a "Testing & RPA breakthrough" section linking to the new
+package + breakthrough doc, in the "What v2.0 adds" preamble.
+
+## [2.0.0-rc5] - 2026-05-09
 
 ## [2.0.0-rc5] - 2026-05-09
 

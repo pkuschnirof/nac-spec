@@ -1,0 +1,40 @@
+{
+  "name": "@nac-spec/test-runner",
+  "version": "0.1.0",
+  "description": "NAC-driven autonomous test runner: plan from describe_v2() + sitemap, execute on Playwright, assert + measure coverage. Any operator class (human voice, RPA, AI agent) drives the same suite.",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/run-all.js"
+  },
+  "peerDependencies": {
+    "@playwright/test": "^1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/test": { "optional": true }
+  },
+  "files": [
+    "src/",
+    "README.md"
+  ],
+  "keywords": [
+    "nac",
+    "accessibility",
+    "rpa",
+    "test-runner",
+    "ai-driven-testing",
+    "sitemap",
+    "playwright",
+    "natural-language-testing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pkuschnirof/nac-spec.git",
+    "directory": "packages/test-runner"
+  },
+  "author": "Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>",
+  "engines": {
+    "node": ">=16"
+  }
+}

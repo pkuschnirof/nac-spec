@@ -58,9 +58,54 @@ Tooling skeletons under `packages/`: babel/vue/svelte plugins,
 DevTools extension, codemod CLI, cookbook, rules-stripe / -slack /
 -mapbox.
 
+### Testing + RPA breakthrough (NEW with rc5)
+
+`@nac-spec/test-runner` (`packages/test-runner/`, v0.1.0) is the
+first tool that exercises NAC v2.0 as a unified surface for E2E
+testing, RPA, and AI agent integration. Plan from `describe_v2()`
++ sitemap, dispatch on Playwright, assert + measure UI coverage.
+Same planner an autonomous LLM agent uses in production runs in
+your CI -- so a test going green proves the agent path works.
+
+```bash
+npm install --save-dev @nac-spec/test-runner @playwright/test
+```
+
+```js
+const { runIntent, assertNavigationCompletes } = require('@nac-spec/test-runner');
+
+test('user can configure SMTP', async ({ page }) => {
+  await page.goto('https://app.example.com/dashboard');
+  const result = await runIntent(page, {
+    intent: 'configurar SMTP',
+    fill_values: { 'settings.system.smtp.host': 'smtp.gmail.com' },
+    expected_terminal_slug: 'settings.system.smtp.save'
+  });
+  assertNavigationCompletes(result, 'settings.system.smtp.save');
+});
+```
+
+No selectors. No `data-testid`. The intent string survives DOM
+reshuffles, copy changes, locale switches, and even cross-page
+navigation -- the planner reads the sitemap, plans the page break,
+re-validates on the destination page. The same path resolution
+the chatbot LLM does at runtime is what runs in the test.
+**Equality of access at the test level.**
+
+Long-form rationale:
+[`docs/RPA_AND_TESTING_BREAKTHROUGH.md`](docs/RPA_AND_TESTING_BREAKTHROUGH.md)
+-- collapses E2E testing + RPA + AI agent integration into a
+single surface. 8 capabilities that didn't exist before: self-
+writing tests, equivalence-under-operator-class, cross-page
+tests without state machines, coverage as first-class metric,
+locale-equality by construction, adversarial fuzzing, per-step
+performance budgets, security testing by isolation.
+
 Side-by-side demos:
 - `yujin.app/nac-spec/example.php` -- v1.9 stable
 - `yujin.app/nac-spec/example-v20.php` -- v2.0-rc1 showcase
+- `yujin.app/nac-spec/example-v20-full.php` -- v2.0-rc4 brownfield migration (27 widgets + v20-panel introspection)
+- `yujin.app/nac-spec/example-v20-page-a.php` + `-page-b.php` -- v2.0-rc5 cross-page sitemap navigation autopilot (proves spec sec 17 end-to-end)
 **Strict superset of:** v1.8, v1.7, v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
 **What v1.9.0 adds (the v2.0 patch round):**
 - **`data-nac-skip-reason` REQUIRED** when `data-nac-validate=
