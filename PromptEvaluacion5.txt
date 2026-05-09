@@ -1,0 +1,493 @@
+================================================================
+NAC v2.0.0-rc1 -- Round 3 Independent Peer Review
+Prompt for: DeepSeek (Pensamiento Profundo) | ChatGPT | Mistral
+            Le Chat | Grok | Microsoft Copilot | Claude (arbiter)
+================================================================
+
+You are reviewing the release candidate of NAC v2.0.0 (Native
+Accessibility Contract). NAC is a public design norm and reference
+runtime that lets AI agents, voice assistants, RPA bots and
+automated test runners operate any UI as if they were human users.
+
+Two prior review rounds (v1.7 -> v1.8 in April 2026; v1.8 -> v1.9
+in May 2026) closed 30+ action items across the same panel. The
+v1.9 closing arbiter (Claude) issued a "Conditional YES" verdict
+with one critical-path item deferred: HMAC mandatory at NAC-3.
+
+This Round 3 reviews v2.0.0-rc1, which:
+  - Promotes the deferred HMAC item from optional to mandatory at
+    NAC-3.
+  - Adds eight composition primitives (scope, autoRegister, adopt,
+    bridgeShadowRoot, bridgeIframe, declareVirtual, captureEphemeral,
+    setTenantPrefix).
+  - Closes a NEW threat the spec author surfaced after v1.9
+    closing: user/script impersonation (declaring source.type='user'
+    to bypass HMAC). Closed via `user_gesture_attested` field
+    derived from DOM Event.isTrusted.
+  - Introduces an i18n contract layer (L1: format + resolver +
+    lint, NO DOM mutation) that does not replace existing i18n
+    libraries.
+  - Ships tooling skeletons (babel/vue/svelte plugins, devtools,
+    codemod, cookbook, rules-stripe/-slack/-mapbox).
+
+The author is asking the panel to validate v2.0 along the
+implementation/adoption axis the v1.7 -> v1.9 rounds did NOT cover.
+The Claude arbiter scored adoption ease 6/10 in v1.9 closing pass --
+this round is the diagnosis of that score.
+
+ABSOLUTE RULES OF THIS REVIEW
+==============================
+
+R1. THIS PROMPT IS SELF-CONTAINED ONLY IN INTENT, NOT IN CONTENT.
+    You MUST fetch the following documents from the canonical
+    URLs below before answering. If your runtime cannot fetch
+    URLs, declare this explicitly at the top of your response and
+    state which documents you could NOT read; your verdict
+    automatically downgrades to "insufficient evidence" if you
+    skip required documents.
+
+R2. NO PARAPHRASE WITHOUT QUOTATION. Every finding MUST cite at
+    least one verbatim line range from the source document
+    (format: `path/to/file.md:LINE-LINE`). A finding without
+    citation is invalid and the author will reject it.
+
+R3. NO HALLUCINATION. Do NOT speculate about content you have
+    not read. If a section you need is missing or unclear in the
+    documents, file a finding `evidence_missing` rather than
+    inferring.
+
+R4. NO POLITENESS BIAS. The author asks for plain disagreement.
+    "This primitive is wrong because X" is more useful than
+    "consider revisiting this primitive". Findings must be
+    actionable.
+
+R5. RESPECT THE TASK STRUCTURE. Output the 12 tasks (T1..T12) in
+    order. Do not collapse tasks. Do not skip tasks. If a task is
+    not applicable, write "N/A" with reason.
+
+R6. OUTPUT FORMAT IS MANDATORY (described at the bottom of this
+    prompt). Free-form prose is not accepted; the author needs
+    structured output to aggregate across the 6 reviewers.
+
+R7. EVERY FINDING HAS SEVERITY: 'blocker' (must fix before tag),
+    'high' (should fix before tag), 'medium' (fix in v2.0.x
+    patches), 'low' (defer to v2.1+). Use the labels exactly.
+
+R8. REVIEWER IDENTIFICATION. Begin your response with your model
+    + version (e.g. "DeepSeek-R1-2026-05" or "Claude-Opus-4.7").
+    The author retains output verbatim in `docs/PEER_REVIEW.md`.
+
+----------------------------------------------------------------
+DOCUMENTS YOU MUST FETCH (canonical raw URLs)
+----------------------------------------------------------------
+
+The repository is `https://github.com/pkuschnirof/nac-spec`. Tag
+`v1.9.0` on commit `185c7df` is the baseline. Branch `main` HEAD
+is the v2.0.0-rc1 candidate.
+
+REQUIRED:
+
+  1. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/README.md
+     -- entry point with version status banner.
+
+  2. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/RFC_v2.0.0.md
+     -- formal Request For Comments. The single most important
+     document for this review.
+
+  3. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/spec/NAC-v2.0.md
+     -- normative spec deltas (sec 15.1 through 15.14).
+
+  4. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/spec/NAC-v1.0.md
+     -- v1.9 baseline spec. v2.0 is a strict superset of this; you
+     need it to validate the no-break claim.
+
+  5. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/js/nac.js
+     -- v1.9.0 reference runtime. Baseline.
+
+  6. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/js/nac-v2-extensions.js
+     -- v2.0 extensions. Loads after nac.js, attaches v2 primitives
+     to window.NAC without modifying v1.9 surface.
+
+  7. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md
+     -- author's scope discussion + threat model + 8 self-imposed
+     limits + 10 questions. ~700 lines. READ FULLY.
+
+  8. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/NAC_v20_ROADMAP_ACTIONABLE.md
+     -- operational plan with 7 phases + Pablo decision gates.
+
+  9. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/I18N_INTEGRATION_GUIDE.md
+     -- the authoritative document on adding new locales.
+     Author's explicit request that this be reviewed.
+
+  10. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/case-studies/yujin.md
+      -- adopter case study TEMPLATE (population during real
+      migration is phase 5.5; today this is the structure only).
+
+  11. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/CHANGELOG.md
+      -- detailed v2.0.0-rc1 entry with reviewer attribution.
+
+  12. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/PEER_REVIEW.md
+      -- record of v1.7 -> v1.9 review trail. Context for what
+      gates have already been met.
+
+  13. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/tests/nac-v2-extensions.spec.js
+      -- v2 runtime test suite (18 tests, all currently passing).
+
+  14. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/packages/README.md
+      -- tooling ecosystem skeletons index.
+
+OPTIONAL (consult if your task asks for them):
+
+  15. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/MIGRATOR_TOOL_ANALYSIS.md
+      -- commercial feasibility analysis; useful for T9 adoption.
+
+  16. https://yujin.app/nac-spec/example-v20.php  (live demo of v2.0)
+  17. https://yujin.app/nac-spec/example.php       (live demo of v1.9)
+
+If you have a tool that can navigate live URLs, run NAC.describe_v2()
+in the v2.0 demo and include the output in your T10 evaluation.
+
+----------------------------------------------------------------
+THE 12 TASKS
+----------------------------------------------------------------
+
+T1. DOCUMENT ACQUISITION CONFIRMATION
+
+  For each of the 14 required documents, confirm "READ FULLY",
+  "READ PARTIALLY (state which sections)", or "COULD NOT FETCH
+  (state reason)". Documents not READ FULLY automatically
+  downgrade your verdict ceiling.
+
+T2. STRICT SUPERSET CLAIM VALIDATION
+
+  RFC_v2.0.0.md sec 11.1 lists every public API in v1.9 vs v2.0.
+  Walk the diff and validate the claim "every v1.9 client keeps
+  working unchanged at NAC-1 and NAC-2". Find any breaking change
+  the author missed. Any breaking change at NAC-1 or NAC-2 is a
+  BLOCKER finding.
+
+  At NAC-3, the author acknowledges one intentional behaviour
+  change (unsigned agent events rejected). Validate that this is
+  the ONLY semantically-tightening change.
+
+T3. EIGHT PRIMITIVES INDIVIDUAL EVALUATION
+
+  Evaluate each primitive separately. For each, output:
+    - API ergonomics (good / acceptable / problematic + reason).
+    - Internal consistency with the rest of the spec.
+    - Edge case the author missed (cite line range if you find
+      one in the spec).
+    - Performance concern (if any) on low-tier mobile 2026.
+
+  The 8 primitives:
+    3.1  NAC.scope(spec)               -- hierarchical constructor
+    3.2  NAC.autoRegister(el, opts)    -- DOM-driven registration
+    3.3  NAC.adopt(rule)               -- third-party non-compliant
+    3.4  NAC.bridgeShadowRoot(host)    -- Shadow DOM
+    3.5  NAC.bridgeIframe(iframeEl, opts) -- same-vendor iframes
+    3.6  NAC.declareVirtual(spec)      -- virtualized lists
+    3.7  NAC.captureEphemeral(opts)    -- transient UI
+    3.8  NAC.setTenantPrefix(slug)     -- multi-tenant naming
+
+T4. THREE-PATH IMPERSONATION THREAT MODEL
+
+  scope doc section 4b describes three impersonation paths (forged
+  agent, user impersonation, script-claiming-user) and the v2.0
+  defence (HMAC mandatory + user_gesture_attested + matrix at
+  NAC-3).
+
+  Validate:
+    - Is the threat model complete? Is there a fourth impersonation
+      the author missed?
+    - Is `event.isTrusted` truly the right primitive, or are there
+      browser bugs / Shadow DOM edge cases / mobile WebView
+      contexts where it lies?
+    - Is the enforcement matrix at NAC-3 correct, or are there
+      legitimate use cases (e.g. assistive tech, OS-level
+      Computer Use) that the matrix incorrectly rejects?
+
+T5. I18N CONTRACT (L1) VALIDATION
+
+  Read I18N_INTEGRATION_GUIDE.md FULLY. The author chose L1
+  (format + resolver + lint, no DOM mutation) over L2 (full
+  runtime). Validate this choice:
+    - Is L1 the right depth, or should NAC v2.0 push to L2?
+    - Is the 10-locale default the right starting set, or should
+      NAC ship a smaller (5-7) or larger (15+) default?
+    - Does the catalog format support every common i18n pattern
+      typical adopters need (plurals, gender, grammatical cases,
+      interpolation, RTL/BIDI, CJK widths)? Cite gaps.
+    - Can react-intl / vue-i18n / FormatJS / i18next / gettext
+      bridges cleanly to this format? Find one bridge that breaks
+      if such exists.
+    - Is strict mode at NAC-3 (error on missing locale) too
+      aggressive for typical SaaS rollouts where new languages
+      are added incrementally?
+
+T6. PERFORMANCE BUDGET REALISM
+
+  scope doc section 5 + RFC sec 12 + spec sec 15.13 quote a perf
+  budget targeting low-tier mobile 2026. Validate:
+    - Are the numbers realistic? (If you have benchmark intuition
+      from comparable libraries, cite them.)
+    - The "device trajectory 2026 -> 2030" assumption (12% per
+      year compounding) -- is this defensible or optimistic?
+    - The hard-fail thresholds (e.g. autoRegister 5ms, adopt 15ms)
+      -- on which class of pages do they realistically fail?
+    - The MutationObserver `subtree=true` cost on DOM-heavy pages
+      (catalog browser with 400 cards + scroll) -- is the throttle
+      50ms enough?
+
+T7. TOOLING ECOSYSTEM COMPLETENESS
+
+  scope doc section 7 + roadmap phase 4 list 9 packages. Validate:
+    - Is the list minimal-viable for "v2.0 is adoptable", or is
+      something missing? Specifically:
+        * What about Solid / Qwik / Lit support?
+        * What about Storybook / Playwright / Cypress integrations?
+        * What about Sentry / Datadog / OpenTelemetry telemetry
+          export?
+        * What about a Visual Studio Code language server for
+          NAC manifest schema validation?
+    - Should @nac-spec/rules-* be in the spec repo or a separate
+      community-curated repo? The author chose: spec repo seedes
+      Stripe/Slack/Mapbox, community owns rest. Validate.
+    - Is the codemod auto-coverage target (~60%) realistic for
+      typical brownfield React/Vue/Svelte codebases? Higher? Lower?
+
+T8. CONVERGENCE ASSUMPTION DEFENSIBILITY
+
+  scope doc section 6 and migrator analysis section 7 assume that
+  third-party widget vendors will adopt NAC compliance under
+  market pressure within 2-4 years (driven by EAA, AI ops,
+  voice control resurgence, tooling-cheap adoption).
+
+  Validate:
+    - Is this assumption defensible based on the WAI-ARIA adoption
+      curve (2012 minority -> 2018 universal in design systems)?
+    - What single event would falsify the convergence (e.g. if it
+      does NOT happen by month X, NAC must restructure how)?
+    - Is `NAC.adopt` first-class (not relegated to "transitional")
+      enough to survive case D structural permanence?
+
+T9. ADOPTION COST VALIDATION (greenfield + brownfield)
+
+  scope doc appendix A + section 9 quote:
+    - Greenfield app of 50 components + 10 modals: ~10h dev.
+    - Brownfield Yujin (~50 components, partial i18n + ARIA):
+      ~36h dev including codemod + manual cleanup + i18n gap fill.
+
+  Validate:
+    - Are these realistic for a typical React/Vue team adopting
+      NAC v2.0 with the SDK?
+    - Specifically: the "5200 lines of boilerplate eliminated"
+      claim in appendix A -- realistic, optimistic, or
+      pessimistic?
+    - The codemod auto-coverage 60% target -- what classes of
+      components fall in the 40% manual cleanup?
+
+T10. DEMO EVALUATION
+
+  Live demo at https://yujin.app/nac-spec/example-v20.php
+  (side-by-side with v1.9 demo at example.php).
+
+  If you can navigate it:
+    - Does NAC.describe_v2() return the expected structure?
+    - Does the locale switcher work for all 10 locales (es, en,
+      pt, fr, it, de, ja, zh, hi, ar)? Verify CJK + RTL render.
+    - Does the HMAC sign demo produce a valid signature?
+    - Does the isTrusted button distinguish trusted vs synthetic
+      clicks correctly?
+    - Does the autoRegister section register cards added at
+      runtime?
+    - Does the adopt section make the third-party toolbar
+      operable?
+    - Does describe_v2().ephemeral_log capture the 3-second toast?
+    - Does the validate_global_v2({i18n_strict: true}) call return
+      zero errors when the catalog is complete?
+
+  If you cannot navigate live URLs, evaluate the demo's source
+  (example-v20.php) and confirm structurally.
+
+T11. ANSWERS TO AUTHOR'S OPEN QUESTIONS
+
+  RFC_v2.0.0.md sec 15 + scope doc sec 11 list 11 open questions.
+  Provide your structured answer to EACH:
+
+    Q1. Hierarchical scope vs graph (multi-parent)?
+    Q2. autoRegister strict mode default?
+    Q3. NAC.adopt rules library: spec repo or community?
+    Q4. Convergence assumption defensible?
+    Q5. Perf budget realistic?
+    Q6. Framework plugins: spec repo or community?
+    Q7. Tooling list minimal-viable or gaps?
+    Q8. Deferral list acceptable or any moves?
+    Q9. Spec/consumer division correct?
+    Q10. Strict-superset invariant honored?
+    Q11. i18n L1 vs L2 (your strong recommendation)?
+
+T12. CLOSING RECOMMENDATION
+
+  Output in this exact shape:
+
+    READINESS:  ['yes-can-tag-now' | 'yes-with-conditions' |
+                 'no-blockers-exist' | 'insufficient-evidence']
+    BLOCKERS:   [list of finding codes if any are 'blocker' severity]
+    CONDITIONS: [list of high-severity findings to address pre-tag]
+    SCORE_AXES:
+      spec_clarity:        N/10
+      ai_test_tooling:     N/10
+      adoption_ease:       N/10
+      ambition_feasibility: N/10
+      v2_announce_ready:   N/10
+    ONE_LINER: <single sentence summarizing your verdict>
+
+----------------------------------------------------------------
+OUTPUT FORMAT (MANDATORY)
+----------------------------------------------------------------
+
+Your response MUST be structured as follows. Free-form prose
+outside this structure will be discarded.
+
+```
+=== NAC v2.0.0-rc1 PEER REVIEW -- <YOUR_MODEL_NAME> ===
+
+REVIEW_DATE: YYYY-MM-DD
+DOCUMENTS_FETCHED: [list confirming each of the 14 required + which optional]
+DOCUMENTS_SKIPPED: [if any, with reason]
+
+--- T1: DOCUMENT ACQUISITION ---
+[per-document confirmation + reading depth]
+
+--- T2: STRICT SUPERSET CLAIM ---
+verdict: [valid | invalid | partially-valid]
+findings:
+  - id: T2-F1
+    severity: [blocker | high | medium | low]
+    code: <short snake_case>
+    citation: <path/to/file.md:LINE-LINE>
+    description: <one paragraph>
+    suggested_fix: <one paragraph or null>
+  - ...
+
+--- T3: EIGHT PRIMITIVES ---
+3.1 NAC.scope:
+  ergonomics: [good | acceptable | problematic]
+  reason: <one sentence>
+  edge_case_missed: <description with citation>
+  perf_concern: <description or null>
+3.2 NAC.autoRegister:
+  ...
+[continue for 3.1 through 3.8]
+
+--- T4: THREE-PATH IMPERSONATION THREAT MODEL ---
+threat_model_completeness: [complete | incomplete (missing path X)]
+isTrusted_correctness: <evaluation with browser quirks>
+matrix_correctness: <evaluation with edge cases>
+findings: [list]
+
+--- T5: I18N CONTRACT (L1) ---
+l1_vs_l2_recommendation: [keep-l1 | push-l2 | hybrid]
+default_locale_set: [appropriate | smaller | larger]
+catalog_format_gaps: <list>
+bridge_compatibility: <per library: react-intl, vue-i18n, ...>
+strict_mode_default: [appropriate | too-aggressive | too-lenient]
+findings: [list]
+
+--- T6: PERF BUDGET REALISM ---
+numbers_realistic: <evaluation>
+device_trajectory: [defensible | optimistic | pessimistic]
+hard_fail_thresholds: <which class of pages fail>
+mutationobserver_throttle: <50ms verdict>
+findings: [list]
+
+--- T7: TOOLING COMPLETENESS ---
+list_minimal_viable: [yes | no (missing X)]
+rules_library_location: [spec-repo | community | hybrid recommendation]
+codemod_auto_coverage_target: [realistic | optimistic | pessimistic]
+findings: [list]
+
+--- T8: CONVERGENCE ASSUMPTION ---
+defensibility: [defensible | weak | unknowable]
+falsifying_event: <description>
+adopt_first_class_robustness: <evaluation>
+findings: [list]
+
+--- T9: ADOPTION COST ---
+greenfield_realistic: [yes | optimistic | pessimistic]
+brownfield_realistic: [yes | optimistic | pessimistic]
+boilerplate_reduction_claim: <evaluation>
+codemod_40pct_manual_classes: <list>
+findings: [list]
+
+--- T10: DEMO EVALUATION ---
+demo_accessible_to_reviewer: [yes | no]
+[if yes, per-section verdict; if no, source-only structural verdict]
+findings: [list]
+
+--- T11: AUTHOR OPEN QUESTIONS ---
+Q1: <answer>
+Q2: <answer>
+...
+Q11: <answer>
+
+--- T12: CLOSING RECOMMENDATION ---
+READINESS:  <one of the four labels>
+BLOCKERS:   <list>
+CONDITIONS: <list>
+SCORE_AXES:
+  spec_clarity:        N/10
+  ai_test_tooling:     N/10
+  adoption_ease:       N/10
+  ambition_feasibility: N/10
+  v2_announce_ready:   N/10
+ONE_LINER: <single sentence>
+
+--- ADDITIONAL OBSERVATIONS (optional) ---
+[anything that did not fit T1-T12]
+
+=== END REVIEW ===
+```
+
+----------------------------------------------------------------
+WHAT THE AUTHOR EXPECTS
+----------------------------------------------------------------
+
+The five v1.8 panel reviewers + Claude arbiter produced 30+
+findings in the prior round. The author landed 22+ in v1.9 + the
+remainder were defensibly deferred. The author's track record on
+listening to peer review is verifiable in `docs/PEER_REVIEW.md`
+and the v1.9.0 git tag.
+
+The author asks you to be specific, technical, and unflattering.
+The user the contract serves is a person with a disability whose
+ability to use software depends on this contract being right. The
+cost of "wrong" is not a CI failure -- it is a user locked out
+of a system they need.
+
+You are NOT being asked to validate a product launch. You are
+being asked to find what is broken, ambiguous, or missing.
+
+If your verdict is "yes-can-tag-now" without any conditions, the
+author will treat that with suspicion -- the prior arbiter passes
+were "yes-with-conditions" and the conditions exposed real gaps.
+"Yes-with-conditions" + concrete conditions is the most useful
+verdict shape.
+
+----------------------------------------------------------------
+PUBLICATION OF YOUR RESPONSE
+----------------------------------------------------------------
+
+The author retains your response verbatim under MIT license in
+`docs/PEER_REVIEW.md` Round 3 section. Your reviewer name + model
+version + review date are recorded. Your response is part of the
+public NAC v2.0.0 release evidence.
+
+If you do NOT want your response published verbatim, declare so
+in the first line of your response. The author will then either
+paraphrase (with attribution) or omit (also with attribution to
+the existence of the response).
+
+----------------------------------------------------------------
+START YOUR REVIEW NOW. BEGIN BY FETCHING THE 14 REQUIRED DOCUMENTS.
+----------------------------------------------------------------
