@@ -28,7 +28,7 @@
 > 16.6 carry the full framing.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v2.0.0-rc5](https://img.shields.io/badge/NAC-v2.0.0--rc5-violet.svg)](spec/NAC-v2.0.md)
+[![NAC v2.1.0-rc1](https://img.shields.io/badge/NAC-v2.1.0--rc1-violet.svg)](spec/NAC-v2.0.md#18-data-table-primitive-new-v21)
 [![NAC v1.9.0 stable](https://img.shields.io/badge/v1.9.0-stable-success.svg)](spec/NAC-v1.0.md)
 [![Status: RC](https://img.shields.io/badge/status-release--candidate-amber.svg)](#)
 
@@ -57,6 +57,61 @@
 Tooling skeletons under `packages/`: babel/vue/svelte plugins,
 DevTools extension, codemod CLI, cookbook, rules-stripe / -slack /
 -mapbox.
+
+### v2.1 -- Data-table primitive (NEW 2026-05-09)
+
+ABM, lists, modal-embedded collections, permission matrices.
+The single most common shape of structured data in any
+non-trivial app, now first-class in NAC.
+
+- `NAC.registerDataTable(spec)` -- declare a table with
+  collection, matrix, or readonly subkind.
+- `NAC.dt_state` / `dt_add_row` / `dt_edit_cell` / `dt_remove_row`
+  / `dt_read_aggregate` / `dt_validate` / `dt_select` /
+  `dt_commit` / `dt_discard` for the collection API.
+- `NAC.dt_set_cell` / `dt_get_cell` for matrices.
+- 10 canonical events with `by: 'user'|'agent'` source
+  attribution.
+- Computed columns auto-recompute when their inputs change.
+- Validators (row + table + implicit required) run client-side
+  for instant feedback; host enforces server-side at commit.
+- `describe_v2().data_tables` exposes the full snapshot to
+  intermediary LLM, RPA bot, test runner -- same view, same
+  primitive, same code path.
+- Spec sec 18 (NEW). 59/59 runtime tests pass.
+
+```js
+NAC.registerDataTable({
+  table_id: 'invoice.lines',
+  scope_owner: 'modal.invoice_edit',
+  subkind: 'collection',
+  row_id_field: 'line_id',
+  columns: [
+    { key: 'product', label_i18n: {...}, type: 'text', editable: true, required: true },
+    { key: 'qty',     label_i18n: {...}, type: 'number', editable: true, min: 1 },
+    { key: 'unit_price', label_i18n: {...}, type: 'currency', editable: false },
+    { key: 'line_total', label_i18n: {...}, type: 'currency', computed: true,
+      computed_from: ['qty','unit_price'] }
+  ],
+  aggregates: { sum: ['line_total'] },
+  initial_rows: [...]
+});
+NAC.registerDataTableComputed('invoice.lines', 'line_total',
+  row => row.qty * row.unit_price);
+
+// Voice user: "agrega una linea con monitor cantidad 1 a 250"
+NAC.dt_add_row('invoice.lines', { product: 'Monitor', qty: 1, unit_price: 250 });
+
+// Voice user: "leeme el total"
+NAC.dt_read_aggregate('invoice.lines', 'sum', 'line_total');  // 440
+
+// On modal Save:
+const r = NAC.dt_commit('invoice.lines');
+// r.final_state goes to your server; r.audit_diff goes to your audit log.
+```
+
+Migration guide:
+[`docs/V2_1_DATA_TABLE_GUIDE.md`](docs/V2_1_DATA_TABLE_GUIDE.md).
 
 ### Testing + RPA breakthrough (NEW with rc5)
 

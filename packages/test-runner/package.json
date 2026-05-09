@@ -1,7 +1,7 @@
 {
   "name": "@nac-spec/test-runner",
-  "version": "0.1.0",
-  "description": "NAC-driven autonomous test runner: plan from describe_v2() + sitemap, execute on Playwright, assert + measure coverage. Any operator class (human voice, RPA, AI agent) drives the same suite.",
+  "version": "0.2.0",
+  "description": "NAC-driven autonomous test runner: plan from describe_v2() + sitemap, execute on Playwright, dispatch data-table operations, assert + measure coverage. Any operator class (human voice, RPA, AI agent) drives the same suite.",
   "main": "src/index.js",
   "types": "src/index.d.ts",
   "license": "MIT",

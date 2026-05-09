@@ -81,6 +81,27 @@ async function dispatchByNacId(page, slug, opts) {
 }
 
 /**
+ * v2.1: dispatch a data-table operation in the page context.
+ * Returns the runtime call result (or {ok:false, error} when
+ * the runtime is missing or the table is not registered).
+ */
+async function dispatchDataTableOp(page, op) {
+  return await page.evaluate(function (args) {
+    if (!window.NAC) return { ok: false, error: 'nac_missing' };
+    var op = args.op;
+    var fn = window.NAC[op.method];
+    if (typeof fn !== 'function') {
+      return { ok: false, error: 'method_not_available:' + op.method };
+    }
+    try {
+      return fn.apply(null, op.args || []);
+    } catch (e) {
+      return { ok: false, error: 'threw:' + (e && e.message) };
+    }
+  }, { op: op });
+}
+
+/**
  * Decorate an anchor's href with a continuation query, then click.
  * Used when the planner returned step.requires_page_break_guard:true
  * and step.carry_intent_via_query.
@@ -297,5 +318,6 @@ module.exports = {
   runIntent: runIntent,
   snapshot: snapshot,
   dispatchByNacId: dispatchByNacId,
+  dispatchDataTableOp: dispatchDataTableOp,
   clickAnchorWithContinuation: clickAnchorWithContinuation
 };

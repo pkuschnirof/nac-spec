@@ -1030,17 +1030,320 @@ v1.9 baseline AND the v2.0 extensions (the reference impl uses
 
 ---
 
+## 18. Data-table primitive (NEW v2.1)
+
+### 18.1 Why this section exists
+
+Sections 1-17 cover navigation, dispatch, sitemap, and operator
+identity. They are NOT enough to describe the most common shape
+of structured data in any non-trivial UI: **a tabular collection
+embedded in a modal, panel, or section, edited transactionally,
+committed when the parent scope saves**. Examples drawn from a
+typical CRM or ERP:
+
+- Lines of an invoice (modal "Edit invoice")
+- Items of a purchase order
+- Roster of attendees in an event
+- Permission matrix (role x permission, Salesforce-style)
+- Audit trail (read-only)
+- Pre-flight of a bulk action ("you are about to delete these 23 rows")
+- Wizard review step
+- Cart in checkout
+
+Without a first-class primitive, every adopter rolls their own
+attribute/event/manifest convention. The result: the chatbot
+intermediary cannot say "delete the keyboard line"; the test
+runner cannot say "add a row with product Mouse and quantity 3
+and save"; the RPA bot polls the DOM for row visibility. NAC
+v2.1 closes this with a normative primitive.
+
+Distinction from a future grid primitive (sec 19, deferred):
+data-table is **transactional** (commit on parent-scope save),
+**non-virtualised** (typical 5-200 rows, all in DOM),
+**scope-bound** (lives only while its modal/panel is alive). A
+grid is persistent, often virtualised, and saves cell-by-cell.
+The semantics are different enough that conflating them in one
+primitive is harmful.
+
+### 18.2 Two subkinds
+
+**`collection`** -- the common case. Rows have business-key
+identity; columns are attributes. Operations: add row, remove
+row, edit cell, select. Example: invoice lines.
+
+**`matrix`** -- 2D grid where rows AND columns are slugs (not
+arbitrary keys). The cell is the intersection. Operations: set
+cell (truthy/falsy or value). Example: permission matrix.
+
+A third subkind **`readonly`** exists as a degenerate
+collection: same shape but no edit/add/remove operations are
+exposed. Used for audit logs, pre-flight previews, etc.
+
+### 18.3 Manifest
+
+Hosts declare a data-table via `NAC.registerDataTable(spec)`:
+
+```javascript
+NAC.registerDataTable({
+  table_id: 'invoice.lines',          /* canonical slug */
+  scope_owner: 'modal.invoice_edit',  /* slug of the parent scope */
+  subkind: 'collection',              /* 'collection' | 'matrix' | 'readonly' */
+  transactional: true,                /* commit on scope_owner save */
+  row_id_field: 'line_id',            /* unique key per row */
+  columns: [
+    {
+      key: 'product',
+      label_i18n: { es: 'Producto', en: 'Product', /* ...10 locales */ },
+      type: 'text',
+      editable: true,
+      required: true
+    },
+    {
+      key: 'qty',
+      label_i18n: { es: 'Cantidad', en: 'Quantity', /* ... */ },
+      type: 'number',
+      editable: true,
+      min: 1,
+      max: 9999,
+      required: true
+    },
+    {
+      key: 'unit_price',
+      label_i18n: { es: 'Precio unitario', en: 'Unit price', /* ... */ },
+      type: 'currency',
+      editable: false
+    },
+    {
+      key: 'line_total',
+      label_i18n: { es: 'Total linea', en: 'Line total', /* ... */ },
+      type: 'currency',
+      computed: true,
+      computed_from: ['qty', 'unit_price']
+    }
+  ],
+  supports: ['add_row', 'remove_row', 'edit_cell'],
+  selection_mode: 'multiple',
+  aggregates: {
+    sum: ['line_total'],
+    count: ['*']
+  },
+  initial_rows: [
+    { line_id: 'L1', product: 'Mouse',   qty: 2, unit_price: 25,  line_total: 50 },
+    { line_id: 'L2', product: 'Teclado', qty: 1, unit_price: 140, line_total: 140 }
+  ],
+  validators: [
+    /* per-row: qty must be > 0 (already covered by column.min,
+       but re-stated here for cross-row rules) */
+    { kind: 'row',   code: 'qty_positive',     column: 'qty', op: 'gt', value: 0 },
+    /* table-level: no two rows may have the same product */
+    { kind: 'table', code: 'no_duplicate_product', unique_columns: ['product'] }
+  ]
+});
+```
+
+Matrix subkind manifest has `row_axis` + `column_axis` instead
+of `columns`:
+
+```javascript
+NAC.registerDataTable({
+  table_id: 'permissions.matrix',
+  scope_owner: 'modal.role_editor',
+  subkind: 'matrix',
+  transactional: true,
+  row_axis: {
+    label_i18n: { es: 'Rol', en: 'Role' },
+    values: [
+      { slug: 'admin',   label_i18n: { es: 'Administrador', en: 'Admin' } },
+      { slug: 'analyst', label_i18n: { es: 'Analista', en: 'Analyst' } }
+    ]
+  },
+  column_axis: {
+    label_i18n: { es: 'Permiso', en: 'Permission' },
+    values: [
+      { slug: 'deals.read',   label_i18n: { es: 'Leer pipeline', en: 'Read deals' } },
+      { slug: 'deals.write',  label_i18n: { es: 'Editar pipeline', en: 'Write deals' } }
+    ]
+  },
+  cell_type: 'boolean',
+  initial_cells: [
+    { row: 'admin',   col: 'deals.read',  value: true },
+    { row: 'admin',   col: 'deals.write', value: true },
+    { row: 'analyst', col: 'deals.read',  value: true }
+  ]
+});
+```
+
+### 18.4 Public API (collection subkind)
+
+| Method | Returns | Description |
+|---|---|---|
+| `NAC.dt_state(table_id)` | `{rows, aggregates, modified, valid, selected}` | Full snapshot at any point. |
+| `NAC.dt_add_row(table_id, valuesByColumn)` | `{row_id}` | Adds a row. Required columns must be present. Returns generated row_id (or the one provided). |
+| `NAC.dt_remove_row(table_id, row_id)` | `void` | Removes the row. No-op if not found. |
+| `NAC.dt_edit_cell(table_id, row_id, column_key, value)` | `{ok, error?}` | Updates a cell. Validates type, min/max. Returns `{ok:false, error:'invalid_type'}` on failure (no exception). |
+| `NAC.dt_read_aggregate(table_id, agg_key, column_key)` | number\|null | Returns the live aggregate value (sum, avg, count, custom). |
+| `NAC.dt_validate(table_id)` | `{valid, errors:[{code, row_id?, column?, message_i18n}]}` | Runs all validators. |
+| `NAC.dt_select(table_id, target)` | `{selected_count}` | `target` is `'all'`, `'visible'`, a row_id, an array of row_ids, or a predicate `{column, op, value}`. |
+| `NAC.dt_commit(table_id)` | `{audit_diff}` | Called by the host when the parent scope saves. Emits `nac:dt:committed`. |
+| `NAC.dt_discard(table_id)` | `void` | Called when the parent scope cancels. Restores `initial_rows`. Emits `nac:dt:discarded`. |
+
+### 18.5 Public API (matrix subkind)
+
+| Method | Returns | Description |
+|---|---|---|
+| `NAC.dt_set_cell(table_id, row_slug, col_slug, value)` | `{ok, error?}` | Sets a cell at the intersection. |
+| `NAC.dt_get_cell(table_id, row_slug, col_slug)` | value\|undefined | Reads a cell. |
+| `NAC.dt_state(table_id)` | `{cells, modified, valid}` | Snapshot. |
+| `NAC.dt_commit(table_id)` / `dt_discard(table_id)` | -- | Same as collection. |
+
+### 18.6 Events
+
+All events bubble on `document` with `bubbles: true`.
+
+| Event | Detail |
+|---|---|
+| `nac:dt:registered` | `{table_id, schema}` |
+| `nac:dt:row_added` | `{table_id, row, by: 'user'\|'agent'}` |
+| `nac:dt:row_removed` | `{table_id, row_id, by}` |
+| `nac:dt:cell_edited` | `{table_id, row_id, column, old, new, by}` |
+| `nac:dt:matrix_cell_set` | `{table_id, row, col, old, new, by}` |
+| `nac:dt:aggregate_changed` | `{table_id, agg_key, column, old, new}` |
+| `nac:dt:validation_failed` | `{table_id, errors}` |
+| `nac:dt:committed` | `{table_id, final_state, audit_diff}` |
+| `nac:dt:discarded` | `{table_id}` |
+| `nac:dt:selection_changed` | `{table_id, selected_count, selected_ids}` |
+
+The `by` discriminator is REQUIRED at NAC-3 (sec 9 source-type
+contract): `'user'` for direct DOM events with isTrusted=true,
+`'agent'` for any operator-class invocation (chat, RPA, test
+runner). Audit pipelines downstream use this to attribute
+changes.
+
+### 18.7 Authority separation
+
+The runtime owns the **in-memory state** of the table. The host
+owns the **persistence**. On `nac:dt:committed`, the host's own
+save handler (HTTP POST to backend, IndexedDB write, etc.)
+takes the `final_state` and persists it. NAC does NOT touch the
+network.
+
+This means:
+
+- The runtime state is the single source of truth WHILE the
+  modal is open.
+- A discard reverts cleanly to `initial_rows` without round-trip.
+- The chatbot / RPA / test runner sees one consistent state.
+- Validators run client-side (NAC) AND server-side (host) -- the
+  client-side ones provide immediate feedback; the host enforces
+  on commit.
+
+### 18.8 Computed columns
+
+A column with `computed: true` and `computed_from: [...]` is
+recalculated automatically:
+
+1. When any column in `computed_from` changes (cell edit, row add).
+2. After every `dt_add_row` / `dt_edit_cell`.
+3. The host registers the recompute function via
+   `NAC.registerDataTableComputed(table_id, column_key, fn)`,
+   where `fn(row, allRows) => value`. A common case is
+   `(row) => row.qty * row.unit_price`.
+
+Without a registered fn, computed columns hold the value passed
+in `initial_rows` and are never updated -- the validator emits
+`computed_column_no_fn` warning at NAC-3.
+
+### 18.9 Validators
+
+Two kinds:
+
+- **`row`** validator: runs per row.
+  `{kind:'row', code, column, op:'gt'|'lt'|'eq'|'in'|'matches', value}`
+- **`table`** validator: runs across all rows.
+  `{kind:'table', code, unique_columns? | min_rows? | max_rows? | custom_fn?}`
+
+`dt_validate()` returns `{valid: boolean, errors: [{code, row_id?,
+column?, message_i18n}]}` so the host can localise error
+messages per the user's current locale.
+
+A `dt_commit()` call MUST first run `dt_validate()`. If it
+fails, commit aborts and emits `nac:dt:validation_failed`. The
+host SHOULD wire the parent modal's Save button to `dt_validate`
++ `dt_commit` in that order.
+
+### 18.10 i18n requirements
+
+Every column's `label_i18n`, every aggregate's display name,
+every validator's `message_i18n`, every matrix axis's `label_i18n`,
+every matrix row/col `label_i18n`: REQUIRED to carry **all 10
+supported locales** (es, en, pt, fr, it, de, ja, zh, hi, ar) at
+NAC-3. Missing locales degrade silently in v2.1 with a warn-level
+`validate_global_v2` finding `dt_i18n_missing_locale`. The
+catalog-lint CI gate (in adopters' build pipelines) should
+upgrade to error.
+
+### 18.11 Snapshot serialisation
+
+`describe_v2()` is extended with `data_tables: [...]`. Each
+table contributes a snapshot:
+
+```javascript
+{
+  table_id: 'invoice.lines',
+  scope_owner: 'modal.invoice_edit',
+  subkind: 'collection',
+  schema: { columns, supports, aggregates, validators_summary },
+  current_state: { rows, aggregates, modified, valid, selected_count }
+}
+```
+
+Intermediary LLMs (sec 16) see this in their context. The chat
+prompt rule is: "When the user refers to a row by a column value
+(e.g. 'the keyboard line'), match against `current_state.rows`
+in any locale that the row's column values may carry."
+
+### 18.12 Conformance test (added to validate_global_v2)
+
+A NAC-3-conformant data-table integration MUST:
+
+- `dt_state()` returns a stable snapshot consistent with the
+  events emitted up to that point.
+- `dt_commit()` after `dt_discard()` is a no-op (idempotent
+  cleanup).
+- `dt_edit_cell()` on a non-existent row_id returns
+  `{ok:false, error:'row_not_found'}` -- never throws.
+- All 6 voice cases pass against the demo fixture (see
+  `tests/data_table_voice_cases.spec.js`):
+  1. "agrega una linea" -> `dt_add_row`
+  2. "borra la linea del teclado" -> `dt_remove_row` after slug
+     resolution against rows
+  3. "cambia la cantidad de la primera linea a 5" -> `dt_edit_cell`
+  4. "leeme el total" -> `dt_read_aggregate('sum', 'line_total')`
+  5. "guarda" -> `dt_validate` then `dt_commit`
+  6. "cancelar" -> `dt_discard`
+
+### 18.13 Backwards compatibility
+
+v2.1 is a strict superset of v2.0. Adopters who do not call
+`registerDataTable()` see no behaviour change. The new APIs
+appear on `NAC.*` but are no-ops in their absence (calling
+`dt_state()` for an unregistered `table_id` returns `null`
+without throwing).
+
+---
+
 ## Cross-references
 
 - Formal RFC: `RFC_v2.0.0.md`
 - Scope discussion: `docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md`
 - Operational plan: `docs/NAC_v20_ROADMAP_ACTIONABLE.md`
 - I18n integration: `docs/I18N_INTEGRATION_GUIDE.md`
+- Data-table guide: `docs/V2_1_DATA_TABLE_GUIDE.md` (NEW v2.1)
 - Tooling skeletons: `packages/`
 - Adopter case study: `case-studies/yujin.md` (in progress)
 - v1.9 baseline spec: `spec/NAC-v1.0.md`
 
 ---
 
-**Last updated**: 2026-05-09.
+**Last updated**: 2026-05-09 (v2.1 added sec 18 data-table).
 **Maintainer**: Pablo Adrian Kuschniroff, Sumi.

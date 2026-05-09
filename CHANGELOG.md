@@ -20,7 +20,111 @@ Versioning conventions for the spec:
 
 ## [Unreleased]
 
-### Added -- @nac-spec/test-runner package (NEW)
+Nothing yet.
+
+## [2.1.0-rc1] - 2026-05-09
+
+MINOR release. Adds the **data-table primitive** (spec sec 18)
+required for ABM, lists, modal-embedded structured collections,
+and permission matrices. Without this primitive, sec 1-17 of v2.0
+cover navigation + dispatch + sitemap but cannot describe the
+single most common shape of data in any non-trivial application.
+Strict superset of v2.0.0; existing v2.0 plugins are unaffected
+when they do not call `registerDataTable()`.
+
+### Spec additions
+
+- **Sec 18 -- Data-table primitive (NEW v2.1).** 13 subsections
+  cover: why this is its own primitive (not the future grid),
+  three subkinds (`collection` / `matrix` / `readonly`),
+  manifest shape, public API for collection (9 methods) and
+  matrix (4 methods), 10 canonical events including the `by`
+  source-class discriminator (sec 9 contract), authority
+  separation (runtime owns in-memory state, host owns
+  persistence, NAC does not touch the network), computed
+  columns with `registerDataTableComputed()`, validators
+  (row-level + table-level + implicit required), i18n
+  requirements (10 locales for every label / message), the
+  `describe_v2().data_tables` snapshot serialisation,
+  conformance test (6 voice cases), backwards compatibility.
+
+### Runtime additions
+
+- `NAC.registerDataTable(spec)` -- validates spec, supports
+  three subkinds, returns table_id.
+- `NAC.unregisterDataTable(id)`.
+- `NAC.registerDataTableComputed(id, col, fn)` -- attaches a
+  recompute fn for a computed column; runs against existing
+  rows immediately.
+- Collection API: `NAC.dt_state`, `dt_add_row`, `dt_remove_row`,
+  `dt_edit_cell`, `dt_read_aggregate`, `dt_validate`,
+  `dt_select`, `dt_commit`, `dt_discard`.
+- Matrix API: `NAC.dt_set_cell`, `dt_get_cell` (plus shared
+  `dt_state`, `dt_commit`, `dt_discard`).
+- `dt_validate()` runs row-level operators (`gt`/`gte`/`lt`/
+  `lte`/`eq`/`neq`/`in`/`matches`), table-level uniqueness
+  (`unique_columns`), min/max row count, and implicit required
+  columns. Returns `{valid, errors[]}` -- never throws.
+- `dt_commit()` runs validation first; aborts on failure.
+- `dt_select(target)` accepts `'all'` / `'visible'` / `'none'`
+  / row_id string / row_id array / predicate object
+  `{column, op, value}`.
+- 10 events on document, all with `bubbles:true` + `by` source
+  attribution: `nac:dt:registered`, `:unregistered`,
+  `:row_added`, `:row_removed`, `:cell_edited`,
+  `:matrix_cell_set`, `:aggregate_changed`,
+  `:validation_failed`, `:committed`, `:discarded`,
+  `:selection_changed`.
+- `describe_v2()` extended with `data_tables: [...]` -- every
+  registered table contributes its schema + current_state, so
+  the chatbot intermediary, RPA bot, and test runner all see
+  the same snapshot per turn.
+- `describe_v2().nac_version` bumped to `'2.1.0-rc1'`.
+- `NAC.version_v2 = '2.1.0-rc1'`. `NAC.spec_version_v2 = '2.1'`.
+
+### Tests added
+
+22 new tests in `tests/nac-v2-extensions.spec.js` -- covering
+register, state snapshot, add/edit/remove flows, computed
+columns recompute on add/remove/edit, type validation, min/max
+guards, computed-column-rejects-edit, missing-row error
+contract, required-column validation, table-level uniqueness,
+selection by predicate / all / none, discard restores initial,
+commit returns audit_diff, commit-after-discard idempotency,
+matrix set/get cell + axis validation, describe_v2 surfaces
+data_tables, duplicate table_id throws, matrix without axes
+throws, event emission with by=agent attribution.
+
+Total spec runtime tests: **59/59** pass (was 37/37 in rc5).
+
+The DOM stub at the top of the test file was upgraded from a
+no-op event surface to a real in-memory event bus so the dt
+event emission tests run in pure node without jsdom.
+
+### Backwards compatibility
+
+- All v2.0 APIs unchanged.
+- `describe_v2()` shape is additive (`data_tables` field added).
+  Consumers iterating known fields are unaffected; consumers
+  doing structural compat checks will see one new field.
+- `NAC.dt_*` methods are no-ops on unregistered tables (return
+  `null` for state, return `{ok:false, error:...}` for
+  mutations) -- they never throw based on registration absence.
+  Calling code under v2.0 simply does not call them.
+
+### What v2.1 unlocks
+
+- ABM (alta/baja/modificacion) on any entity collection.
+- Modal-embedded line editors (invoices, orders, tickets).
+- Permission matrices with the `matrix` subkind.
+- Test-runner intents like "agregame una linea con producto X
+  cantidad 3 y guardame la factura" -> plan() composes
+  `dt_add_row` -> `dt_commit` automatically.
+- Voice operators saying "leeme el total" -> `dt_read_aggregate`.
+- RPA bots reading state once + planning a transactional batch
+  of edits + committing.
+
+## [2.0.0-rc5] - 2026-05-09
 
 `packages/test-runner/v0.1.0` -- autonomous test runner that
 plans actions from `describe_v2()` + sitemap, executes against

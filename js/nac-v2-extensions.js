@@ -1258,8 +1258,15 @@
       var count = typeof v.count === 'function' ? v.count() : v.count;
       return { slug_pattern: v.slug_pattern, count: count };
     });
+    /* v2.1 sec 18: surface every registered data-table so the
+       chatbot intermediary, RPA bot and test runner all see the
+       same snapshot. data_tables is [] when no host has called
+       registerDataTable(). */
+    var dataTables = (typeof NAC.__v2_dtSummariseAll === 'function')
+      ? NAC.__v2_dtSummariseAll()
+      : [];
     return {
-      nac_version: '2.0.0-rc5',
+      nac_version: '2.1.0-rc1',
       timestamp: Date.now(),
       tenant_prefix: _tenantPrefix,
       v1_plugins: v1.plugins || [],
@@ -1272,7 +1279,10 @@
       /* v2.0-rc5 (spec sec 17): null when host has not declared a
          sitemap (small SPAs / demos); otherwise the path catalog.
          Intermediaries treat this as PLANNING data, not authority. */
-      sitemap: _sitemap ? { paths: _sitemap.paths.slice() } : null
+      sitemap: _sitemap ? { paths: _sitemap.paths.slice() } : null,
+      /* v2.1 (spec sec 18): registered data-tables with their full
+         state. [] when no host has registered any. */
+      data_tables: dataTables
     };
   }
 
@@ -1419,9 +1429,611 @@
      re-warms. */
   setTimeout(_warmCrypto, 0);
 
+  /* ------------------------------------------------------------- v2.1 data-table primitive (spec sec 18) */
+  /* See docs/V2_1_DATA_TABLE_GUIDE.md for the adopter walk-through.
+     Authority separation: the runtime owns the in-memory state,
+     the host owns persistence (commit handler does the HTTP/DB
+     write). All operator classes (user, agent, bot) use the same
+     dt_* API; the `by` discriminator on every emitted event lets
+     audit pipelines attribute changes per source.type contract. */
+
+  var _dataTables = Object.create(null);
+  /* { table_id -> {
+       schema: {...},               // immutable post-register
+       current_rows: [...],         // collection: array of objects
+       current_cells: [...],        // matrix: array of {row, col, value}
+       initial_state: deep_copy,    // for discard()
+       selected: Set<row_id>,       // collection only
+       modified: bool,
+       computed_fns: { col_key -> fn(row, allRows) } } } */
+
+  function _dtDeepCopy(o) {
+    /* JSON-roundtrip: cheap, preserves the primitive shapes our
+       cells carry (string/number/boolean/null/array/plain object).
+       If a host puts Date/Map in a cell we reject at register time. */
+    return o === undefined ? undefined : JSON.parse(JSON.stringify(o));
+  }
+
+  function _dtEmit(name, detail) {
+    document.dispatchEvent(new CustomEvent(name, { detail: detail, bubbles: true }));
+  }
+
+  function _dtBy() {
+    /* Detect operator class. If the call originated from a recent
+       attested user gesture, by='user'; otherwise by='agent'. The
+       gesture buffer (rc3 T4-F1) is the source of truth. */
+    try {
+      if (typeof NAC.attestUserGesture === 'function') {
+        var gesture = NAC._readGestureAttested
+                    ? NAC._readGestureAttested()
+                    : null;
+        if (gesture && gesture.attested) return 'user';
+      }
+    } catch (_) {}
+    return 'agent';
+  }
+
+  function _dtCheckColumnValue(col, value) {
+    if (value === null || value === undefined) {
+      if (col.required) return { ok: false, error: 'required_missing' };
+      return { ok: true };
+    }
+    var t = col.type;
+    if (t === 'number' || t === 'currency') {
+      if (typeof value !== 'number' || !isFinite(value)) {
+        return { ok: false, error: 'invalid_type:expected_number' };
+      }
+      if (typeof col.min === 'number' && value < col.min) {
+        return { ok: false, error: 'below_min:' + col.min };
+      }
+      if (typeof col.max === 'number' && value > col.max) {
+        return { ok: false, error: 'above_max:' + col.max };
+      }
+    } else if (t === 'boolean') {
+      if (typeof value !== 'boolean') {
+        return { ok: false, error: 'invalid_type:expected_boolean' };
+      }
+    } else if (t === 'select') {
+      var opts = col.options || [];
+      var ok = opts.some(function (o) { return (o.value !== undefined ? o.value : o) === value; });
+      if (!ok) return { ok: false, error: 'invalid_option' };
+    } else if (t === 'date') {
+      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(value)) {
+        return { ok: false, error: 'invalid_type:expected_date_iso' };
+      }
+    } else {
+      /* text and others: just require string-like */
+      if (typeof value !== 'string' && typeof value !== 'number') {
+        return { ok: false, error: 'invalid_type:expected_text' };
+      }
+    }
+    return { ok: true };
+  }
+
+  function _dtRecomputeRow(table, row) {
+    /* Recompute every column whose `computed:true` and a fn is
+       registered. */
+    var changed = false;
+    table.schema.columns.forEach(function (col) {
+      if (!col.computed) return;
+      var fn = table.computed_fns[col.key];
+      if (!fn) return;
+      try {
+        var newVal = fn(row, table.current_rows);
+        if (row[col.key] !== newVal) {
+          row[col.key] = newVal;
+          changed = true;
+        }
+      } catch (_) { /* swallow; computed err leaves stale value */ }
+    });
+    return changed;
+  }
+
+  function _dtRecomputeAggregates(table, prevAggs) {
+    var aggs = {};
+    var defs = table.schema.aggregates || {};
+    Object.keys(defs).forEach(function (aggKey) {
+      var cols = defs[aggKey] || [];
+      aggs[aggKey] = {};
+      cols.forEach(function (colKey) {
+        if (colKey === '*') {
+          aggs[aggKey]['*'] = aggKey === 'count' ? table.current_rows.length : 0;
+          return;
+        }
+        var values = table.current_rows
+          .map(function (r) { return r[colKey]; })
+          .filter(function (v) { return typeof v === 'number' && isFinite(v); });
+        if (aggKey === 'sum') {
+          aggs[aggKey][colKey] = values.reduce(function (s, v) { return s + v; }, 0);
+        } else if (aggKey === 'avg') {
+          aggs[aggKey][colKey] = values.length
+            ? values.reduce(function (s, v) { return s + v; }, 0) / values.length
+            : 0;
+        } else if (aggKey === 'count') {
+          aggs[aggKey][colKey] = values.length;
+        } else if (aggKey === 'min') {
+          aggs[aggKey][colKey] = values.length ? Math.min.apply(null, values) : null;
+        } else if (aggKey === 'max') {
+          aggs[aggKey][colKey] = values.length ? Math.max.apply(null, values) : null;
+        }
+      });
+    });
+    /* Emit per (agg, column) pair when changed. */
+    if (prevAggs) {
+      Object.keys(aggs).forEach(function (aggKey) {
+        Object.keys(aggs[aggKey]).forEach(function (colKey) {
+          var oldV = (prevAggs[aggKey] || {})[colKey];
+          var newV = aggs[aggKey][colKey];
+          if (oldV !== newV) {
+            _dtEmit('nac:dt:aggregate_changed', {
+              table_id: table.schema.table_id,
+              agg_key: aggKey, column: colKey, old: oldV, new: newV
+            });
+          }
+        });
+      });
+    }
+    return aggs;
+  }
+
+  function _dtGenRowId(table) {
+    var prefix = (table.schema.row_id_field || 'r').slice(0, 1).toUpperCase();
+    var n = table.current_rows.length + 1;
+    var candidate;
+    do {
+      candidate = prefix + n;
+      n++;
+    } while (table.current_rows.some(function (r) { return r[table.schema.row_id_field] === candidate; }));
+    return candidate;
+  }
+
+  function registerDataTable(spec) {
+    if (!spec || typeof spec !== 'object') {
+      throw new Error('[NAC v2.1] registerDataTable: spec must be an object');
+    }
+    if (typeof spec.table_id !== 'string' || !spec.table_id) {
+      throw new Error('[NAC v2.1] registerDataTable: table_id required');
+    }
+    if (_dataTables[spec.table_id]) {
+      throw new Error('[NAC v2.1] registerDataTable: table_id "'
+        + spec.table_id + '" already registered');
+    }
+    var subkind = spec.subkind || 'collection';
+    if (['collection', 'matrix', 'readonly'].indexOf(subkind) < 0) {
+      throw new Error('[NAC v2.1] registerDataTable: invalid subkind "' + subkind + '"');
+    }
+    /* Subkind-specific validation. */
+    if (subkind === 'matrix') {
+      if (!spec.row_axis || !spec.column_axis) {
+        throw new Error('[NAC v2.1] registerDataTable: matrix requires row_axis + column_axis');
+      }
+    } else {
+      if (!Array.isArray(spec.columns) || !spec.columns.length) {
+        throw new Error('[NAC v2.1] registerDataTable: collection/readonly requires columns[]');
+      }
+      if (!spec.row_id_field) {
+        throw new Error('[NAC v2.1] registerDataTable: row_id_field required for collection');
+      }
+    }
+    var schema = {
+      table_id: spec.table_id,
+      scope_owner: spec.scope_owner || null,
+      subkind: subkind,
+      transactional: spec.transactional !== false,
+      row_id_field: spec.row_id_field || null,
+      columns: spec.columns || [],
+      row_axis: spec.row_axis || null,
+      column_axis: spec.column_axis || null,
+      cell_type: spec.cell_type || 'boolean',
+      supports: spec.supports || [],
+      selection_mode: spec.selection_mode || 'none',
+      aggregates: spec.aggregates || {},
+      validators: spec.validators || []
+    };
+    var table = {
+      schema: schema,
+      current_rows: subkind === 'matrix' ? [] : (_dtDeepCopy(spec.initial_rows) || []),
+      current_cells: subkind === 'matrix' ? (_dtDeepCopy(spec.initial_cells) || []) : [],
+      initial_state: subkind === 'matrix'
+        ? { cells: _dtDeepCopy(spec.initial_cells) || [] }
+        : { rows: _dtDeepCopy(spec.initial_rows) || [] },
+      selected: new Set(),
+      modified: false,
+      computed_fns: Object.create(null),
+      _aggregates_cache: null
+    };
+    _dataTables[spec.table_id] = table;
+    table._aggregates_cache = _dtRecomputeAggregates(table, null);
+    _dtEmit('nac:dt:registered', { table_id: spec.table_id, schema: schema });
+    return spec.table_id;
+  }
+
+  function unregisterDataTable(table_id) {
+    if (_dataTables[table_id]) {
+      delete _dataTables[table_id];
+      _dtEmit('nac:dt:unregistered', { table_id: table_id });
+    }
+  }
+
+  function registerDataTableComputed(table_id, column_key, fn) {
+    var t = _dataTables[table_id];
+    if (!t) throw new Error('[NAC v2.1] data-table not registered: ' + table_id);
+    if (typeof fn !== 'function') {
+      throw new Error('[NAC v2.1] computed fn must be a function');
+    }
+    t.computed_fns[column_key] = fn;
+    /* Recompute now so newly-attached fns reflect on existing rows. */
+    t.current_rows.forEach(function (row) { _dtRecomputeRow(t, row); });
+    var prev = t._aggregates_cache;
+    t._aggregates_cache = _dtRecomputeAggregates(t, prev);
+  }
+
+  function dt_state(table_id) {
+    var t = _dataTables[table_id];
+    if (!t) return null;
+    if (t.schema.subkind === 'matrix') {
+      return {
+        cells: _dtDeepCopy(t.current_cells),
+        modified: t.modified,
+        valid: dt_validate(table_id).valid
+      };
+    }
+    return {
+      rows: _dtDeepCopy(t.current_rows),
+      aggregates: _dtDeepCopy(t._aggregates_cache),
+      modified: t.modified,
+      valid: dt_validate(table_id).valid,
+      selected_count: t.selected.size,
+      selected_ids: Array.from(t.selected)
+    };
+  }
+
+  function dt_add_row(table_id, valuesByColumn) {
+    var t = _dataTables[table_id];
+    if (!t) throw new Error('[NAC v2.1] data-table not registered: ' + table_id);
+    if (t.schema.subkind === 'matrix') {
+      throw new Error('[NAC v2.1] add_row not applicable to matrix');
+    }
+    if (t.schema.subkind === 'readonly') {
+      throw new Error('[NAC v2.1] add_row not allowed on readonly');
+    }
+    var values = valuesByColumn || {};
+    var row = {};
+    t.schema.columns.forEach(function (col) {
+      if (col.key === t.schema.row_id_field) return;
+      if (Object.prototype.hasOwnProperty.call(values, col.key)) {
+        row[col.key] = values[col.key];
+      } else if (col.required && !col.computed) {
+        /* required but missing -- caller must provide */
+      }
+    });
+    /* Row id: caller-provided OR auto-generated. */
+    var rowId = values[t.schema.row_id_field];
+    if (!rowId) rowId = _dtGenRowId(t);
+    row[t.schema.row_id_field] = rowId;
+    /* Validate every provided column. */
+    var fail = null;
+    t.schema.columns.forEach(function (col) {
+      if (fail) return;
+      if (col.computed) return;
+      var v = row[col.key];
+      var check = _dtCheckColumnValue(col, v);
+      if (!check.ok) fail = { column: col.key, error: check.error };
+    });
+    if (fail) {
+      _dtEmit('nac:dt:validation_failed', {
+        table_id: t.schema.table_id,
+        errors: [{ code: 'add_row_invalid', column: fail.column, message_i18n: { en: fail.error } }]
+      });
+      return { row_id: null, ok: false, error: fail.error, column: fail.column };
+    }
+    t.current_rows.push(row);
+    _dtRecomputeRow(t, row);
+    var prev = t._aggregates_cache;
+    t._aggregates_cache = _dtRecomputeAggregates(t, prev);
+    t.modified = true;
+    _dtEmit('nac:dt:row_added', {
+      table_id: t.schema.table_id, row: _dtDeepCopy(row), by: _dtBy()
+    });
+    return { row_id: rowId, ok: true };
+  }
+
+  function dt_remove_row(table_id, row_id) {
+    var t = _dataTables[table_id];
+    if (!t || t.schema.subkind === 'matrix' || t.schema.subkind === 'readonly') return;
+    var idx = -1;
+    for (var i = 0; i < t.current_rows.length; i++) {
+      if (t.current_rows[i][t.schema.row_id_field] === row_id) { idx = i; break; }
+    }
+    if (idx < 0) return;
+    t.current_rows.splice(idx, 1);
+    t.selected.delete(row_id);
+    var prev = t._aggregates_cache;
+    t._aggregates_cache = _dtRecomputeAggregates(t, prev);
+    t.modified = true;
+    _dtEmit('nac:dt:row_removed', {
+      table_id: t.schema.table_id, row_id: row_id, by: _dtBy()
+    });
+  }
+
+  function dt_edit_cell(table_id, row_id, column_key, value) {
+    var t = _dataTables[table_id];
+    if (!t) return { ok: false, error: 'table_not_registered' };
+    if (t.schema.subkind === 'matrix') {
+      return { ok: false, error: 'use_dt_set_cell_for_matrix' };
+    }
+    if (t.schema.subkind === 'readonly') return { ok: false, error: 'readonly' };
+    var col = t.schema.columns.filter(function (c) { return c.key === column_key; })[0];
+    if (!col) return { ok: false, error: 'column_not_found' };
+    /* computed wins over editable -- a column declared
+       `computed:true` is implicitly non-editable even if the
+       host forgets to set editable:false. Spec sec 18.4 ordering. */
+    if (col.computed) return { ok: false, error: 'computed_column' };
+    if (!col.editable) return { ok: false, error: 'column_not_editable' };
+    var check = _dtCheckColumnValue(col, value);
+    if (!check.ok) {
+      _dtEmit('nac:dt:validation_failed', {
+        table_id: t.schema.table_id,
+        errors: [{ code: 'edit_cell_invalid', row_id: row_id, column: column_key,
+                   message_i18n: { en: check.error } }]
+      });
+      return { ok: false, error: check.error };
+    }
+    var row = t.current_rows.filter(function (r) {
+      return r[t.schema.row_id_field] === row_id;
+    })[0];
+    if (!row) return { ok: false, error: 'row_not_found' };
+    var oldVal = row[column_key];
+    if (oldVal === value) return { ok: true, unchanged: true };
+    row[column_key] = value;
+    _dtRecomputeRow(t, row);
+    var prev = t._aggregates_cache;
+    t._aggregates_cache = _dtRecomputeAggregates(t, prev);
+    t.modified = true;
+    _dtEmit('nac:dt:cell_edited', {
+      table_id: t.schema.table_id,
+      row_id: row_id, column: column_key,
+      old: oldVal, new: value, by: _dtBy()
+    });
+    return { ok: true };
+  }
+
+  function dt_read_aggregate(table_id, agg_key, column_key) {
+    var t = _dataTables[table_id];
+    if (!t) return null;
+    if (!t._aggregates_cache || !t._aggregates_cache[agg_key]) return null;
+    var v = t._aggregates_cache[agg_key][column_key];
+    return v === undefined ? null : v;
+  }
+
+  function dt_validate(table_id) {
+    var t = _dataTables[table_id];
+    if (!t) return { valid: false, errors: [{ code: 'table_not_registered' }] };
+    var errors = [];
+    /* Per-row validators. */
+    (t.schema.validators || []).forEach(function (v) {
+      if (v.kind !== 'row') return;
+      t.current_rows.forEach(function (row) {
+        var cellVal = row[v.column];
+        var ok = _dtCheckOp(cellVal, v.op, v.value);
+        if (!ok) errors.push({
+          code: v.code, row_id: row[t.schema.row_id_field],
+          column: v.column, message_i18n: v.message_i18n || null
+        });
+      });
+    });
+    /* Table-level validators. */
+    (t.schema.validators || []).forEach(function (v) {
+      if (v.kind !== 'table') return;
+      if (v.unique_columns) {
+        var seen = Object.create(null);
+        t.current_rows.forEach(function (row) {
+          var key = v.unique_columns.map(function (c) { return row[c]; }).join('|');
+          if (seen[key]) {
+            errors.push({
+              code: v.code, row_id: row[t.schema.row_id_field],
+              message_i18n: v.message_i18n || null
+            });
+          }
+          seen[key] = true;
+        });
+      }
+      if (typeof v.min_rows === 'number' && t.current_rows.length < v.min_rows) {
+        errors.push({ code: v.code, message_i18n: v.message_i18n || null });
+      }
+      if (typeof v.max_rows === 'number' && t.current_rows.length > v.max_rows) {
+        errors.push({ code: v.code, message_i18n: v.message_i18n || null });
+      }
+    });
+    /* Required-column validator (implicit). */
+    t.schema.columns.forEach(function (col) {
+      if (!col.required || col.computed) return;
+      t.current_rows.forEach(function (row) {
+        var v = row[col.key];
+        if (v === null || v === undefined || v === '') {
+          errors.push({
+            code: 'required_missing', row_id: row[t.schema.row_id_field],
+            column: col.key, message_i18n: { en: 'Required column missing' }
+          });
+        }
+      });
+    });
+    return { valid: errors.length === 0, errors: errors };
+  }
+
+  function _dtCheckOp(cellVal, op, value) {
+    switch (op) {
+      case 'gt':       return typeof cellVal === 'number' && cellVal > value;
+      case 'gte':      return typeof cellVal === 'number' && cellVal >= value;
+      case 'lt':       return typeof cellVal === 'number' && cellVal < value;
+      case 'lte':      return typeof cellVal === 'number' && cellVal <= value;
+      case 'eq':       return cellVal === value;
+      case 'neq':      return cellVal !== value;
+      case 'in':       return Array.isArray(value) && value.indexOf(cellVal) >= 0;
+      case 'matches':  return typeof cellVal === 'string' && new RegExp(value).test(cellVal);
+      default:         return true;
+    }
+  }
+
+  function dt_select(table_id, target) {
+    var t = _dataTables[table_id];
+    if (!t || t.schema.subkind === 'matrix') return { selected_count: 0 };
+    var ids = [];
+    if (target === null || target === 'none') {
+      ids = [];
+    } else if (target === 'all' || target === 'visible') {
+      ids = t.current_rows.map(function (r) { return r[t.schema.row_id_field]; });
+    } else if (Array.isArray(target)) {
+      ids = target.slice();
+    } else if (target && target.column && target.op) {
+      ids = t.current_rows
+        .filter(function (r) { return _dtCheckOp(r[target.column], target.op, target.value); })
+        .map(function (r) { return r[t.schema.row_id_field]; });
+    } else if (typeof target === 'string') {
+      ids = [target];
+    }
+    t.selected = new Set(ids);
+    _dtEmit('nac:dt:selection_changed', {
+      table_id: t.schema.table_id,
+      selected_count: t.selected.size,
+      selected_ids: Array.from(t.selected)
+    });
+    return { selected_count: t.selected.size };
+  }
+
+  function dt_set_cell(table_id, row_slug, col_slug, value) {
+    var t = _dataTables[table_id];
+    if (!t) return { ok: false, error: 'table_not_registered' };
+    if (t.schema.subkind !== 'matrix') {
+      return { ok: false, error: 'use_dt_edit_cell_for_collection' };
+    }
+    /* Validate row/col exist on the axes. */
+    var rowKnown = (t.schema.row_axis.values || [])
+      .some(function (r) { return r.slug === row_slug; });
+    var colKnown = (t.schema.column_axis.values || [])
+      .some(function (c) { return c.slug === col_slug; });
+    if (!rowKnown) return { ok: false, error: 'row_not_in_axis' };
+    if (!colKnown) return { ok: false, error: 'col_not_in_axis' };
+    var existing = null;
+    for (var i = 0; i < t.current_cells.length; i++) {
+      if (t.current_cells[i].row === row_slug && t.current_cells[i].col === col_slug) {
+        existing = t.current_cells[i]; break;
+      }
+    }
+    var oldVal = existing ? existing.value : undefined;
+    if (oldVal === value) return { ok: true, unchanged: true };
+    if (existing) {
+      existing.value = value;
+    } else {
+      t.current_cells.push({ row: row_slug, col: col_slug, value: value });
+    }
+    t.modified = true;
+    _dtEmit('nac:dt:matrix_cell_set', {
+      table_id: t.schema.table_id,
+      row: row_slug, col: col_slug, old: oldVal, new: value, by: _dtBy()
+    });
+    return { ok: true };
+  }
+
+  function dt_get_cell(table_id, row_slug, col_slug) {
+    var t = _dataTables[table_id];
+    if (!t || t.schema.subkind !== 'matrix') return undefined;
+    for (var i = 0; i < t.current_cells.length; i++) {
+      if (t.current_cells[i].row === row_slug && t.current_cells[i].col === col_slug) {
+        return t.current_cells[i].value;
+      }
+    }
+    return undefined;
+  }
+
+  function dt_commit(table_id) {
+    var t = _dataTables[table_id];
+    if (!t) return { ok: false, error: 'table_not_registered' };
+    var v = dt_validate(table_id);
+    if (!v.valid) {
+      _dtEmit('nac:dt:validation_failed', {
+        table_id: t.schema.table_id, errors: v.errors
+      });
+      return { ok: false, errors: v.errors };
+    }
+    /* Build audit diff vs initial_state. */
+    var initial = t.initial_state;
+    var finalState = t.schema.subkind === 'matrix'
+      ? { cells: _dtDeepCopy(t.current_cells) }
+      : { rows: _dtDeepCopy(t.current_rows) };
+    /* Reset modified + replace initial_state so a subsequent
+       discard would revert to THIS state, not the original. */
+    t.initial_state = _dtDeepCopy(finalState);
+    t.modified = false;
+    _dtEmit('nac:dt:committed', {
+      table_id: t.schema.table_id,
+      final_state: finalState,
+      audit_diff: { initial: initial, final: finalState }
+    });
+    return { ok: true, final_state: finalState };
+  }
+
+  function dt_discard(table_id) {
+    var t = _dataTables[table_id];
+    if (!t) return;
+    if (t.schema.subkind === 'matrix') {
+      t.current_cells = _dtDeepCopy(t.initial_state.cells) || [];
+    } else {
+      t.current_rows = _dtDeepCopy(t.initial_state.rows) || [];
+    }
+    t.selected.clear();
+    var prev = t._aggregates_cache;
+    t._aggregates_cache = _dtRecomputeAggregates(t, prev);
+    t.modified = false;
+    _dtEmit('nac:dt:discarded', { table_id: t.schema.table_id });
+  }
+
+  /* describe_v2() extension: surface every registered data-table. */
+  function _dtSummariseAll() {
+    var out = [];
+    Object.keys(_dataTables).forEach(function (id) {
+      var t = _dataTables[id];
+      out.push({
+        table_id: id,
+        scope_owner: t.schema.scope_owner,
+        subkind: t.schema.subkind,
+        schema: {
+          columns: t.schema.columns,
+          row_axis: t.schema.row_axis,
+          column_axis: t.schema.column_axis,
+          supports: t.schema.supports,
+          aggregates: t.schema.aggregates,
+          selection_mode: t.schema.selection_mode,
+          row_id_field: t.schema.row_id_field
+        },
+        current_state: dt_state(id)
+      });
+    });
+    return out;
+  }
+
+  /* Exports for v2.1 data-table primitive. */
+  NAC.registerDataTable           = registerDataTable;
+  NAC.unregisterDataTable         = unregisterDataTable;
+  NAC.registerDataTableComputed   = registerDataTableComputed;
+  NAC.dt_state                    = dt_state;
+  NAC.dt_add_row                  = dt_add_row;
+  NAC.dt_remove_row               = dt_remove_row;
+  NAC.dt_edit_cell                = dt_edit_cell;
+  NAC.dt_read_aggregate           = dt_read_aggregate;
+  NAC.dt_validate                 = dt_validate;
+  NAC.dt_select                   = dt_select;
+  NAC.dt_set_cell                 = dt_set_cell;
+  NAC.dt_get_cell                 = dt_get_cell;
+  NAC.dt_commit                   = dt_commit;
+  NAC.dt_discard                  = dt_discard;
+  /* Exposed for tests + describe_v2 extension. */
+  NAC.__v2_dataTables             = _dataTables;
+  NAC.__v2_dtSummariseAll         = _dtSummariseAll;
+
   /* Bump version constants */
-  NAC.version_v2      = '2.0.0-rc5';
-  NAC.spec_version_v2 = '2.0';
+  NAC.version_v2      = '2.1.0-rc1';
+  NAC.spec_version_v2 = '2.1';
 
   document.dispatchEvent(new CustomEvent('nac:v2_installed', {
     detail: { version: '2.0.0' }, bubbles: true

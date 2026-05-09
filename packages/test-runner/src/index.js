@@ -28,7 +28,8 @@ module.exports = {
   get runIntent()                 { return _loadAdapter().runIntent; },
   get snapshot()                  { return _loadAdapter().snapshot; },
   get dispatchByNacId()           { return _loadAdapter().dispatchByNacId; },
+  get dispatchDataTableOp()       { return _loadAdapter().dispatchDataTableOp; },
   get clickAnchorWithContinuation() { return _loadAdapter().clickAnchorWithContinuation; },
 
-  version: '0.1.0'
+  version: '0.2.0'
 };
