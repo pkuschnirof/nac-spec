@@ -518,13 +518,31 @@ SHOULD overlap (old + new accepted simultaneously) for at least
 
 ---
 
-## 10. i18n contract (L1: format + resolver + lint, NO runtime mutation)
+## 10. i18n contract (L1.5: format + resolver + lint, mutates accessibility metadata only)
 
-This section establishes NAC's i18n contract. NAC v2.0 normalises
-the catalog format and provides a resolver helper, but DOES NOT
-mutate the DOM. Existing i18n libraries (react-intl, vue-i18n,
-i18next, FormatJS) continue to be the runtime; NAC consumes the
-catalog they (or the host directly) build.
+**Framing revision (rc3 per Claude T5-F1)**: the original L1
+framing claimed "DOES NOT mutate the DOM". This was inaccurate.
+The runtime DOES mutate `aria-label`, `role`, `data-nac-id`,
+`data-nac-parent`, `data-nac-irreversible`, and `dir="rtl"` on
+the document root. These are accessibility-metadata DOM writes,
+not i18n textContent writes.
+
+The honest framing is **L1.5**: NAC mutates accessibility
+metadata (aria-label, role, dir, data-nac-* attrs) and NEVER
+i18n textContent or strings consumed visually by users. This
+distinction matters: accessibility metadata is what screen
+readers and AI agents consume; textContent is what the human
+user sees. NAC owns the former; the host's i18n library owns the
+latter.
+
+This section establishes NAC's L1.5 i18n contract. NAC v2.0
+normalises the catalog format, provides a resolver helper, and
+mutates accessibility metadata for the registered elements. NAC
+DOES NOT mutate user-visible textContent. Existing i18n libraries
+(react-intl, vue-i18n, i18next, FormatJS) continue to be the
+runtime for textContent; NAC consumes the catalog they (or the
+host directly) build, and writes the resolved strings into ARIA
+attributes for assistive consumers.
 
 ### 10.1 Canonical catalog format
 
@@ -585,10 +603,13 @@ NAC.setSupportedLocales(['es', 'en', 'pt', 'fr', 'it', 'de', 'ja', 'zh', 'hi', '
 | `i18n_mono_locale_autoderived` | warn | An adopted/autoRegistered element with `_autoderived: true` |
 | `i18n_invalid_locale` | error | Locale code not in supported list |
 
-### 10.4 What NAC i18n contract does NOT do
+### 10.4 What NAC i18n contract does NOT do (L1.5 framing per rc3)
 
 - Does NOT replace react-intl / vue-i18n / FormatJS / i18next.
-- Does NOT mutate the DOM. The host's i18n library does that.
+- Does NOT mutate textContent or visible user-facing strings.
+  (NAC DOES mutate accessibility metadata: aria-label, role,
+  data-nac-* attrs. That's the L1.5 distinction; see sec 10
+  intro.)
 - Does NOT handle plurals beyond sub-keys (i18n libraries handle).
 - Does NOT format numbers/dates (`Intl.NumberFormat` / `Intl.DateTimeFormat`
   do that).
@@ -668,22 +689,51 @@ Both forms coexist.
 
 ### 11.2 Strict superset claim
 
-**Every v1.9.0 client keeps working under v2.0.** Verification:
+**Every v1.9.0 client keeps working under v2.0 at NAC-1 and
+NAC-2.** Verification:
 
 1. No public API removed.
 2. No event renamed or removed.
 3. No attribute removed.
-4. No semantic tightening that changes existing behaviour. (HMAC
-   mandatory is at NAC-3 only; existing NAC-1 + NAC-2 clients
-   unchanged.)
+4. No semantic tightening that changes existing behaviour AT
+   NAC-1 OR NAC-2.
 5. The duplicate-id lint upgrade to `strict` is opt-in (default
    stays `warn`).
 
-The only client-visible delta a v1.9 plugin can experience is:
-- If it operates at NAC-3 AND emits `source.type='agent'` events
-  WITHOUT signature, those events are now rejected. **This is the
-  intended behaviour change.** All other v1.9 plugin code is
-  unaffected.
+**At NAC-3 there are TWO intentional tightening changes** (rc3
+update per Mistral T2-F1 + Claude T2-F3 2/4 concurrence):
+
+1. **HMAC mandatory** for `source.type='agent'` events. Unsigned
+   agent events emit `agent_source_missing_signature` finding.
+2. **i18n_strict findings** in `validate_global()` output (warn
+   severity by default in rc2+, opt-in to error). Even though
+   warn-default, this is a behavioural change in
+   `validate_global()` output -- v1.9 hosts that asserted "zero
+   warnings" in CI will get failing builds against v2.0 NAC-3
+   without `set_validation_tolerance({i18n_strict:'silent'})`
+   opt-out.
+3. **Identity binding on user attestation** (rc3 BLOCKER fix per
+   Claude T4-F1). NAC-3 rejects `source.type='user'` events when
+   the invocation target is NOT in the captured event composedPath.
+   v1.9 had no attestation, so this is additive at NAC-1/NAC-2,
+   tightening at NAC-3.
+
+These three tightening changes apply ONLY to NAC-3. NAC-1 and
+NAC-2 clients are unaffected.
+
+The client-visible deltas a v1.9 plugin can experience at NAC-3:
+- If it emits `source.type='agent'` events WITHOUT signature,
+  those events are now rejected.
+- If it consumed `validate_global()` output and asserted
+  `errors.length === 0 && warnings.length === 0` in CI, the
+  i18n_strict findings will fail the assertion until silent
+  tolerance is set or the catalog is filled.
+- If it emits `source.type='user'` events from a code path that
+  is not synchronously inside an originating user gesture (e.g.
+  promise-resolved-later handlers), those events are now rejected
+  with `user_gesture_path_mismatch`.
+
+All other v1.9 plugin code is unaffected.
 
 ---
 

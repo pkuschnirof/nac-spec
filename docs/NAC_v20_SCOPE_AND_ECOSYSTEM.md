@@ -177,8 +177,9 @@ hand-code `data-nac-id` per element. Hierarchy expressed by string
 convention only.
 
 **Pain point**: ~30 lines of boilerplate per interactive element
-(see appendix A). Teams that ship 200 components write ~6000 lines
-of NAC scaffolding.
+(see appendix A; rc3 revision: ~6-12 lines/component per real
+adopter patterns -- the rc1 30-lines/component figure was the
+worst-case duplication scenario, not the typical).
 
 ### Case B -- Dynamic own code
 
@@ -590,12 +591,41 @@ network traffic.
 
 ---
 
-## 6. Ecosystem convergence assumption
+## 6. Ecosystem convergence assumption (v2.0-rc3 update per 3/4 reviewer concurrence)
 
-The author's commercial assumption: **third-party widget vendors
-will adopt NAC compliance under market pressure within 2-4 years**,
-analogous to how WAI-ARIA went from "few adopters" in 2012 to
-"shipped in every major design system" by 2018.
+**Round 3 reviewers Mistral (high), DeepSeek (medium), and Claude
+(high) concurrently flagged this section's original 2-4 year
+timeline as too optimistic.** The single dissent (Grok 4
+"defensible") is now minority; the spec is updated below to the
+3/4 majority position. The rc1 number stays in the document
+history below, marked with strikethrough; the operative number is
+**3-5 years**.
+
+**Author response (rc3)**: Mistral + DeepSeek + Claude argue
+correctly that ARIA's 6-year adoption curve had W3C
+standardisation, browser-engine consultation, and legal mandates
+(WCAG referenced in ADA case law, EAA enforcement) that NAC does
+NOT have. The right counter-position is NOT to drop the
+assumption -- it is to extend the timeline AND adopt the
+contingency Mistral proposed: make `@nac-spec/rules-*` a
+first-class spec-repo concern from day one (top 20 widgets
+maintained at spec-author quality bar), with community
+contributions for the long tail. This treats case D as
+STRUCTURAL rather than transitional.
+
+
+
+The author's commercial assumption (rc3 update): **third-party
+widget vendors will adopt NAC compliance under market pressure
+within 3-5 years** (was 2-4 years in rc1; revised after Round 3
+peer review concurrence on "weak"). Comparison anchor: WAI-ARIA
+took 6 years (2012->2018) from publication to design-system
+universality, with W3C + browser + legal backing NAC does not
+have. NAC's accelerators (AI-driven adoption, EAA conformance
+angle, plug-and-play tooling) shave time but do not realistically
+get below 3 years. The right framing is "3-5y typical, with
+top-20 widgets via `@nac-spec/rules-*` first-class compliance
+covering interim".
 
 The drivers:
 
@@ -618,15 +648,54 @@ The drivers:
    sprints" to "install plugin + ship". When the cost is 2 hours
    instead of 200, vendors comply.
 
-This assumption is testable: if no famous third-party ships NAC
-compliance within 24 months of v2.0, the assumption is wrong and
-case D becomes structural rather than transitional. The spec
-must be designed for that risk -- which is why `NAC.adopt` exists
-as a spec primitive (not an afterthought).
+This assumption is testable: if no famous third-party widget
+vendor (Stripe, Auth0, Intercom, Zendesk, Mux, DocuSign, Algolia,
+Twilio, etc.) ships first-party NAC compliance within **36 months**
+of v2.0 tag (was 24 months in rc1), the assumption is wrong and
+case D becomes structural rather than transitional. Distinct from
+"an `@nac-spec/rules-X` exists": the falsifying-test specifies
+VENDOR-shipped, not adopter-shipped via rules library.
 
-**Reviewer ask**: do you find the convergence assumption defensible,
-or should NAC v2.0 plan for a world where case D remains 60%+ of
-typical UIs indefinitely?
+### Contingency plan (v2.0-rc3, per Mistral+DeepSeek+Claude T8-F1)
+
+If by 2029-09 (3 years post v2.0 tag) zero major third-party
+vendor has shipped first-party NAC compliance, the spec author
+commits to:
+
+1. Promote `@nac-spec/rules-*` from "community-curated" to
+   "first-class spec-repo concern". The top 20 widgets by
+   adoption (Stripe, Slack, Mapbox, Mux, DocuSign, Auth0,
+   Intercom, Algolia, Twilio, Zendesk, HubSpot, Salesforce
+   Marketing Cloud, Mailchimp, ActiveCampaign, Segment, Mixpanel,
+   Amplitude, Calendly, Drift, Crisp) get spec-author-maintained
+   rule packages with the same review-and-quality bar as the
+   runtime.
+2. Treat case D ("third-party non-compliant") as STRUCTURAL in
+   spec sec 9 pillar P2 (Operability), not transitional. NAC
+   becomes a complete operability layer ON TOP of non-compliant
+   third parties via the rules library.
+3. Re-evaluate convergence at 2031-09 (5 years post-tag). If
+   still no vendor adoption, the assumption is permanently wrong;
+   v3.x becomes a rules-library-first spec rather than a
+   contract-first spec.
+
+This contingency is designed so v2.0 ships even if the
+convergence assumption never materialises. `NAC.adopt` is
+deliberately first-class for this reason.
+
+### Proactive vendor outreach (v2.0-rc3, per DeepSeek T8-F1
+suggestion)
+
+Roadmap phase 5.5 or 6 includes a proactive vendor-engagement
+effort: spec author contacts at least 2 major widget vendors
+(Stripe + one other) before tag to either obtain a letter of
+intent on NAC compliance OR document explicit decline (and the
+reasoning). Either signal informs rc3 announce framing.
+
+**Reviewer ask**: do you find the convergence assumption defensible
+under the rc3 timeline (3-5 years) and contingency plan, or should
+NAC v2.0 plan for a world where case D remains 60%+ of typical UIs
+indefinitely?
 
 ---
 
@@ -658,12 +727,49 @@ Without this, brownfield migration is dark-room debugging.
 
 ### 7.5 `@nac-spec/codemod`
 
+**Coverage expectation (rc3 revision per DeepSeek+Claude T7-F1 2/4
+concurrence)**: auto-coverage on a brownfield codebase is **35-60%
+range, brownfield median ~45%**. The 60% number is the upper-end
+achievable on greenfield-style codebases (PascalCase-clean
+component names, no HOC chains, no `cloneElement`/`Children.map`
+patterns). Real-world brownfield React/Vue codebases typically
+distribute as:
+
+- 30-40% straightforward components (auto works)
+- 25-30% HOC + render-props + polymorphic-as (coverage breaks --
+  component identity is dynamic)
+- 15-20% `cloneElement` / `Children.map` (parent doesn't know
+  child intent)
+- 10-15% `forwardRef` with imperative handles (need manual ID)
+- 5-10% Storybook-only / stub components (no real usage signal)
+
+Honest framing: 60% is the upper-bound, not the median. Adopters
+should plan for ~45% auto-coverage and budget the remainder
+manually.
+
+
+
 CLI tool that scans an existing codebase, infers NAC annotations
 from existing JSX/Vue/Svelte handlers and ARIA attributes, and
 outputs a PR with `data-nac-action` + `data-nac-scope` attributes.
-Estimated 60% auto-coverage; 40% manual cleanup.
+Estimated 35-60% auto-coverage range; brownfield median ~45%
+(rc3 revision -- see above for distribution).
 
-### 7.6 `@nac-spec/cookbook`
+### 7.6 `@nac-spec/cookbook` (rc3: 15 patterns for v2.0 + grow to 30 in v2.0.x)
+
+**Scope revision rc3 (per Claude T7-F2)**: the cookbook ships
+**15 essential patterns at v2.0** covering ~80% of typical UI
+needs (form variants, list variants, modal variants, navigation
+basics, dropdown, autocomplete, date-picker). The remaining 15
+specialised patterns (drag-drop, virtualized, signature-pad,
+barcode, video-player-controls, etc.) ship across v2.0.x patches
+at ~2 patterns per release, allowing genuine 2.5h-per-pattern
+quality (not the unrealistic 1.3h that 30-in-5-days implied).
+
+This honest scoping replaces the rc1 commitment of 30 patterns in
+phase 4. The 30-pattern target is preserved for v2.0.x cumulative.
+
+
 
 30 resolved patterns: form, multi-step wizard, drag-drop, virtualized
 list, dropdown, autocomplete, drawer, modal-with-form, file-upload,
@@ -713,10 +819,20 @@ challenge any cell.
 | Tree visualization | DevTools extension | nothing | nothing |
 
 **Adopter cost for greenfield app of 50 components + 10 modals**:
-~10h dev (per cost analysis appendix).
+~10h dev for NAC structural work (rc3 update: + ~50h for
+10-locale i18n catalog filling AI-assisted, per
+I18N_INTEGRATION_GUIDE.md sec 5; the i18n cost is independent of
+NAC adoption but inseparable in calendar terms; total realistic
+~60h calendar). First-adoption multiplier: **1.5x-2x for the first
+1-2 projects** (per DeepSeek T9-F1).
 
-**Adopter cost for brownfield (e.g. Yujin)**: ~36h dev. Codemod
-covers ~60%; remainder is manual.
+**Adopter cost for brownfield (e.g. Yujin)**: ~36h dev for NAC
+structural work (rc3 update: + i18n catalog gap fill ~17h for the
+gaps not already covered; per Yujin's partial 10-locale baseline).
+Codemod covers ~**35-60%** depending on codebase patterns; brownfield
+median ~45% (rc3 revision per DeepSeek+Claude T7-F1 2/4
+concurrence; was 60% upper-bound published as median in rc1).
+First-adoption multiplier 1.5x-2x.
 
 ---
 
@@ -902,10 +1018,28 @@ NAC.scope({slug: 'hub.cards-grid'}).adopt(cardEl);
 **Cost**: 4 lines of HTML + 2 lines of JS at boot + i18n catalog
 entry (the only thing that does not get cheaper).
 
-**Reduction**: ~30 lines -> ~4 lines per component. ~87%.
+**Reduction (rc3 revision per Mistral+DeepSeek+Claude T9-F1/F2 3/4
+concurrence)**: per-component delta, when accounting for shared
+slug constants, central manifest, design-system layer absorbing
+keyboard wiring, and shared `NAC.click()` wrapper, is **6-12 lines
+per component**, not the 30 the rc1 example showed. The rc1
+benchmark was the worst-case (every primitive duplicated per
+component); real adopters share most of it.
 
-For an app of 200 components: ~6000 lines -> ~800 lines. **5200
-lines of boilerplate eliminated.**
+**Realistic boilerplate elimination, 200-component app**:
+**1000-1500 lines** (was "5200 lines" in rc1 -- claim revised down
+~3x to verifiable range). Final number from Yujin migration phase
+5.5; until the case study publishes real metrics, treat 1000-1500
+as a planning estimate, not a marketing claim.
+
+**First-adoption multiplier (per DeepSeek T9-F1)**: the costs
+above assume a team familiar with NAC + tooling functioning
+perfectly. The first 1-2 projects that adopt v2.0 will incur a
+**1.5x-2x multiplier** for learning + tooling debugging + design
+adjustments. Greenfield 50-component app first-adoption: ~15-20h
+(was 10h). Brownfield Yujin first-adoption: ~54-72h (was 36h).
+Costs amortize to baseline as ecosystem matures (~3-6 months
+post-tag, or sooner if Yujin migration documents the playbook).
 
 ---
 

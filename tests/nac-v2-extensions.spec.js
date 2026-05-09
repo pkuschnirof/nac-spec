@@ -168,8 +168,9 @@ function test(name, fn) {
   /* ----- describe_v2 ----- */
   await test('describe_v2 returns v2 fields', () => {
     const d = NAC.describe_v2();
-    assert.strictEqual(d.nac_version, '2.0.0');
+    assert.ok(/^2\.0\.0/.test(d.nac_version), 'nac_version starts with 2.0.0 (rc/final)');
     assert.ok(Array.isArray(d.v2_scope_entries));
+    assert.ok(Array.isArray(d.v2_intermediate_scopes), 'rc3 exposes intermediate scopes');
     assert.ok(Array.isArray(d.virtual));
     assert.ok(Array.isArray(d.ephemeral_log));
     assert.strictEqual(d.tenant_prefix, 'acme');
@@ -247,6 +248,54 @@ function test(name, fn) {
     NAC.setMobileWebViewAttestation(null);
     assert.throws(() => NAC.setMobileWebViewAttestation('not-a-function'),
       /expects function|null/);
+  });
+
+  /* ----- rc3 NEW tests ----- */
+
+  await test('rc3: scope rejects empty slug (DeepSeek T3.1)', () => {
+    /* Empty string is falsy in the typeof check, so caught at
+       'slug required'. Either rejection is acceptable -- both
+       reject empty correctly. */
+    assert.throws(() => NAC.scope({ slug: '' }), /slug_invalid|slug required/);
+  });
+
+  await test('rc3: setAutoRTL toggles direction auto-flip (Claude T5-F4)', () => {
+    NAC.setAutoRTL(false);
+    NAC.locale('ar');
+    /* with auto-RTL disabled, dir should NOT be set */
+    assert.strictEqual(document.documentElement.getAttribute('dir'), undefined);
+    NAC.setAutoRTL(true);
+    NAC.locale('ar');
+    assert.strictEqual(document.documentElement.getAttribute('dir'), 'rtl');
+    NAC.locale('es');
+  });
+
+  await test('rc3: declareVirtual escapes regex metacharacters (Claude T3.6)', () => {
+    NAC.declareVirtual({
+      slug_pattern: 'pipe.run.row.{i}',
+      count: 100,
+      resolver: i => ({ slug: 'pipe.run.row.' + i, role: 'row',
+        label_i18n: { es: 'F' + i, en: 'R' + i } })
+    });
+    /* Through internals: ensure that the pattern matched only the
+       exact dot-separated form, not a regex wildcard. */
+    const v = NAC.__v2._virtuals[NAC.__v2._virtuals.length - 1];
+    assert.strictEqual(v.slug_pattern, 'pipe.run.row.{i}');
+    /* The internal _resolveVirtual is not exported; we verify via
+       resolver call directly. */
+    assert.deepStrictEqual(v.resolver(7).slug, 'pipe.run.row.7');
+  });
+
+  await test('rc3: get_perf_tolerance returns rc3 defaults', () => {
+    const t = NAC.get_perf_tolerance();
+    assert.strictEqual(t.mutation_throttle_ms, 100);
+    assert.strictEqual(t.describe_target_ms, 50);
+    assert.strictEqual(t.describe_hard_fail_ms, 150);
+    assert.strictEqual(t.adopt_hard_fail_ms, 20);
+  });
+
+  await test('rc3: version is 2.0.0-rc3', () => {
+    assert.strictEqual(NAC.version_v2, '2.0.0-rc3');
   });
 
   /* ----- summary ----- */

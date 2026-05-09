@@ -22,6 +22,214 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [2.0.0-rc3] - 2026-05-09
+
+PATCH-style update on top of rc2. Closes the BLOCKER raised by
+Claude (gesture-buffer leak) plus the 8 conditions Round 3 peer
+review surfaced (4 reviewers complete: Grok 4, Mistral Le Chat,
+DeepSeek-V3, Claude-Opus-4.7). Tests now 27/27 (was 22/22 in rc2;
+5 new tests for rc3 hooks).
+
+### BLOCKER closed (Claude T4-F1)
+
+- **gesture_buffer_leak_breaks_user_attestation**. The rc2
+  runtime captured `event.isTrusted` in a global flag with 100ms
+  freshness window, with NO binding to the originating element.
+  Any user click anywhere leaked attested=true to ANY subsequent
+  invoke within the window. Cost-of-attack collapsed from "kernel
+  access" to "any script timed within 100ms of any user gesture".
+  Fix: capture `e.composedPath()` + verify `entry.element` is in
+  path before honoring `attested`. Freshness window 100ms ->
+  16ms (one frame). New finding `user_gesture_path_mismatch`.
+  Spec sec 15.10 + js/nac-v2-extensions.js:158-225.
+
+### Concurrent conditions closed (3/4 or 2/4 reviewer concurrence)
+
+- **T8-F1 convergence_timeline_arbitrage_breaker** (Mistral high
+  + DeepSeek medium + Claude high vs Grok "defensible" -- 3/4
+  weak resolves DISPUTE). Scope doc sec 6 timeline 2-4 years ->
+  3-5 years; falsifying-event window 24mo -> 36mo; contingency
+  plan committed: `@nac-spec/rules-*` first-class for top 20
+  widgets if no vendor convergence by 2029-09; case D treated
+  as STRUCTURAL not transitional in spec sec 9 pillar P2;
+  proactive vendor outreach added to roadmap phase 5.5/6.
+
+- **T9-F2 boilerplate_5200_lines_implausible** (Mistral medium +
+  DeepSeek medium + Claude medium = 3/4). Scope doc appendix A
+  revised: per-component delta 6-12 lines (was 30); 200-component
+  app realistic 1000-1500 lines eliminated (was 5200). Final
+  number from Yujin migration phase 5.5.
+
+- **T9-F1 adoption_cost_too_optimistic** (Mistral + DeepSeek =
+  2/4). Scope doc sec 9 + appendix A: add 1.5x-2x first-adoption
+  multiplier for first 1-2 projects; greenfield 10h ->
+  realistic ~15-20h first time + ~50h i18n catalog work; Yujin
+  brownfield 36h -> ~54-72h first time. Costs amortize to
+  baseline as ecosystem matures.
+
+- **T2-F2 provenanceblock_field_addition_unannounced** (Mistral
+  medium + Claude high = 2/4). Spec sec 15.14 adds normative
+  forward-compat policy: v2.0-aware audit pipelines MUST treat
+  unknown ProvenanceBlock fields as additive-only. v1.9 strict-
+  shape validators must patch to ignore-unknown.
+
+- **T2-F3 second_tightening_change_at_nac3_undisclosed** (Mistral
+  high + Claude high = 2/4). RFC sec 11.2 + spec sec 15.14
+  updated: NAC-3 tightening changes now listed as THREE (HMAC
+  mandatory, i18n_strict findings, identity-bound user
+  attestation) instead of one. Each change has explicit
+  client-visible delta description.
+
+- **T7-F1 codemod_60pct_optimistic** (DeepSeek + Claude = 2/4).
+  Scope doc sec 7.5: codemod auto-coverage published as
+  "35-60% range; brownfield median ~45%" (was 60% as flat
+  estimate). Realistic distribution by component pattern
+  documented.
+
+### Claude-solo findings closed (high-quality bug + spec gaps)
+
+- **T4-F2 bridgeIframe_no_handshake_signature**. Runtime now
+  verifies HMAC signature on handshake_ack messages when secret
+  is registered. Spec sec 15.5 already mandated this; runtime
+  was missing the implementation.
+- **T2-F1 changelog_missing_v1_7_through_v2_0_entries**. FALSE
+  ALARM verified: CHANGELOG actually has full entries for
+  1.7.0 through 2.0.0-rc2. Claude likely truncated his read.
+  No action needed.
+- **T4-F3 os_level_field_unenforced_and_unrendered**. Runtime
+  now serializes `params.os_level: true` into ProvenanceBlock
+  for source.type='agent'. Spec sec 15.10 documents the
+  pass-through.
+- **T4-F4 os_level_attested_combo_legitimate_but_indistinguishable**.
+  Spec sec 15.10 enforcement matrix adds NAC-3 finding
+  `agent_attested_without_os_level`: when source.type='agent'
+  AND user_gesture_attested=true, source.os_level MUST be true.
+- **T5-F1 l1_claim_violated_by_runtime_dom_writes**. RFC sec
+  10.4 + I18N_INTEGRATION_GUIDE.md sec 0 framing revised from
+  "L1 (no DOM mutation)" to "L1.5 (mutates accessibility
+  metadata only, never user-visible textContent)". Honest
+  disclosure of what the runtime actually does.
+- **T5-F4 rtl_dir_mutation_global_scope**. New API:
+  `NAC.setAutoRTL(false)` opt-out. Spec sec 15.11 acknowledges
+  that whole-page direction flip breaks SaaS hosts mixing LTR
+  log content into ar-locale UIs.
+- **T6-F1 cumulative_batch_cost_unbudgeted**. Spec sec 15.13
+  perf budget: new row "autoRegister.watch cumulative batch
+  50ms target / 100ms hard-fail per single throttle window".
+  Runtime: `flush()` chunks batches >50 elements via
+  requestIdleCallback (or setTimeout fallback) to keep main
+  thread responsive.
+- **T6-F2 hmac_sign_3ms_target_optimistic_for_pure_js_subtle_crypto**.
+  Runtime warms SubtleCrypto at boot + on `set_provenance_secret`
+  calls so the cold-start cost (5-15ms first call) is paid once,
+  not at first agent action. Spec sec 15.13 budget row added:
+  "HMAC sign cold-start 20ms hard-fail" allows the first sign
+  the breathing room it needs.
+- **T7-F2 cookbook_30_patterns_unscoped**. Roadmap phase 4
+  cookbook scope revised: 15 essential patterns at v2.0; remaining
+  15 ship across v2.0.x patches (~2 per release). 5-day budget
+  matches 15 patterns at ~2.5h each (not unrealistic 1.3h).
+  Cumulative target stays 30 patterns.
+- **T7-F3 storybook_deferred_blocks_devtool_workflow**. Storybook
+  addon time-boxed to v2.0.1 (~2 weeks post-tag), NOT indefinite
+  "v2.0.x".
+- **T9-F3 greenfield_10h_skips_i18n_catalog_cost**. Scope doc
+  sec 9 appendix A explicit: "+ ~50h for 10-locale i18n catalog
+  (AI-assisted)" alongside the 10h NAC structural work for
+  greenfield.
+- **T9-F1 yujin_case_study_unpopulated_blocks_brownfield_validation**.
+  Roadmap phase 6 explicit: Round 3 (current) is INTERIM closing,
+  Round 4 (post-Yujin migration phase 5.5) is FINAL closing.
+  v2.0 announce framed as "rc3 cleared interim peer review,
+  tag conditional on Yujin case study confirmation".
+
+### DeepSeek 6 cheap fixes (no concurrence; obviously correct)
+
+- **T3.1 scope.slug empty string passes validation**: `_validateLeaf`
+  now rejects empty strings explicitly.
+- **T3.2 autoRegister orphan slug warning**: emits
+  `nac:autoregister_orphan_warn` when no ancestor scope found
+  and `inheritScope:true`.
+- **T3.3 adopt + closed-shadow doc note**: spec sec 15.3 explicit
+  about closed-shadow limitation.
+- **T3.4 bridgeShadowRoot duplicate registration**: WeakSet of
+  bridged hosts prevents repeat-call duplicates.
+- **T3.6 declareVirtual regex metacharacter escape**: pattern
+  static parts escaped before `{i}` substitution. Prevents
+  malicious URL/DOM-injected slugs from matching arbitrary
+  patterns.
+- **T3.7 captureEphemeral fast-toast limitation**: spec sec 15.7
+  documents the throttle-window blind spot + adds normative
+  PII handling via `data-nac-sensitive="true"` attribute.
+
+### Claude medium runtime improvements
+
+- **T3.1 intermediate scope label_i18n exposure**: describe_v2()
+  now exposes `v2_intermediate_scopes` field with depth + label_i18n
+  for non-leaf nodes carrying labels. Consumers (assistive tech,
+  agent IA) can render breadcrumb-style labels.
+- **T3.2 _deriveLeafSlug position-aware identity**: hash mixes
+  tag + textContent + position-in-parent + outerHTML so 400 cards
+  rendered from the same template don't collide.
+- **T3.3 adopt rule.containerEl scoped observer**: rules MAY
+  declare `containerEl: HTMLElement` to scope MutationObserver
+  attachment. Reduces multi-rule cumulative cost.
+- **T3.3 adopt derive function performance contract**: spec sec
+  15.3 normative: derives MUST run <5ms. Runtime SHOULD emit
+  `nac:adopt_derive_slow` on budget breach.
+
+### Runtime API additions
+
+- `NAC.setAutoRTL(boolean)` -- opt-out of auto dir=rtl on
+  document root.
+
+### Test suite
+
+27/27 unit tests pass (was 22/22 in rc2; 5 new for rc3 hooks).
+
+### Reviewer attribution -- Round 3 (4 reviewers complete)
+
+- **Grok-4-2026** (2026-05-09): yes-with-conditions, 3 findings.
+  All closed in rc2. Score 9/8/7/8/8.
+- **Mistral AI Le Chat** (2026-05-09): yes-with-conditions, 13
+  findings. 7 closed in rc2 + 6 closed in rc3. Score 9/8/7/8/7.
+- **DeepSeek-V3** (2026-05-09): yes-with-conditions, 12 findings.
+  6 cheap fixes + medium improvements all closed in rc3. Score
+  9/8/7/8/8.
+- **Claude-Opus-4.7** (2026-05-09): yes-with-conditions + 1
+  BLOCKER + 8 conditions. BLOCKER + all conditions closed in
+  rc3. Score 7/8/7/7/7.
+- **Microsoft Copilot**: insufficient-evidence (2 attempts both
+  failed for transmission reasons; not contributing).
+- **ChatGPT (full app)**: pending.
+
+Verbatim Round 3 reviews retained at:
+- docs/peer-review-round3-grok.txt
+- docs/peer-review-round3-mistral.txt
+- docs/peer-review-round3-deepseek.txt
+- docs/peer-review-round3-claude.txt
+
+### Migration impact rc2 -> rc3
+
+- **Plugin code**: NO change required for NAC-1, NAC-2.
+- **NAC-3 audit pipelines**: now also reject `source.type='user'`
+  events when invocation target NOT in originating event path.
+  This is the BLOCKER fix; intended security-correct behaviour.
+- **Tests against rc2**: any test asserting
+  `describe_v2().nac_version === '2.0.0'` MUST update to match
+  '2.0.0-rc3' (or use prefix-match `/^2\.0\.0/`).
+- **Performance**: budget eased; no previously-passing measurement
+  newly fails. New budget rows added for cumulative batch and
+  HMAC cold-start.
+
+### Pablo decision gates remaining before tag v2.0.0
+
+1. ChatGPT (full app) Round 3 review (pending).
+2. Round 4 closing arbitration AFTER Yujin case study phase 5.5
+   publishes real metrics.
+3. (Optional) Cure53 / Trail of Bits security audit.
+4. `git tag v2.0.0` on chosen commit.
+
 ## [2.0.0-rc2] - 2026-05-09
 
 PATCH-style update on top of rc1. Closes the four concurrent

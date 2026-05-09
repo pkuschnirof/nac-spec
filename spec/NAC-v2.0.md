@@ -50,6 +50,7 @@ parent chain joined by separator `.`, plus the leaf slug.
 ### Constraints
 
 - Slug component MUST match `[a-zA-Z0-9_-]+` (no separator inside).
+- Slug component MUST NOT be empty (v2.0-rc3, DeepSeek T3.1 fix).
 - Maximum scope depth: 6 levels (root + 5 children). Implementations
   MUST throw `NacError('depth_exceeded')` past this limit.
 - Implementations SHOULD emit `nac:depth_warn` event past 4 levels.
@@ -61,6 +62,13 @@ parent chain joined by separator `.`, plus the leaf slug.
   to the full slug.
 - Each registered element MUST have its `data-nac-parent` attribute
   set to the space-separated ancestor chain.
+- **Intermediate scope label_i18n exposure** (v2.0-rc3, Claude T3.1):
+  intermediate scope nodes (depths 2..N-1) MAY carry `label_i18n`
+  even though they have no element binding. Implementations MUST
+  expose these in `describe_v2()` output via the
+  `v2_intermediate_scopes` field so consumers (assistive tech,
+  agent IA) can render breadcrumb-style labels like "Shell ->
+  Topbar -> Profile" in their UX.
 
 ### API signature
 
@@ -137,6 +145,36 @@ Implementations MAY ship `@nac-spec/rules-<vendor>` packages
 containing rules for famous third-party widgets. These are
 independently versioned from the core spec.
 
+### Scoped container (v2.0-rc3, Claude T3.3)
+
+`adopt` rules MAY include a `containerEl: HTMLElement` field. When
+present, the observer attaches to that subtree (not `document.body`).
+This bounds the cost of selector matching for DOM-heavy pages
+running many adopt rules concurrently. Recommended when a rule
+targets a known UI region (e.g. third-party widget container) and
+not the whole page.
+
+### Derive function performance (v2.0-rc3, Claude T3.3)
+
+`derive.slug`, `derive.role`, `derive.label_i18n`, etc. run
+synchronously inside the MutationObserver callback. They MUST NOT
+exceed 5ms per call on low-tier mobile 2026; implementations
+SHOULD measure and emit `nac:adopt_derive_slow` event when a
+derive exceeds the budget for >5% of samples. An untrusted
+third-party rules library running a slow derive (e.g.
+`el.textContent` on a 5MB DOM node) regresses the host's mutation
+observer hot path silently otherwise.
+
+### Closed Shadow DOM limitation (v2.0-rc3, DeepSeek T3.3)
+
+`adopt` rules do NOT penetrate closed Shadow DOM. If a target
+element is inside a closed shadow root (browser security
+constraint), the rule fails silently. Penetrating open shadow
+roots is the responsibility of `bridgeShadowRoot` (sec 15.4),
+not `adopt`. Implementations SHOULD emit `nac:adopt_blocked` when
+detection is possible (e.g. when the rule's CSS selector targets
+a known custom-element host with closed shadow).
+
 ---
 
 ## 15.4 Bridge Shadow DOM
@@ -209,6 +247,17 @@ and a `resolver(i): ManifestEntry` function.
   Async resolvers MUST be flagged with `nac:virtual_async` so the
   agent expects latency.
 - Re-declaring the same `slug_pattern` replaces the previous block.
+- **Resolver idempotency** (v2.0-rc3, DeepSeek T3.6): the
+  resolver MUST be idempotent within a single `describe()` call.
+  Implementations DO NOT enforce this -- it is a caller
+  contract. Resolvers that mutate state across calls (e.g.
+  incrementing a counter) produce inconsistent manifest output.
+- **Pattern regex safety** (v2.0-rc3, Claude T3.6): runtime MUST
+  escape regex metacharacters in the static parts of the pattern
+  before substituting `{i}`. Patterns containing `.`, `[`, `]`,
+  `*`, `+`, `?` are common (e.g. `pipeline.runs.row.{i}`); without
+  escaping a malicious URL or DOM-injected slug could match
+  arbitrary patterns.
 
 ---
 
@@ -228,6 +277,21 @@ size `ring_size` (default 100).
 - `describe()` MUST expose `ephemeral_log` field with the buffer
   contents.
 - Memory cap: `ring_size * ~500 bytes` per page.
+- **Fast-toast limitation** (v2.0-rc3, DeepSeek T3.7): elements
+  added and removed within the MutationObserver throttle window
+  (100ms default in rc2+) are not captured. Toasts shorter than
+  ~100ms are not reliably observable; hosts SHOULD ensure toast
+  duration exceeds the throttle to be agent-visible.
+- **PII risk** (v2.0-rc3, Claude T3.7): the captured `label`
+  field includes up to 200 chars of `textContent`. Hosts that
+  render PII in ephemeral toasts (e.g. "Updated SSN for Jane
+  Doe") expose that PII in the in-memory ring buffer for
+  `ring_size * duration_ms` seconds. Hosts handling regulated
+  data SHOULD set `data-nac-sensitive="true"` on such elements;
+  the runtime MUST omit `label` (and store only slug + role)
+  for sensitive entries. Implementation note: this is a v2.0-rc3
+  spec-side normative requirement; reference runtime ships
+  detection in v2.0.x patch.
 
 ---
 
@@ -287,27 +351,61 @@ event (click/keydown/keyup/touchstart/pointerdown) at the moment of
 NAC action invocation, and MUST copy it into
 `source.user_gesture_attested: boolean`.
 
+### Identity binding (v2.0-rc3, Claude T4-F1 BLOCKER fix)
+
+**Critical security requirement**: the captured `isTrusted` MUST
+also bind to the originating event's `composedPath()`. The runtime
+MUST NOT store the attested flag in a global without identity
+binding.
+
+When `NAC.invoke(slug)` runs, the runtime MUST verify that
+`entry.element` is present in the captured `composedPath` before
+honoring `attested=true`. If the invocation target is NOT in the
+path, the runtime MUST treat `attested=null` (unknown) and the
+matrix MUST reject the event at NAC-3 with finding
+`user_gesture_path_mismatch`.
+
+**Why**: without identity binding, a script can wait for any real
+user gesture, then within the freshness window invoke any other
+element with `source.type='user'` and inherit the leaked attested
+flag. This is the FOURTH impersonation path (gesture-buffer leak)
+that the original three-path threat model in scope doc sec 4b did
+not cover. Without the fix, cost-of-attack collapses from "kernel
+access" to "any script timed within the freshness window of any
+user gesture".
+
+**Freshness window**: reduced from 100ms (rc2) to **16ms** (rc3,
+one animation frame). Genuine click handlers run synchronously or
+via microtask, well within 16ms. Promise-resolved-later handlers
+no longer count as user-attested -- which is the security-correct
+behaviour.
+
 ### Enforcement matrix at NAC-3
 
-| `source.type` | `signature` required | `user_gesture_attested` required |
-|---|---|---|
-| `'user'` | no | yes, must be `true` |
-| `'agent'` | yes (HMAC) | not constrained |
-| `'script'` | no | must be `false` |
+| `source.type` | `signature` required | `user_gesture_attested` required | Identity binding required |
+|---|---|---|---|
+| `'user'` | no | yes, must be `true` | yes (target in composedPath) |
+| `'agent'` | yes (HMAC) | not constrained | not required |
+| `'script'` | no | must be `false` | not required |
 
 ### Forbidden combinations at NAC-3
 
 - `'user'` + `attested=false` -> finding `user_gesture_unattested`
+- `'user'` + invocation target NOT in captured event path ->
+  finding `user_gesture_path_mismatch` (v2.0-rc3 NEW)
 - `'agent'` + missing/invalid signature -> finding
   `agent_source_missing_signature` / `agent_source_invalid_signature`
 - `'script'` + `attested=true` -> finding `script_claims_user_gesture`
+- `'agent'` + `attested=true` + `os_level` not declared (v2.0-rc3,
+  Claude T4-F4) -> finding `agent_attested_without_os_level`
 
 ### Manual override
 
 Testing tools MAY call `NAC.attestUserGesture({trusted: false, type: 'script'})`
 to declare an upcoming synthetic interaction as a script. The
 runtime MUST honour this override for the next NAC action invocation
-(within 100ms freshness window) and ignore it thereafter.
+(within 16ms freshness window in rc3+, was 100ms in rc2) and ignore
+it thereafter.
 
 ### Mobile WebView attestation hook (v2.0-rc2, Mistral T4-F1)
 
@@ -469,22 +567,35 @@ benchmarks. The previous rc1 numbers were tighter than typical
 React/Svelte reconciliation overhead, risking false negatives in
 conformance.
 
-| Operation | Target (low-tier mobile 2026) | Hard fail | rc1 -> rc2 change |
+| Operation | Target (low-tier mobile 2026) | Hard fail | rc1 -> rc3 change |
 |---|---|---|---|
 | Boot register 1000 elements | 50ms | 100ms | unchanged |
 | `autoRegister` per mutation | 2ms | 5ms | unchanged |
-| `adopt` selector match per mutation | 5ms | **20ms** | was 15ms |
-| `describe()` any size (with pagination) | **50ms** | **150ms** | was 30ms / 100ms |
+| `adopt` selector match per mutation | 5ms | **20ms** | was 15ms (rc2) |
+| `describe()` any size (with pagination) | **50ms** | **150ms** | was 30ms / 100ms (rc2) |
 | HMAC sign per command | 3ms | 10ms | unchanged |
+| HMAC sign cold-start (first call after boot) | -- | **20ms** | NEW rc3 (Claude T6-F2) |
 | `NAC.t()` resolution | <0.1ms | 1ms | unchanged |
 | Virtual resolver per call | <10ms | 50ms | unchanged |
-| MutationObserver throttle (default) | **100ms** | tunable | was 50ms |
+| MutationObserver throttle (default) | **100ms** | tunable | was 50ms (rc2) |
+| **`autoRegister.watch` cumulative batch** | **50ms** | **100ms** | NEW rc3 (Claude T6-F1) |
+| Gesture freshness window | -- | **16ms** | was 100ms (rc2); rc3 BLOCKER fix Claude T4-F1 |
 
 The MutationObserver throttle default is now **100ms** for
 `autoRegister.watch` and `captureEphemeral` (was 50ms in rc1).
 Hosts tune via `set_perf_tolerance({mutation_throttle_ms: <n>})`
 when their workload requires lower latency. Going below 50ms is
 discouraged on mid- and low-tier devices.
+
+### Cumulative-batch budget (rc3, Claude T6-F1)
+
+When `autoRegister.watch` flushes a batch of >50 elements in a
+single throttle tick (e.g. a catalog re-render adding 400 cards),
+implementations MUST chunk the batch and yield between sub-batches
+of 50 to keep the main thread responsive. The reference runtime
+uses `requestIdleCallback(step, {timeout: 100})` (or `setTimeout(step, 0)`
+fallback) per sub-batch. Cumulative blocking budget: 50ms target,
+100ms hard-fail per single throttle window.
 
 Implementations MUST expose `perf_probe` for conformance suite
 measurement. Findings of type `perf_budget_exceeded` MUST emit at
@@ -503,10 +614,39 @@ See RFC_v2.0.0 section 11.1 for the full table. Summary:
 - Zero v1.9 event renamed.
 - Zero v1.9 attribute removed.
 - Zero behavioural change to v1.9 NAC-1 + NAC-2 plugin contracts.
-- Single semantically-tightening change at NAC-3: agent-source
-  events without HMAC signature are rejected. This is the intended
-  behaviour change for the regulated-environments use case the
-  closing v1.9 arbiter flagged.
+
+**Three semantically-tightening changes at NAC-3** (rc3 update per
+Mistral T2-F1 + Claude T2-F3, T4-F1):
+
+1. **HMAC mandatory** for `source.type='agent'` events.
+2. **i18n_strict findings** in `validate_global()` output (warn
+   default, opt-in error). v1.9 hosts asserting zero warnings in
+   CI must update assertions or set tolerance to silent.
+3. **Identity-bound user attestation** (rc3 BLOCKER fix). NAC-3
+   rejects `source.type='user'` when the invocation target is not
+   in the originating event's composedPath, with finding code
+   `user_gesture_path_mismatch`.
+
+NAC-1 and NAC-2 are unaffected.
+
+### ProvenanceBlock additive fields tolerance (rc3, Mistral T2-F2 + Claude T2-F2)
+
+v2.0 adds new optional fields to the ProvenanceBlock structure:
+`user_gesture_attested`, `signature`, `signature_chain`,
+`os_level`. v1.9 audit pipelines that perform STRICT shape
+validation (e.g. JSON-Schema with
+`additionalProperties: false` semantics) will reject v2.0 events
+as malformed.
+
+**Normative requirement at NAC-3**: v2.0-aware audit pipelines
+MUST treat unknown ProvenanceBlock fields as additive-only.
+Forward-compat policy: pipelines reject events ONLY for KNOWN
+violation patterns (missing signature, missing
+user_gesture_attested), NEVER for unknown extra fields.
+
+**Recommendation for v1.9 hosts**: before adopting v2.0 producers,
+patch v1.9 strict-shape validators to ignore-unknown. This is a
+one-line change in most JSON Schema configurations.
 
 ### Implementation requirement
 

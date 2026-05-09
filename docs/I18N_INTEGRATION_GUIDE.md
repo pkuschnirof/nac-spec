@@ -20,9 +20,13 @@ validate the i18n contract design.
 ## 0. TL;DR
 
 - NAC v2.0 ships with 10 default locales: `es, en, pt, fr, it, de, ja, zh, hi, ar`.
-- NAC's i18n is a **contract layer (L1)**: it normalises the catalog
-  format and provides a resolver helper. It does NOT mutate the DOM.
-  Existing i18n libraries continue to be the runtime.
+- NAC's i18n is a **contract layer (L1.5)**: it normalises the
+  catalog format and provides a resolver helper. NAC mutates
+  ACCESSIBILITY METADATA (aria-label, role, dir=rtl, data-nac-*
+  attrs) but NEVER user-visible textContent. Existing i18n
+  libraries continue to be the runtime for textContent
+  rendering. This is the rc3 honest revision of the L1 framing
+  per Claude T5-F1.
 - Adding the 11th locale to NAC: **30 seconds in spec, 30 seconds
   in runtime**. Adding the 11th locale to a consumer's catalog
   scales linearly with catalog size and is the real cost.
@@ -334,7 +338,7 @@ This is a host-side concern; NAC normalises only the storage format.
 {
   "user.greeting.masculine": {"fr": "Bienvenu", "es": "Bienvenido", ...},
   "user.greeting.feminine":  {"fr": "Bienvenue", "es": "Bienvenida", ...},
-  "user.greeting.neutral":   {"fr": "Bienvenue", "es": "Bienvenido/a", ...}
+  "user.greeting.neutral":   {"fr": "Bienvenue", "es": "Te damos la bienvenida", ...}
 }
 ```
 
@@ -394,6 +398,42 @@ i18next's namespace concept maps to NAC's slug hierarchy:
 The host loads the NAC catalog (via `NAC.registerCatalog`) AND
 keeps using its existing i18n library for DOM mutation. NAC reads;
 the library mutates.
+
+### 7.5 gettext (.po) bridge -- target v2.0.x (rc3, Mistral T5-F1 + Claude T5-F2)
+
+gettext .po is the i18n format used by the WordPress ecosystem
+(40%+ of the public web), Drupal, Django sites, GNU/Linux app
+catalogues, and any C/C++/Go shop. By number of adopters globally,
+it is the largest single legacy i18n format. **NAC v2.0 does NOT
+yet ship a direct bridge for gettext .po**; the conversion path is
+covered by `@nac-spec/codemod-i18n` (target: v2.0.x patch series).
+
+Until that ships, adopters using gettext can convert manually:
+
+```bash
+# Sample workflow (not yet automated as @nac-spec/codemod-i18n):
+for locale in es en pt fr de ja zh hi ar it; do
+  msgcat path/to/$locale.po -o /tmp/$locale.json --to-code=UTF-8 ...
+done
+# Then merge per-locale JSONs into the NAC catalog format.
+```
+
+A reference Python script is planned for the announce. WordPress
+shops reading this guide should plan for "post-tag NAC adoption"
+unless they're willing to do manual conversion.
+
+### 7.6 RTL global-scope warning (rc3, Claude T5-F4)
+
+NAC's default `locale('ar')` sets `dir="rtl"` on
+`document.documentElement`. SaaS hosts where one user is in `ar`
+and another tenant's content is rendered in LTR within the same
+DOM (e.g. side panel showing untranslated English log lines)
+will see broken bidi. Such hosts MUST opt out:
+
+```javascript
+NAC.setAutoRTL(false);
+// Then the host manages dir on a sub-tree element manually.
+```
 
 ---
 

@@ -182,7 +182,7 @@ section signatures are stable. Probably week 2-3 of phase 3.
 | `@nac-spec/telemetry` (interface) | I | 1.5 | **NEW rc2 (Mistral T7-F3)**. Base interface for Sentry/Datadog/OTel adapters. |
 | `@nac-spec/devtools` (Chrome ext) | I | 5 | live manifest tree, validate, fix suggestions. Manifest V3, Firefox port follows. |
 | `@nac-spec/codemod` (CLI tool) | F | 4 | scan codebase, infer NAC annotations, output PR. ~60% auto-coverage target. |
-| `@nac-spec/cookbook` (30 patterns) | Sumi + asistido AI | 5 | each pattern: HTML + manifest + tests + 1-paragraph explanation. |
+| `@nac-spec/cookbook` (15 patterns at v2.0; 30 cumulative across v2.0.x per Claude T7-F2) | Sumi + asistido AI | 5 days for 15 essentials | each pattern: HTML + manifest + tests + 1-paragraph explanation. Remainder ships v2.0.1+, ~2 per release. |
 | `@nac-spec/rules-stripe` | community + Sumi seed | 1 | reference rule for adopt. |
 | `@nac-spec/rules-slack` | community + Sumi seed | 1 | reference rule. |
 | `@nac-spec/rules-mapbox` | community + Sumi seed | 1 | reference rule. |
@@ -204,7 +204,7 @@ delaying the tag:
 | Tool | Notes |
 |---|---|
 | `@nac-spec/cypress-plugin` | Cypress integration; Playwright is the priority since AI-driven testing aligns with NAC. |
-| `@nac-spec/storybook-addon` | per-story manifest validation. |
+| `@nac-spec/storybook-addon` (rc3 commitment per Claude T7-F3: time-boxed v2.0.1, NOT indefinite "v2.0.x") | per-story manifest validation. ~2 weeks post v2.0 tag. Storybook is dominant in design-system tooling (~70% adoption); design-system teams will have a workflow gap until this ships. |
 | `@nac-spec/vscode-ls` | VS Code language server for manifest schema (low effort, high value, Mistral T7-F4). |
 | `@nac-spec/telemetry-sentry` | reference Sentry adapter (Sumi seeds). |
 | `@nac-spec/telemetry-datadog` | community adapter. |
@@ -390,6 +390,21 @@ review prompt.
 
 ## 8. Phase 6 -- Closing peer review of v2.0 implementation
 
+**Important framing clarification (v2.0-rc3 per Claude T9-F1
+finding)**: Round 3 of peer review (Grok 4 + Mistral Le Chat +
+DeepSeek-V3 + Claude-Opus-4.7, completed 2026-05-09) is the
+**INTERIM closing**, NOT the final closing arbitration. The
+final closing arbitration is Round 4, scheduled AFTER the Yujin
+case study (phase 5.5) publishes real metrics. Round 3 verdicts
+are conditional on the case study confirming the brownfield cost
+estimates and Yujin migration not exposing additional spec/runtime
+defects.
+
+The author re-confirms this framing in the v2.0 announce:
+"v2.0.0-rc3 cleared interim peer review with conditions; tag is
+gated on Yujin case study confirmation in Round 4 closing
+arbitration."
+
 ### 8.1 Items
 
 | # | Item | Owner | Days |
@@ -506,7 +521,8 @@ v2.0.0 is shipped successfully if:
 - Peer review arbiter pass: "conditional yes" or stronger.
 - Strict-superset invariant verified (zero v1.9 breaks).
 - Perf budget met on low-tier mobile 2026.
-- Cookbook with 30 patterns published.
+- Cookbook with 15 essential patterns published at v2.0 (30
+  cumulative across v2.0.x patches per Claude T7-F2).
 - Yujin migration starts within 30 days of v2.0 release.
 - Within 6 months: at least 1 third-party widget vendor publishes
   NAC compliance independently (validates convergence assumption).
