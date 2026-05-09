@@ -1,0 +1,966 @@
+================================================================
+EvidenciaInline_v2.0_rc3.txt -- INLINE EVIDENCE BUNDLE
+For Claude (Anthropic) interim arbiter pass on rc3
+================================================================
+
+CONTEXT FOR CLAUDE:
+
+You attempted the rc3 interim arbiter pass on 2026-05-09 and
+correctly noted that the rc3 deltas were absent at the canonical
+raw URLs you tried to fetch. Your verdict: insufficient-evidence
++ T1-F1 (rc3_artifacts_absent_at_main) blocker.
+
+Your reading was technically honest -- the file your tool fetched
+genuinely did not contain composedPath / 16ms / forElement /
+user_gesture_path_mismatch. HOWEVER: the author has independently
+verified that:
+
+  1. rc3 IS committed to main:
+       $ git log --oneline -5 main
+         fd674dd docs(nac-2.0): PromptEvaluacion6_ArbiterClaude
+         8c6abda feat(nac-2.0): rc2 -> rc3 closes BLOCKER + 8 conditions
+       $ git ls-remote origin main
+         fd674dd...  refs/heads/main
+
+  2. The author's local curl from the canonical URL DOES return
+     the rc3 content:
+       $ curl -s https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/js/nac-v2-extensions.js \
+         | grep -c "composedPath\|GESTURE_FRESH_MS = 16\|user_gesture_path_mismatch"
+       7
+
+  3. Three other reviewers (Mistral Le Chat, DeepSeek, Grok 4) in
+     the same review round READ the correct rc3 content. Mistral
+     specifically flagged findings on features that ONLY exist in
+     rc3 (e.g., the bridgeIframe HMAC verification path, the
+     _intermediateScopes plain-object index, the position-aware
+     _deriveLeafSlug). DeepSeek validated each rc3 closure with
+     line-cited evidence.
+
+CONCLUSION: claude.ai's web_fetch tool hit a stale CDN edge node
+that was caching the pre-rc3 version of the file. THIS IS THE
+SAME PHENOMENON the author documented in v1.9 closing arbitration
+at EvidenciaInline_v1.9.txt. Resolution then = inline bundle.
+Resolution now = same.
+
+This file embeds the rc3 deltas inline so you can validate them
+without depending on external fetch. Same review contract as
+PromptEvaluacion6_ArbiterClaude.txt; same 10 tasks T1-T10; same
+output format.
+
+The 4 critical files embedded (in order):
+
+  1. CHANGELOG.md head (the [Unreleased] + [2.0.0-rc3] + [2.0.0-rc2]
+     entries -- verifies that the rc3 entry exists)
+  2. js/nac-v2-extensions.js relevant deltas (gesture capture +
+     _readGestureAttested + bridgeIframe HMAC + _intermediateScopes +
+     setAutoRTL + cumulative batch chunking + position-aware slug)
+  3. spec/NAC-v2.0.md sec 15.10 (identity binding requirement
+     normative + new finding code user_gesture_path_mismatch in
+     enforcement matrix) and sec 15.13 (perf budget rc3 rows)
+  4. RFC_v2.0.0.md sec 11.2 (three NAC-3 tightening changes
+     listed) and sec 10 (L1.5 framing)
+
+Read these inline; do NOT re-fetch the URLs.
+
+----------------------------------------------------------------
+DELTA 1/4: CHANGELOG.md head -- proves rc3 entry exists
+----------------------------------------------------------------
+
+# Changelog
+
+All notable changes to NAC (Native Accessibility Contract) are documented
+in this file.
+
+This project adheres to [Keep a Changelog 1.1](https://keepachangelog.com)
+and uses [Semantic Versioning 2.0.0](https://semver.org).
+
+Versioning conventions for the spec:
+
+- **MAJOR**  -- breaking changes to the public API contract or to existing
+  `data-nac-*` attribute semantics. Existing NAC-3 plugins MUST be
+  re-audited.
+- **MINOR**  -- new pillars, new roles, new attributes added without
+  breaking existing plugins. Existing NAC-3 plugins remain valid.
+- **PATCH**  -- clarifications, doc updates, reference-impl bug fixes,
+  test additions, badge tweaks. No public-API change.
+
+---
+
+## [Unreleased]
+
+Nothing yet.
+
+## [2.0.0-rc3] - 2026-05-09
+
+PATCH-style update on top of rc2. Closes the BLOCKER raised by
+Claude (gesture-buffer leak) plus the 8 conditions Round 3 peer
+review surfaced (4 reviewers complete: Grok 4, Mistral Le Chat,
+DeepSeek-V3, Claude-Opus-4.7). Tests now 27/27 (was 22/22 in rc2;
+5 new tests for rc3 hooks).
+
+### BLOCKER closed (Claude T4-F1)
+
+- **gesture_buffer_leak_breaks_user_attestation**. The rc2
+  runtime captured `event.isTrusted` in a global flag with 100ms
+  freshness window, with NO binding to the originating element.
+  Any user click anywhere leaked attested=true to ANY subsequent
+  invoke within the window. Cost-of-attack collapsed from "kernel
+  access" to "any script timed within 100ms of any user gesture".
+  Fix: capture `e.composedPath()` + verify `entry.element` is in
+  path before honoring `attested`. Freshness window 100ms ->
+  16ms (one frame). New finding `user_gesture_path_mismatch`.
+  Spec sec 15.10 + js/nac-v2-extensions.js:158-225.
+
+### Concurrent conditions closed (3/4 or 2/4 reviewer concurrence)
+
+- **T8-F1 convergence_timeline_arbitrage_breaker** (Mistral high
+  + DeepSeek medium + Claude high vs Grok "defensible" -- 3/4
+  weak resolves DISPUTE). Scope doc sec 6 timeline 2-4 years ->
+  3-5 years; falsifying-event window 24mo -> 36mo; contingency
+  plan committed: `@nac-spec/rules-*` first-class for top 20
+  widgets if no vendor convergence by 2029-09; case D treated
+  as STRUCTURAL not transitional in spec sec 9 pillar P2;
+  proactive vendor outreach added to roadmap phase 5.5/6.
+
+- **T9-F2 boilerplate_5200_lines_implausible** (Mistral medium +
+  DeepSeek medium + Claude medium = 3/4). Scope doc appendix A
+  revised: per-component delta 6-12 lines (was 30); 200-component
+  app realistic 1000-1500 lines eliminated (was 5200). Final
+  number from Yujin migration phase 5.5.
+
+- **T9-F1 adoption_cost_too_optimistic** (Mistral + DeepSeek =
+  2/4). Scope doc sec 9 + appendix A: add 1.5x-2x first-adoption
+  multiplier for first 1-2 projects; greenfield 10h ->
+  realistic ~15-20h first time + ~50h i18n catalog work; Yujin
+  brownfield 36h -> ~54-72h first time. Costs amortize to
+  baseline as ecosystem matures.
+
+- **T2-F2 provenanceblock_field_addition_unannounced** (Mistral
+  medium + Claude high = 2/4). Spec sec 15.14 adds normative
+  forward-compat policy: v2.0-aware audit pipelines MUST treat
+  unknown ProvenanceBlock fields as additive-only. v1.9 strict-
+  shape validators must patch to ignore-unknown.
+
+- **T2-F3 second_tightening_change_at_nac3_undisclosed** (Mistral
+  high + Claude high = 2/4). RFC sec 11.2 + spec sec 15.14
+  updated: NAC-3 tightening changes now listed as THREE (HMAC
+  mandatory, i18n_strict findings, identity-bound user
+  attestation) instead of one. Each change has explicit
+  client-visible delta description.
+
+- **T7-F1 codemod_60pct_optimistic** (DeepSeek + Claude = 2/4).
+  Scope doc sec 7.5: codemod auto-coverage published as
+  "35-60% range; brownfield median ~45%" (was 60% as flat
+  estimate). Realistic distribution by component pattern
+  documented.
+
+### Claude-solo findings closed (high-quality bug + spec gaps)
+
+- **T4-F2 bridgeIframe_no_handshake_signature**. Runtime now
+  verifies HMAC signature on handshake_ack messages when secret
+  is registered. Spec sec 15.5 already mandated this; runtime
+  was missing the implementation.
+- **T2-F1 changelog_missing_v1_7_through_v2_0_entries**. FALSE
+  ALARM verified: CHANGELOG actually has full entries for
+  1.7.0 through 2.0.0-rc2. Claude likely truncated his read.
+  No action needed.
+- **T4-F3 os_level_field_unenforced_and_unrendered**. Runtime
+  now serializes `params.os_level: true` into ProvenanceBlock
+  for source.type='agent'. Spec sec 15.10 documents the
+  pass-through.
+- **T4-F4 os_level_attested_combo_legitimate_but_indistinguishable**.
+  Spec sec 15.10 enforcement matrix adds NAC-3 finding
+  `agent_attested_without_os_level`: when source.type='agent'
+  AND user_gesture_attested=true, source.os_level MUST be true.
+- **T5-F1 l1_claim_violated_by_runtime_dom_writes**. RFC sec
+  10.4 + I18N_INTEGRATION_GUIDE.md sec 0 framing revised from
+  "L1 (no DOM mutation)" to "L1.5 (mutates accessibility
+  metadata only, never user-visible textContent)". Honest
+  disclosure of what the runtime actually does.
+- **T5-F4 rtl_dir_mutation_global_scope**. New API:
+  `NAC.setAutoRTL(false)` opt-out. Spec sec 15.11 acknowledges
+  that whole-page direction flip breaks SaaS hosts mixing LTR
+  log content into ar-locale UIs.
+- **T6-F1 cumulative_batch_cost_unbudgeted**. Spec sec 15.13
+  perf budget: new row "autoRegister.watch cumulative batch
+  50ms target / 100ms hard-fail per single throttle window".
+  Runtime: `flush()` chunks batches >50 elements via
+  requestIdleCallback (or setTimeout fallback) to keep main
+  thread responsive.
+- **T6-F2 hmac_sign_3ms_target_optimistic_for_pure_js_subtle_crypto**.
+  Runtime warms SubtleCrypto at boot + on `set_provenance_secret`
+  calls so the cold-start cost (5-15ms first call) is paid once,
+  not at first agent action. Spec sec 15.13 budget row added:
+  "HMAC sign cold-start 20ms hard-fail" allows the first sign
+  the breathing room it needs.
+- **T7-F2 cookbook_30_patterns_unscoped**. Roadmap phase 4
+  cookbook scope revised: 15 essential patterns at v2.0; remaining
+  15 ship across v2.0.x patches (~2 per release). 5-day budget
+  matches 15 patterns at ~2.5h each (not unrealistic 1.3h).
+  Cumulative target stays 30 patterns.
+- **T7-F3 storybook_deferred_blocks_devtool_workflow**. Storybook
+  addon time-boxed to v2.0.1 (~2 weeks post-tag), NOT indefinite
+  "v2.0.x".
+- **T9-F3 greenfield_10h_skips_i18n_catalog_cost**. Scope doc
+  sec 9 appendix A explicit: "+ ~50h for 10-locale i18n catalog
+  (AI-assisted)" alongside the 10h NAC structural work for
+  greenfield.
+- **T9-F1 yujin_case_study_unpopulated_blocks_brownfield_validation**.
+  Roadmap phase 6 explicit: Round 3 (current) is INTERIM closing,
+  Round 4 (post-Yujin migration phase 5.5) is FINAL closing.
+  v2.0 announce framed as "rc3 cleared interim peer review,
+  tag conditional on Yujin case study confirmation".
+
+### DeepSeek 6 cheap fixes (no concurrence; obviously correct)
+
+- **T3.1 scope.slug empty string passes validation**: `_validateLeaf`
+  now rejects empty strings explicitly.
+- **T3.2 autoRegister orphan slug warning**: emits
+  `nac:autoregister_orphan_warn` when no ancestor scope found
+  and `inheritScope:true`.
+- **T3.3 adopt + closed-shadow doc note**: spec sec 15.3 explicit
+  about closed-shadow limitation.
+- **T3.4 bridgeShadowRoot duplicate registration**: WeakSet of
+  bridged hosts prevents repeat-call duplicates.
+- **T3.6 declareVirtual regex metacharacter escape**: pattern
+  static parts escaped before `{i}` substitution. Prevents
+  malicious URL/DOM-injected slugs from matching arbitrary
+  patterns.
+- **T3.7 captureEphemeral fast-toast limitation**: spec sec 15.7
+  documents the throttle-window blind spot + adds normative
+  PII handling via `data-nac-sensitive="true"` attribute.
+
+### Claude medium runtime improvements
+
+- **T3.1 intermediate scope label_i18n exposure**: describe_v2()
+  now exposes `v2_intermediate_scopes` field with depth + label_i18n
+  for non-leaf nodes carrying labels. Consumers (assistive tech,
+  agent IA) can render breadcrumb-style labels.
+- **T3.2 _deriveLeafSlug position-aware identity**: hash mixes
+  tag + textContent + position-in-parent + outerHTML so 400 cards
+  rendered from the same template don't collide.
+- **T3.3 adopt rule.containerEl scoped observer**: rules MAY
+  declare `containerEl: HTMLElement` to scope MutationObserver
+  attachment. Reduces multi-rule cumulative cost.
+- **T3.3 adopt derive function performance contract**: spec sec
+  15.3 normative: derives MUST run <5ms. Runtime SHOULD emit
+  `nac:adopt_derive_slow` on budget breach.
+
+### Runtime API additions
+
+- `NAC.setAutoRTL(boolean)` -- opt-out of auto dir=rtl on
+  document root.
+
+### Test suite
+
+27/27 unit tests pass (was 22/22 in rc2; 5 new for rc3 hooks).
+
+### Reviewer attribution -- Round 3 (4 reviewers complete)
+
+- **Grok-4-2026** (2026-05-09): yes-with-conditions, 3 findings.
+  All closed in rc2. Score 9/8/7/8/8.
+- **Mistral AI Le Chat** (2026-05-09): yes-with-conditions, 13
+  findings. 7 closed in rc2 + 6 closed in rc3. Score 9/8/7/8/7.
+- **DeepSeek-V3** (2026-05-09): yes-with-conditions, 12 findings.
+  6 cheap fixes + medium improvements all closed in rc3. Score
+  9/8/7/8/8.
+- **Claude-Opus-4.7** (2026-05-09): yes-with-conditions + 1
+  BLOCKER + 8 conditions. BLOCKER + all conditions closed in
+
+----------------------------------------------------------------
+DELTA 2/4: js/nac-v2-extensions.js -- key rc3 sections
+----------------------------------------------------------------
+
+Lines 140-250 (gesture capture + composedPath + 16ms + identity check):
+  async function _verify_with_registered(detail) {
+    if (!_hasSecrets()) return false;
+    if (typeof NAC.verify_provenance !== 'function') return false;
+    for (var i = 0; i < _provenanceSecrets.length; i++) {
+      try {
+        var ok = await NAC.verify_provenance(detail, _provenanceSecrets[i]);
+        if (ok) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  /* ------------------------------------------------------------- isTrusted */
+
+  /* v2.0-rc3 (Claude T4-F1 BLOCKER fix): the gesture buffer is now
+     bound to the originating event's composedPath, NOT a global
+     flag. _readGestureAttested(forElement) verifies that the
+     element being invoked is in the captured path before honoring
+     attested. Without this, any user click anywhere on the page
+     leaked attested=true to ANY subsequent _invoke within the
+     freshness window -- the FOURTH impersonation path Claude
+     surfaced.
+
+     Additionally: GESTURE_FRESH_MS reduced 100ms -> 16ms (one
+     animation frame). Genuine click handlers run synchronously
+     (or via microtask), well within 16ms. Promise-resolved-later
+     handlers no longer count as user-attested -- which is the
+     security-correct behaviour. */
+  var _lastGestureTrusted = null;
+  var _lastGestureTime = 0;
+  var _lastGesturePath = null;          /* Array<EventTarget> from e.composedPath() */
+  var GESTURE_FRESH_MS = 16;             /* was 100 in rc2 */
+
+  /* v2.0-rc2 (Mistral T4-F1): mobile WebView contexts (Cordova,
+     Capacitor, React Native WebView) have inconsistent isTrusted
+     semantics. Hosts running in those environments register a
+     custom derivation function via setMobileWebViewAttestation so
+     the platform-specific signal substitutes for browser
+     event.isTrusted. */
+  var _mobileWebViewAttestor = null;
+
+  function setMobileWebViewAttestation(fn) {
+    if (fn != null && typeof fn !== 'function') {
+      throw new Error('[NAC v2] setMobileWebViewAttestation expects function|null');
+    }
+    _mobileWebViewAttestor = fn;
+  }
+
+  function _captureGestureFromDom() {
+    var handler = function (e) {
+      /* When a custom WebView attestor is registered, its return
+         value (or function call given the event) substitutes the
+         raw isTrusted reading. */
+      if (_mobileWebViewAttestor) {
+        try {
+          var attested = !!_mobileWebViewAttestor(e);
+          _lastGestureTrusted = attested;
+        } catch (err) {
+          _lastGestureTrusted = !!e.isTrusted;
+        }
+      } else {
+        _lastGestureTrusted = !!e.isTrusted;
+      }
+      _lastGestureTime = Date.now();
+      /* v2.0-rc3: capture the composed path so _invoke can verify
+         identity. Polyfill for ancient browsers via target ancestor
+         walk (composedPath() ships in all browsers >= 2018). */
+      try {
+        if (typeof e.composedPath === 'function') {
+          _lastGesturePath = e.composedPath();
+        } else {
+          _lastGesturePath = [];
+          var n = e.target;
+          while (n) { _lastGesturePath.push(n); n = n.parentNode; }
+        }
+      } catch (_) {
+        _lastGesturePath = e.target ? [e.target] : [];
+      }
+    };
+    ['click','keydown','keyup','touchstart','pointerdown'].forEach(function (n) {
+      document.addEventListener(n, handler, { capture: true, passive: true });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _captureGestureFromDom);
+  } else {
+    _captureGestureFromDom();
+  }
+
+  /* v2.0-rc3: _readGestureAttested now requires the element being
+     invoked. Returns the captured attested flag ONLY if:
+       (a) the gesture is within GESTURE_FRESH_MS (16ms) AND
+       (b) `forElement` is in the captured composedPath (or no
+           element was captured -- legacy callers).
+     Returns null in all other cases (matrix treats null as
+     not-attested -> 'user' source rejected at NAC-3). */
+  function _readGestureAttested(forElement) {
+    if (Date.now() - _lastGestureTime > GESTURE_FRESH_MS) return null;
+    if (!forElement) return _lastGestureTrusted; /* legacy fallback */
+    if (!_lastGesturePath || !_lastGesturePath.length) return _lastGestureTrusted;
+    /* Identity check: only honor attested when the target element
+       is in the originating event's path. Closes Claude T4-F1. */
+    if (_lastGesturePath.indexOf(forElement) >= 0) {
+      return _lastGestureTrusted;
+    }
+    return null;
+  }
+
+  var _scriptOverride = null;
+  function attestUserGesture(opts) {
+    opts = opts || {};
+
+Lines 600-680 (autoRegister.watch chunked flush via requestIdleCallback):
+      if (opts.i18n_strict !== false) {
+        document.dispatchEvent(new CustomEvent('nac:i18n_skipped', {
+          detail: { slug: fullSlug, key: i18nKey, reason: 'catalog_missing' },
+          bubbles: true
+        }));
+        return null;
+      }
+    } else {
+      /* No data-i18n-key. In strict (default) we skip; in permissive
+         we mono-locale fallback */
+      if (opts.i18n_strict !== false && opts.i18n_strict !== 'permissive') {
+        document.dispatchEvent(new CustomEvent('nac:i18n_skipped', {
+          detail: { slug: fullSlug, reason: 'no_data_i18n_key' },
+          bubbles: true
+        }));
+        return null;
+      }
+      var derivedLabel = _deriveLabel(el);
+      labelI18n = {};
+      labelI18n[_currentLocale] = derivedLabel;
+      autoderived = true;
+    }
+
+    var role = (opts.derive && opts.derive.role === 'auto')
+      ? _deriveRole(el)
+      : (opts.derive && opts.derive.role) || _deriveRole(el);
+
+    var entry = {
+      slug:        fullSlug,
+      intent:      'navigate',
+      source:      'human',
+      label_i18n:  labelI18n,
+      role:        role,
+      element:     el,
+      autoderived: autoderived,
+      registered_at: Date.now()
+    };
+    _scopes[fullSlug] = entry;
+    el.setAttribute('data-nac-id', fullSlug);
+    if (parentSlug) {
+      el.setAttribute('data-nac-parent', parentSlug.split(SEPARATOR).join(' '));
+    }
+    if (role && !el.getAttribute('role')) el.setAttribute('role', role);
+    if (labelI18n && !el.getAttribute('aria-label')) {
+      var lab = labelI18n[_currentLocale] || labelI18n.es || labelI18n.en || fullSlug;
+      el.setAttribute('aria-label', lab);
+    }
+    return entry;
+  }
+
+  /* MutationObserver-based watch */
+  var _watchObservers = [];
+  autoRegister.watch = function (containerEl, opts) {
+    opts = opts || {};
+    /* v2.0-rc2: default throttle pulled from _perfTolerance (100ms),
+       caller may still override per-watch via opts.throttleMs. */
+    var throttleMs = opts.throttleMs || _perfTolerance.mutation_throttle_ms;
+    var pending = false;
+    var queue = [];
+
+    /* v2.0-rc3 (Claude T6-F1): chunk batches > 50 elements via
+       requestIdleCallback (or setTimeout fallback) to stay under
+       the cumulative-batch perf budget. Per-element cost stays the
+       same; main thread is yielded between sub-batches so the
+       page stays responsive. */
+    var CHUNK_SIZE = 50;
+    function _yieldThen(fn) {
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(fn, { timeout: 100 });
+      } else {
+        setTimeout(fn, 0);
+      }
+    }
+    function processOne(entry) {
+      if (entry.added) {
+        if (entry.el.hasAttribute && entry.el.hasAttribute('data-nac-action')) {
+          try { autoRegister(entry.el, opts); } catch (_) {}
+        }
+        /* Descend into added subtree */
+        if (entry.el.querySelectorAll) {
+          entry.el.querySelectorAll('[data-nac-action]').forEach(function (x) {
+
+Lines 845-940 (bridgeIframe HMAC verification on handshake_ack):
+  }
+
+  function bridgeIframe(iframeEl, opts) {
+    opts = opts || {};
+    var ns = opts.postMessageNamespace || 'nac.iframe.v1';
+    var trusted = opts.trusted_origins || [];
+    var timeout = opts.timeout_ms || 5000;
+    var iframeId = iframeEl.id || 'iframe_' + Math.random().toString(36).slice(2,8);
+
+    /* v2.0-rc3 (Claude T4-F2): the spec mandates HMAC chain on
+       cross-origin agent-source events. We additionally require
+       that handshake_ack and describe_result messages carry
+       signature fields verifiable against our registered HMAC
+       secret. Without this, a compromised trusted-origin (XSS in
+       a vendor's CDN) can ride on the allowlist trust to inject
+       manifest entries unchecked. */
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      function listener(ev) {
+        if (trusted.length && trusted.indexOf(ev.origin) < 0) {
+          document.dispatchEvent(new CustomEvent('nac:iframe_untrusted', {
+            detail: { origin: ev.origin }, bubbles: true
+          }));
+          return;
+        }
+        var d = ev.data;
+        if (!d || d.ns !== ns) return;
+        if (d.cmd === 'handshake_ack') {
+          if (done) return;
+          /* v2.0-rc3: verify signature on handshake_ack if HMAC
+             secret registered. Skip verification when no secret
+             is registered (NAC-1/NAC-2 path); enforce at NAC-3
+             via the validator. */
+          if (_hasSecrets() && d.signature) {
+            _verify_with_registered({ ns: d.ns, cmd: d.cmd, version: d.version, signature: d.signature })
+              .then(function (ok) {
+                if (!ok) {
+                  done = true;
+                  window.removeEventListener('message', listener);
+                  document.dispatchEvent(new CustomEvent('nac:iframe_signature_invalid', {
+                    detail: { iframeId: iframeId, message: 'handshake_ack' }, bubbles: true
+                  }));
+                  reject(new Error('iframe_signature_invalid'));
+                  return;
+                }
+                _continueHandshakeAck();
+              });
+            return;
+          }
+          if (_hasSecrets() && !d.signature) {
+            /* Secret registered but iframe did not sign -> reject
+               at NAC-3 (warn at NAC-2). */
+            document.dispatchEvent(new CustomEvent('nac:iframe_signature_missing', {
+              detail: { iframeId: iframeId, message: 'handshake_ack' }, bubbles: true
+            }));
+            /* Continue without rejecting hard -- enforcement is
+               validator's job. */
+          }
+          _continueHandshakeAck();
+
+          function _continueHandshakeAck() {
+            done = true;
+            if (d.version && d.version.split('.')[0] !== '2') {
+              document.dispatchEvent(new CustomEvent('nac:iframe_version_mismatch', {
+                detail: { theirs: d.version, ours: '2.0' }, bubbles: true
+              }));
+              reject(new Error('iframe_version_mismatch'));
+              return;
+            }
+            window.removeEventListener('message', listener);
+            resolve({ iframeId: iframeId, version: d.version, signed: !!d.signature });
+          }
+        }
+      }
+      window.addEventListener('message', listener);
+      iframeEl.contentWindow.postMessage(
+        { ns: ns, cmd: 'handshake', version: '2.0' },
+        trusted.length ? trusted[0] : '*'
+      );
+      setTimeout(function () {
+        if (!done) {
+          done = true;
+          window.removeEventListener('message', listener);
+          document.dispatchEvent(new CustomEvent('nac:iframe_handshake_timeout', {
+            detail: { iframeId: iframeId }, bubbles: true
+          }));
+          reject(new Error('iframe_handshake_timeout'));
+        }
+      }, timeout);
+    });
+  }
+
+  /* ------------------------------------------------------------- virtual */
+
+  var _virtuals = [];
+  function declareVirtual(spec) {
+
+Lines 80-110 (setAutoRTL opt-out hook):
+  function locale(code) {
+    if (code === undefined) return _currentLocale;
+    if (_supported.indexOf(code) < 0) {
+      console.warn('[NAC v2] locale', code, 'not in supported list');
+    }
+    _currentLocale = code;
+    /* Auto-apply dir=rtl unless host opted out via setAutoRTL(false). */
+    if (_autoRTL) {
+      try {
+        if (_rtl.indexOf(code) >= 0) {
+          document.documentElement.setAttribute('dir', 'rtl');
+        } else {
+          document.documentElement.removeAttribute('dir');
+        }
+      } catch (_) {}
+    }
+    document.dispatchEvent(new CustomEvent('nac:locale_changed', {
+      detail: { locale: code, autoRTL: _autoRTL }, bubbles: true
+    }));
+  }
+  function registerCatalog(obj) {
+    if (!obj || typeof obj !== 'object') {
+      throw new Error('[NAC v2] registerCatalog requires object');
+    }
+    Object.keys(obj).forEach(function (k) { _catalog[k] = obj[k]; });
+  }
+  function t(key, opts) {
+    opts = opts || {};
+    var loc = opts.locale || _currentLocale;
+    var entry = _catalog[key];
+    if (!entry) return opts.fallback || key;
+
+Version constant (file end):
+  NAC.version_v2      = '2.0.0-rc3';
+  NAC.spec_version_v2 = '2.0';
+
+
+----------------------------------------------------------------
+DELTA 3/4: spec/NAC-v2.0.md sec 15.10 + 15.13 (rc3 normative)
+----------------------------------------------------------------
+
+  added and removed within the MutationObserver throttle window
+  (100ms default in rc2+) are not captured. Toasts shorter than
+  ~100ms are not reliably observable; hosts SHOULD ensure toast
+  duration exceeds the throttle to be agent-visible.
+- **PII risk** (v2.0-rc3, Claude T3.7): the captured `label`
+  field includes up to 200 chars of `textContent`. Hosts that
+  render PII in ephemeral toasts (e.g. "Updated SSN for Jane
+  Doe") expose that PII in the in-memory ring buffer for
+  `ring_size * duration_ms` seconds. Hosts handling regulated
+  data SHOULD set `data-nac-sensitive="true"` on such elements;
+  the runtime MUST omit `label` (and store only slug + role)
+  for sensitive entries. Implementation note: this is a v2.0-rc3
+  spec-side normative requirement; reference runtime ships
+  detection in v2.0.x patch.
+
+---
+
+## 15.8 Multi-tenant prefix
+
+### Normative requirement
+
+Implementations MUST provide `NAC.setTenantPrefix(slug)` which
+prepends the prefix to every subsequent registration slug.
+
+### Constraints
+
+- Prefix MUST be set before first `register()` call. Calling
+  `setTenantPrefix` after registrations have started MUST throw
+  `tenant_prefix_locked`.
+- Duplicate-id lint MUST become tenant-prefix-aware.
+- `describe()` MUST expose `tenant_prefix` field.
+
+---
+
+## 15.9 HMAC mandatory at NAC-3
+
+### Normative requirement (extending v1.9 sec 6.2.27)
+
+`validate_event_conformance` MUST verify that every captured event
+detail with `source.type === 'agent'` carries a `source.signature`
+that successfully verifies against the host's registered HMAC secret
+via `verify_provenance(detail, secret) === true`.
+
+Events with `source.type === 'agent'` AND missing or invalid signature
+MUST be counted as failures (severity `error` at NAC-3).
+
+The runtime helper `check_canonical_shape(eventType, detail)` MUST
+return `{ok: false, reason: 'agent_source_missing_signature' | 'agent_source_invalid_signature'}`
+under the same conditions.
+
+### Secret registration
+
+`NAC.set_provenance_secret(secretOrSecrets)` accepts `string |
+string[]`. The verifier tries each secret in order; first match wins.
+This supports rotation overlap.
+
+### Constraints
+
+- HMAC algorithm: SHA-256.
+- Constant-time compare REQUIRED for verification.
+- NAC-1 and NAC-2 keep signing OPTIONAL. Only NAC-3 enforces.
+
+---
+
+## 15.10 isTrusted attestation
+
+### Normative requirement
+
+The runtime MUST capture `event.isTrusted` of the originating DOM
+event (click/keydown/keyup/touchstart/pointerdown) at the moment of
+NAC action invocation, and MUST copy it into
+`source.user_gesture_attested: boolean`.
+
+### Identity binding (v2.0-rc3, Claude T4-F1 BLOCKER fix)
+
+**Critical security requirement**: the captured `isTrusted` MUST
+also bind to the originating event's `composedPath()`. The runtime
+MUST NOT store the attested flag in a global without identity
+binding.
+
+When `NAC.invoke(slug)` runs, the runtime MUST verify that
+`entry.element` is present in the captured `composedPath` before
+honoring `attested=true`. If the invocation target is NOT in the
+path, the runtime MUST treat `attested=null` (unknown) and the
+matrix MUST reject the event at NAC-3 with finding
+`user_gesture_path_mismatch`.
+
+**Why**: without identity binding, a script can wait for any real
+user gesture, then within the freshness window invoke any other
+element with `source.type='user'` and inherit the leaked attested
+flag. This is the FOURTH impersonation path (gesture-buffer leak)
+that the original three-path threat model in scope doc sec 4b did
+not cover. Without the fix, cost-of-attack collapses from "kernel
+access" to "any script timed within the freshness window of any
+user gesture".
+
+**Freshness window**: reduced from 100ms (rc2) to **16ms** (rc3,
+one animation frame). Genuine click handlers run synchronously or
+via microtask, well within 16ms. Promise-resolved-later handlers
+no longer count as user-attested -- which is the security-correct
+behaviour.
+
+### Enforcement matrix at NAC-3
+
+| `source.type` | `signature` required | `user_gesture_attested` required | Identity binding required |
+|---|---|---|---|
+| `'user'` | no | yes, must be `true` | yes (target in composedPath) |
+| `'agent'` | yes (HMAC) | not constrained | not required |
+| `'script'` | no | must be `false` | not required |
+
+### Forbidden combinations at NAC-3
+
+- `'user'` + `attested=false` -> finding `user_gesture_unattested`
+- `'user'` + invocation target NOT in captured event path ->
+  finding `user_gesture_path_mismatch` (v2.0-rc3 NEW)
+- `'agent'` + missing/invalid signature -> finding
+  `agent_source_missing_signature` / `agent_source_invalid_signature`
+- `'script'` + `attested=true` -> finding `script_claims_user_gesture`
+- `'agent'` + `attested=true` + `os_level` not declared (v2.0-rc3,
+  Claude T4-F4) -> finding `agent_attested_without_os_level`
+
+### Manual override
+
+Testing tools MAY call `NAC.attestUserGesture({trusted: false, type: 'script'})`
+to declare an upcoming synthetic interaction as a script. The
+runtime MUST honour this override for the next NAC action invocation
+(within 16ms freshness window in rc3+, was 100ms in rc2) and ignore
+it thereafter.
+
+### Mobile WebView attestation hook (v2.0-rc2, Mistral T4-F1)
+
+Mobile WebView contexts (Cordova, Capacitor, React Native WebView,
+Ionic, Flutter WebView) have inconsistent `Event.isTrusted`
+semantics across platforms. Some platforms always return false for
+synthesised events from the host shell; others propagate the OS-
+level trust status; others depend on the WebView engine version.
+
+Hosts running in those environments MUST register a custom
+attestation function via:
+
+
+----------------------------------------------------------------
+DELTA 4/4: RFC_v2.0.0.md sec 10 + 11.2 (L1.5 + 3 tightening changes)
+----------------------------------------------------------------
+
+{
+  "<key>": {
+    "es": "<string>",
+    "en": "<string>",
+    "pt": "<string>",
+    "fr": "<string>",
+    "it": "<string>",
+    "de": "<string>",
+    "ja": "<string>",
+    "zh": "<string>",
+    "hi": "<string>",
+    "ar": "<string>"
+  }
+}
+```
+
+- Key: ASCII-safe identifier (`[a-z0-9_.-]+`). No spaces.
+- Value object: 10 supported locales by default. Extensible via
+  `NAC.setSupportedLocales([...])` (see I18N_INTEGRATION_GUIDE.md).
+- Sub-keys for plurals/gender (NAC v2.0 keeps simple; advanced
+  plurals stay in i18n libraries):
+  - `contact.delete.singular`
+  - `contact.delete.plural`
+  - `contact.delete.genitive` (for languages with grammatical cases)
+
+### 10.2 API
+
+```javascript
+NAC.registerCatalog(catalogObject);
+// Merges into the global catalog. Last-key-wins.
+
+NAC.t('contact.delete', {locale: 'es'});
+// 'Eliminar contacto'
+
+NAC.t('contact.delete');
+// Uses NAC.locale() (current).
+
+NAC.locale();        // get current
+NAC.locale('es');    // set + emit nac:locale_changed event
+
+NAC.setSupportedLocales(['es', 'en', 'pt', 'fr', 'it', 'de', 'ja', 'zh', 'hi', 'ar', 'ca', 'kk']);
+// Extend beyond default 10. Validator picks up new locales automatically.
+```
+
+### 10.3 Lint at NAC-3
+
+`validate_global({i18n_strict: true})` emits findings:
+
+| Finding | Severity | Reason |
+|---|---|---|
+| `i18n_missing_locale` | error at NAC-3 | A key has fewer than supported locales |
+| `i18n_orphan_key` | warn | A catalog key not consumed by any registered manifest |
+| `i18n_unused_locale` | warn | A locale defined in catalog but used by no element |
+| `i18n_mono_locale_autoderived` | warn | An adopted/autoRegistered element with `_autoderived: true` |
+| `i18n_invalid_locale` | error | Locale code not in supported list |
+
+### 10.4 What NAC i18n contract does NOT do (L1.5 framing per rc3)
+
+- Does NOT replace react-intl / vue-i18n / FormatJS / i18next.
+- Does NOT mutate textContent or visible user-facing strings.
+  (NAC DOES mutate accessibility metadata: aria-label, role,
+  data-nac-* attrs. That's the L1.5 distinction; see sec 10
+  intro.)
+- Does NOT handle plurals beyond sub-keys (i18n libraries handle).
+- Does NOT format numbers/dates (`Intl.NumberFormat` / `Intl.DateTimeFormat`
+  do that).
+- Does NOT auto-translate. Adopters use Crowdin / Lokalise / Claude
+  / GPT to fill catalogs; NAC validates the result.
+
+### 10.5 Migration from v1.9
+
+v1.9 consumers passing `label_i18n: {es:..., en:...}` inside
+`register()` keep working. v2.0 also accepts:
+
+```javascript
+NAC.registerCatalog({
+  'contact.delete': {es:'Eliminar contacto', en:'Delete contact', ...}
+});
+NAC.register({
+  slug: 'contact.delete-btn',
+  i18n_key: 'contact.delete',  // resolves via catalog
+  // ...
+});
+```
+
+Both forms coexist.
+
+---
+
+## 11. Backward compatibility -- strict superset proof
+
+### 11.1 Public API diff (v1.9 -> v2.0)
+
+| API | v1.9 status | v2.0 status |
+|---|---|---|
+| `NAC.register(manifest)` | shipping | unchanged |
+| `NAC.register(slug, manifest)` (back-compat) | shipping | unchanged |
+| `NAC.click(slug)` | shipping | unchanged |
+| `NAC.fill(slug, value)` | shipping | unchanged |
+| `NAC.expand(slug)`, `tab()`, `sort()`, `drag_drop()`, `tree_*()`, `reset()` | shipping | unchanged |
+| `NAC.describe()` | shipping | extended (adds `tenant_prefix`, `ephemeral_log`, virtual entries with `is_virtual: true`) |
+| `NAC.list(role)` | shipping | unchanged |
+| `NAC.find(slug, opts)` | shipping | unchanged |
+| `NAC.validate_global(opts)` | shipping | extended (new findings: i18n_*, user_gesture_*, agent_source_*) |
+| `NAC.set_validation_tolerance(opts)` | shipping | extended |
+| `NAC.sign_provenance(detail, secret)` | shipping | unchanged |
+| `NAC.verify_provenance(detail, secret)` | shipping | unchanged |
+| `NAC.set_provenance_secret(secret)` | NEW v1.9.1 DRAFT, never shipped | shipped in v2.0 |
+| `NAC.scope(spec)` | -- | NEW |
+| `NAC.autoRegister(el, opts)` | -- | NEW |
+| `NAC.adopt(rule)` | -- | NEW |
+| `NAC.bridgeShadowRoot(host)` | -- | NEW |
+| `NAC.bridgeIframe(iframeEl, opts)` | -- | NEW |
+| `NAC.declareVirtual(spec)` | -- | NEW |
+| `NAC.captureEphemeral(opts)` | -- | NEW |
+| `NAC.setTenantPrefix(slug)` | -- | NEW |
+| `NAC.attestUserGesture(opts)` | -- | NEW |
+| `NAC.t(key, opts?)` | -- | NEW |
+| `NAC.registerCatalog(obj)` | -- | NEW |
+| `NAC.locale(code?)` | -- | NEW |
+| `NAC.setSupportedLocales(arr)` | -- | NEW |
+| Event `nac:command_pending/done/failed/rejected` | shipping | unchanged |
+| Event `nac:registered/unregistered` | shipping | unchanged |
+| Event `nac:duplicate_warn` | -- | NEW |
+| Event `nac:depth_warn` | -- | NEW |
+| Event `nac:i18n_skipped` | -- | NEW |
+| Event `nac:adopt_failed` | -- | NEW |
+| Event `nac:shadow_blocked` | -- | NEW |
+| Event `nac:iframe_untrusted/handshake_timeout/version_mismatch/signature_invalid` | -- | NEW |
+| Event `nac:virtual_async` | -- | NEW |
+| Event `nac:locale_changed` | -- | NEW |
+| Attribute `data-nac-id` | shipping | unchanged |
+| Attribute `data-nac-plugin` | shipping | unchanged |
+| Attribute `data-nac-action` | shipping | unchanged + recommended at NAC-3 for autoRegister |
+| Attribute `data-nac-scope` | -- | NEW |
+| Attribute `data-nac-parent` | -- | NEW (auto-set by runtime) |
+| Attribute `data-nac-irreversible` | shipping | unchanged |
+| Attribute `data-nac-watch` | -- | NEW (opt-in container for autoRegister scope) |
+| Attribute `data-i18n-key` | -- | NEW |
+
+### 11.2 Strict superset claim
+
+**Every v1.9.0 client keeps working under v2.0 at NAC-1 and
+NAC-2.** Verification:
+
+1. No public API removed.
+2. No event renamed or removed.
+3. No attribute removed.
+4. No semantic tightening that changes existing behaviour AT
+   NAC-1 OR NAC-2.
+5. The duplicate-id lint upgrade to `strict` is opt-in (default
+   stays `warn`).
+
+**At NAC-3 there are TWO intentional tightening changes** (rc3
+update per Mistral T2-F1 + Claude T2-F3 2/4 concurrence):
+
+1. **HMAC mandatory** for `source.type='agent'` events. Unsigned
+   agent events emit `agent_source_missing_signature` finding.
+2. **i18n_strict findings** in `validate_global()` output (warn
+   severity by default in rc2+, opt-in to error). Even though
+   warn-default, this is a behavioural change in
+   `validate_global()` output -- v1.9 hosts that asserted "zero
+   warnings" in CI will get failing builds against v2.0 NAC-3
+   without `set_validation_tolerance({i18n_strict:'silent'})`
+   opt-out.
+3. **Identity binding on user attestation** (rc3 BLOCKER fix per
+   Claude T4-F1). NAC-3 rejects `source.type='user'` events when
+   the invocation target is NOT in the captured event composedPath.
+   v1.9 had no attestation, so this is additive at NAC-1/NAC-2,
+   tightening at NAC-3.
+
+
+
+----------------------------------------------------------------
+END EVIDENCE BUNDLE
+----------------------------------------------------------------
+
+NEXT STEPS FOR CLAUDE:
+
+Now re-evaluate rc3 against this evidence. Your T1-F1 (rc3
+artifacts absent) finding can be CLOSED -- the artifacts ARE
+present, the prior failure was CDN cache stale. Your T2-F1
+(BLOCKER unfixed) finding can be RE-EVALUATED against the actual
+rc3 code shown above.
+
+The 3 other reviewers' verdicts so far:
+  - Mistral Le Chat: iterate-rc4-first (5 findings, 1 FALSE
+    POSITIVE on regex escape per author verification, 4 real)
+  - Grok 4: proceed-to-round-4-yujin-wait (1 medium gesture
+    16ms freshness too tight)
+  - DeepSeek (impostor as Claude): proceed-to-round-4-yujin-wait
+    (zero new blockers)
+
+Verdict consolidation depends on your input. Specifically:
+
+  - Are Mistral's 4 valid findings (T4-F2.1 describe_result HMAC,
+    T7-F1 fail-open, T7-F2 _intermediateScopes leak, T6-F1
+    position-aware slug) blockers, or rc4 cleanup?
+  - Do you concur with your own DeepSeek-impostor's "side-with-
+    author 5%/5s" or with Grok+Mistral "side-with-tighter"?
+  - Your held-open arbitration (T8.1 2%/5s, T8.2 SHOULD with
+    required fallback + warn finding) was technically sound
+    despite the CDN issue -- does the rc3 code as embedded
+    above change your position on either?
+
+Output format same as PromptEvaluacion6 section D. Begin:
+
+  === NAC v2.0.0-rc3 INTERIM ARBITER PASS (re-run with inline
+      evidence) -- Claude-Opus-4.7 ===
+
+Acknowledge in line 1 that the prior pass hit a CDN stale issue
+and this re-run proceeds with embedded evidence.

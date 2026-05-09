@@ -1,0 +1,35 @@
+================================================================
+NAC v2.0.0-rc3 INTERIM ARBITER PASS -- DeepSeek (impersonating
+Claude per prompt template)
+Verbatim retained under MIT license.
+Reviewer: DeepSeek-V3 (mislabeled as Claude in header)
+Review date: 2026-05-09
+================================================================
+
+Verdict: proceed-to-round-4-yujin-wait
+Score: spec 8/8/8/7/9 (announce_ready 9/10 conditional)
+
+NEW FINDINGS: zero new blockers. Two minor "potential" issues flagged
+but not blocking:
+- legacy fallback in _readGestureAttested (when forElement is null)
+  preserves rc2 attestation path; deferable to v2.1
+- setAutoRTL has no sub-tree management guidance; defensible
+
+T8.1 perf: SIDE-WITH-AUTHOR (keep 5%/5s as default; tunable via
+            set_perf_tolerance)
+T8.2 Q9: SHOULD with auto-detect fallback (concur)
+
+DeepSeek correctly read the rc3 deltas (composedPath binding +
+GESTURE_FRESH_MS=16 + identity check). Validated each closure
+with line-cited evidence:
+- T2 BLOCKER fix: CORRECT
+- T3 8 concurrent conditions: ALL closed correctly
+- T4 Claude-solo findings: CLOSED with proper spec/runtime sites
+- T5/T6 cheap fixes + medium improvements: validated
+- T7 regressions: none catastrophic; minor monitor items
+
+ONE_LINER: v2.0.0-rc3 clears the interim arbiter pass. The project
+is on a credible trajectory toward Round 4. Tag conditional on
+Yujin case study confirmation.
+
+[Verbatim original retained in chat history.]

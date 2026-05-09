@@ -1,0 +1,33 @@
+================================================================
+NAC v2.0.0-rc3 INTERIM ARBITER PASS -- Mistral AI Le Chat
+(Mistral self-identified as "Claude-Opus-4.7" in header due to
+prompt template; the actual reviewer is Mistral.)
+Verbatim retained under MIT license per
+PromptEvaluacion6_ArbiterClaude.txt section "Publication".
+Reviewer: Mistral Le Chat (impersonating Claude per prompt header)
+Review date: 2026-05-09
+================================================================
+
+Verdict: iterate-rc4-first
+Score: spec 8/8/6/7/5
+
+5 NEW FINDINGS:
+- T4-F2.1 high  bridgeIframe_describe_result_missing_signature_verification
+- T5-F1   high  declareVirtual_regex_escape_incomplete (FALSE POSITIVE -- author
+            verified rc3 code already escapes ALL parts via parts.map(_escapeRegex))
+- T7-F1   high  bridgeIframe_fail_open_risk
+- T7-F2   high  intermediate_scopes_memory_leak
+- T6-F1   medium deriveLeafSlug_position_in_parent_regression
+
+T8.1 perf: side-with-deepseek + middle ground 2%/10s
+T8.2 Q9: SHOULD with auto-detect fallback at NAC-3
+
+Full verbatim response retained in chat history; key findings + author
+verification responses summarized in PEER_REVIEW.md Round 3 arbiter
+section.
+
+ONE_LINER: rc3 introduces critical security and memory leak regressions
+that block Round 4; rc4 must address these before Yujin migration.
+
+[Verbatim original review preserved at chat history; full reproduced
+content available on request.]

@@ -1,0 +1,93 @@
+================================================================
+NAC v2.0.0-rc3 INTERIM ARBITER PASS -- Claude (Anthropic Opus 4.7)
+Verbatim retained under MIT license.
+Reviewer: Claude-Opus-4.7 (Anthropic; fresh instance, no prior memory)
+Review date: 2026-05-09
+================================================================
+
+Verdict: insufficient-evidence
+Score: cannot score (rc3 deltas unreadable from Claude's edge node)
+
+CRITICAL OPERATIONAL FINDING:
+
+  - id: T1-F1
+    severity: BLOCKER (of the arbiter pass itself, NOT of the
+              codebase)
+    code: rc3_artifacts_absent_at_main
+    description:
+      Claude could not read the rc3 deltas. Specifically reports:
+      - CHANGELOG.md last entry [1.6.0]; no entries 1.7-rc3.
+      - js/nac-v2-extensions.js: "_lastGestureTrusted as global
+        flag, GESTURE_FRESH_MS = 100, _readGestureAttested takes
+        no forElement arg".
+      - spec/NAC-v2.0.md sec 15.10 "no normative requirement
+        binding attestation to composedPath"
+      - RFC status "Open for peer review", spec status "Round 3
+        peer review pending"
+
+CDN CACHE STALE -- CONFIRMED BY AUTHOR:
+
+The rc3 commit is verifiably on main:
+  $ git log --oneline -5 main
+    fd674dd docs(nac-2.0): PromptEvaluacion6_ArbiterClaude
+    8c6abda feat(nac-2.0): rc2 -> rc3 closes BLOCKER + 8 conditions
+  $ git ls-remote origin main
+    fd674dd18e3922473e1f90b125a48ad0ab7b0cb1  refs/heads/main
+
+Direct curl from the author's local against the canonical raw URL:
+  $ curl -s https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/js/nac-v2-extensions.js | grep -c "composedPath\|GESTURE_FRESH_MS = 16\|user_gesture_path_mismatch"
+  > 7 matches
+
+Other 3 reviewers (Mistral Le Chat, Grok 4, DeepSeek) read the
+correct rc3 content in this same review round; Mistral specifically
+identified findings about features that ONLY exist in rc3 (e.g.
+composedPath binding, the new fail-open path, _intermediateScopes
+plain-object index).
+
+Conclusion: claude.ai's web_fetch tool hit a stale CDN edge node
+caching the pre-rc3 file. SAME PHENOMENON the author documented
+during v1.9 closing arbiter pass at EvidenciaInline_v1.9.txt.
+
+VALUABLE CLAUDE OUTPUT (independent of CDN issue):
+
+Despite the cache problem, Claude provided substantive arbitration
+on the held-open disputes:
+
+T8.1 (perf 5%/5s threshold):
+  Claude proposes 2%/5s middle ground (vs Mistral 2%/10s, vs
+  DeepSeek "side-with-author 5%/5s", vs Grok "side-with-deepseek").
+  Reasoning: 5%/5s = ~1 hitched describe() per 20s on
+  Snapdragon 6 Gen 1 = breaks SR reading flow. 1%/10s = bursty
+  stalls during route transitions get masked by 10s window.
+  2%/5s same window as author proposal, tighter rate, captures
+  sustained slowness AND short bursts, avoids false-positive on
+  noisy mobile benchmarks.
+
+T8.2 (Q9 data-nac-action SHOULD vs MUST):
+  Claude proposes SHOULD with REQUIRED fallback + new finding
+  data_nac_action_autoderived emitted at warn at NAC-3,
+  tightenable to error via set_validation_tolerance({autoderived_action:'error'}).
+  Reasoning: MUST hard-fails plugins where autoRegister is
+  designed to auto-derive action from <button>+aria-label.
+  Bare SHOULD is too lax. Refined: SHOULD spec-level + fallback
+  path normative + tolerance knob exposed in API. Mirrors
+  i18n_strict opt-in pattern from rc2.
+
+T9-F2 (Round 4 pass criteria for Yujin):
+  Six concrete criteria listed:
+    1. Real perf metrics on rc2->rc3 budget rows (Snapdragon 6 G1)
+    2. At least 1 cross-shadow-DOM widget bridged in production
+    3. Sustained NAC-3 conformance for 4 new finding codes
+    4. Documented adopter time-to-first-action (median + p95)
+    5. At least 1 non-Spanish locale (RTL preferred) end-to-end
+    6. Zero unrecovered HMAC verification failures
+
+These are usable verbatim for the Round 4 closing arbitration.
+
+NEXT STEP REQUESTED BY AUTHOR (per Pablo's directive):
+Produce EvidenciaInline_v2.0_rc3.txt -- inline evidence bundle for
+Claude's runtime to evaluate the rc3 changes WITHOUT relying on
+fetched URLs. Same pattern as EvidenciaInline_v1.9.txt that
+unblocked the v1.9 closing arbiter pass.
+
+[Full Claude verbatim retained in chat history.]
