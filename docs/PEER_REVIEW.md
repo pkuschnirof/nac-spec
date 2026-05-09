@@ -376,13 +376,148 @@ These three findings + author responses are now part of the v2.0.0
 release evidence. Verbatim Grok response retained in
 `docs/peer-review-round3-grok.txt`.
 
-### DeepSeek, ChatGPT, Mistral Le Chat, MS Copilot, Claude arbiter -- pending
+### Mistral AI Le Chat -- 2026-05-09
 
-Pending re-attempt with `PromptEvaluacion5_Inline.txt` (embedded
-bundle variant). Their inability to fetch the raw URLs of the 14
-required documents downgraded their initial verdicts to
-"insufficient-evidence" per the prompt rules. Re-runs once the
-inline variant is distributed.
+**Verdict:** `yes-with-conditions`.
+**Score axes:**
+- Spec clarity: 9/10
+- AI/test tooling: 8/10
+- Adoption ease: 7/10
+- Ambition vs feasibility: 8/10
+- v2 announce ready: **7/10** (one notch lower than Grok at 8)
+
+**One-liner:** *"NAC v2.0 is a strong, well-designed evolution
+with robust primitives and a clear vision, but requires minor
+adjustments to tooling, performance targets, and adoption claims
+before announcement to avoid overpromising."*
+
+**Findings flagged (13 findings; zero blockers; 5 high, 6 medium,
+2 low):**
+
+| ID | Severity | Code | Concurs with Grok? |
+|---|---|---|---|
+| T2-F1 | high | `missing_second_tightening_change` | NEW (Grok did not catch) |
+| T2-F2 | medium | `provenance_block_field_addition` | NEW |
+| T4-F1 | medium | `mobile_webview_attestation_gap` | YES (Grok T4-F1 high) |
+| T4-F2 | low | `os_level_agent_attestation` | NEW |
+| T5-F1 | medium | `gettext_format_gap` | NEW |
+| T5-F2 | high | `i18n_strict_too_aggressive_at_nac3` | YES (Grok T5-F1 medium; Mistral elevates) |
+| T6-F1 | high | `mutationobserver_throttle_too_low` | YES (Grok T6-F1 medium; Mistral elevates) |
+| T6-F2 | medium | `describe_perf_budget_too_tight` | NEW (specific numbers) |
+| T7-F1 | high | `missing_framework_support` | YES (Grok T7-F1 high; same Solid/Qwik/Lit) |
+| T7-F2 | high | `missing_testing_integrations` | YES (Grok mentioned; Mistral specifies Playwright/Cypress/Storybook) |
+| T7-F3 | medium | `missing_telemetry_export` | YES (Grok mentioned; Mistral specifies Sentry/Datadog/OTel) |
+| T7-F4 | low | `vscode_language_server_missing` | YES (Grok mentioned) |
+| T8-F1 | high | `convergence_timeline_overly_optimistic` | DISPUTE (Grok said "defensible"; Mistral says "weak" + extend 3-5y) |
+| T9-F1 | medium | `boilerplate_reduction_overstated` | NEW (Mistral disputes the 5200-line claim) |
+
+**Cross-reviewer concurrence on key issues**:
+
+1. **WebView quirks (Grok T4-F1 + Mistral T4-F1)**: both reviewers
+   independently flag mobile WebView (Cordova/Capacitor/RN) as
+   needing explicit guidance + fallback. Mistral additionally
+   proposes `NAC.setMobileWebViewAttestation(fn)` hook.
+
+2. **i18n_strict default too aggressive (Grok T5-F1 medium ->
+   Mistral T5-F2 high)**: both agree on the concern; Mistral
+   elevates severity to high and proposes EITHER opt-in via
+   `set_validation_tolerance({i18n_strict:'warn'})` OR introducing
+   a NAC-4 level for full strictness.
+
+3. **MutationObserver throttle 50ms (Grok T6-F1 medium ->
+   Mistral T6-F1 high)**: both agree throttle is too low; Mistral
+   elevates and proposes 100ms default + tunable
+   `set_perf_tolerance({mutation_throttle_ms:n})`.
+
+4. **Tooling gaps (Grok T7-F1 + Mistral T7-F1/F2/F3/F4)**:
+   complete concurrence. Mistral itemises more specifically:
+   Solid + Qwik + Lit (frameworks), Playwright + Cypress +
+   Storybook (testing), Sentry + Datadog + OTel (telemetry),
+   VSCode LS (IDE).
+
+**Mistral findings NOT in Grok review (NEW)**:
+
+- **T2-F1 missing_second_tightening_change (high)**: the RFC
+  claims one tightening change at NAC-3 (HMAC) but spec sec
+  15.12 makes i18n_strict mandatory at NAC-3 too. The author's
+  strict-superset claim should explicitly list BOTH. Easy fix in
+  RFC sec 11.1 + spec sec 15.14 + CHANGELOG.
+
+- **T2-F2 provenance_block_field_addition (medium)**: v2.0 adds
+  fields to ProvenanceBlock (`user_gesture_attested`, `signature`,
+  `signature_chain`, `os_level`). Additive, but v1.9 clients
+  doing strict shape validation may break. Easy fix: add explicit
+  note in spec 15.14 that v1.9 clients MUST tolerate unknown
+  fields.
+
+- **T6-F2 describe_perf_budget_too_tight (medium)**: specific
+  Svelte compiler benchmarks suggest 30ms target for 1000
+  elements is unachievable on low-tier mobile 2026; Mistral
+  proposes 50ms target / 150ms hard-fail. Concrete numbers.
+
+- **T9-F1 boilerplate_reduction_overstated (medium)**: the
+  "5200 lines eliminated for 50 components" claim in scope doc
+  appendix A implies 104 lines/component, which Mistral calls
+  implausible. Realistic estimate: 20-30 lines/component =
+  1000-1500 total. Author should revise to a verifiable number
+  cited from Yujin case study post-migration.
+
+**Mistral findings DISPUTING Grok**:
+
+- **T8-F1 convergence_timeline (Mistral high vs Grok "defensible")**:
+  Mistral argues ARIA had W3C + browser backing + WCAG legal
+  mandates; NAC has none of those. Proposes extending timeline
+  to 3-5 years + contingency: if no major vendor by 2029, invest
+  in `@nac-spec/rules-*` as first-class (not community-curated).
+
+**Author response to Mistral's findings**:
+
+- **T2-F1 (high)**: ACCEPTED. Genuinely missed by Sumi. RFC sec
+  11.1 + spec sec 15.14 + CHANGELOG to be updated explicitly
+  acknowledging both NAC-3 tightening changes. Pre-tag patch.
+- **T2-F2 (medium)**: ACCEPTED. Spec sec 15.14 to add explicit
+  note about v1.9 client tolerance of unknown ProvenanceBlock
+  fields. Pre-tag patch.
+- **T4-F1 (medium)**: ACCEPTED (already accepted from Grok).
+  Mistral additionally proposes `NAC.setMobileWebViewAttestation(fn)`
+  hook -- evaluating; lean toward including in v2.0 but may
+  defer impl to v2.0.x.
+- **T4-F2 (low)**: ACCEPTED. Add `source.os_level` optional
+  metadata field to ProvenanceBlock + matrix row for OS-level
+  agents in spec sec 15.10.
+- **T5-F1 (medium)**: ACCEPTED for documentation. Add gettext
+  bridge guidance to I18N_INTEGRATION_GUIDE.md sec 7.5; CLI
+  conversion tool deferred to `@nac-spec/codemod` phase 4.
+- **T5-F2 (high)**: ACCEPTED with refinement. Default NAC-3
+  i18n severity becomes `warn`; opt-in to `error` via
+  `set_validation_tolerance`. NAC-4 level deferred to v2.1+.
+- **T6-F1 (high)**: ACCEPTED. Throttle default 100ms; tunable
+  via `set_perf_tolerance({mutation_throttle_ms:n})`.
+- **T6-F2 (medium)**: ACCEPTED. Perf budget revised: describe()
+  target 50ms / hard-fail 150ms; adopt hard-fail 20ms;
+  autoRegister throttle 100ms.
+- **T7-F1/F2/F3/F4 (high/high/medium/low)**: ACCEPTED. Tooling
+  ecosystem expansion list confirmed. Solid/Qwik/Lit + Playwright
+  + Sentry telemetry interface land in phase 4. Cypress +
+  Storybook + Datadog + OTel + VSCode LS to v2.0.x patches.
+- **T8-F1 (high)**: ACCEPTED. Convergence timeline extended in
+  scope doc to 3-5 years. Contingency plan added: if no major
+  vendor adopts by 2029, `@nac-spec/rules-*` becomes first-class
+  spec-repo concern (not just community).
+- **T9-F1 (medium)**: ACCEPTED. Author revises boilerplate
+  reduction claim to verifiable range "1000-1500 lines for a
+  50-component app", with final number TBD from Yujin case study
+  post-migration (phase 5.5).
+
+Verbatim Mistral response retained at
+`docs/peer-review-round3-mistral.txt`.
+
+### DeepSeek, ChatGPT, MS Copilot, Claude arbiter -- pending
+
+Pending re-attempt. The author distributed
+`PromptEvaluacion5_Inline.txt` (embedded bundle variant) for
+reviewers that cannot fetch raw URLs. Re-runs once those
+reviewers respond.
 
 ---
 
