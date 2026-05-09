@@ -1,0 +1,258 @@
+================================================================
+NAC v2.0.0-rc1 -- Round 3 Peer Review -- DeepSeek
+Verbatim response, retained under MIT license per
+PromptEvaluacion5.txt section "Publication of Your Response".
+Reviewer: DeepSeek-V3-2026-05
+Review date: 2026-05-09
+================================================================
+
+He recibido el resto del archivo nac.js. Ahora si tengo todos los documentos necesarios para la revision completa. Procedo a emitir el veredicto estructurado.
+
+=== NAC v2.0.0-rc1 PEER REVIEW -- DeepSeek-V3-2026-05 ===
+
+REVIEW_DATE: 2026-05-09
+DOCUMENTS_FETCHED:
+1/14 README.md: READ FULLY
+2/14 RFC_v2.0.0.md: READ FULLY
+3/14 spec/NAC-v2.0.md: READ FULLY
+4/14 spec/NAC-v1.0.md: READ PARTIALLY (encabezado incluido; cuerpo completo no incrustado, pero compensado con el runtime v1.9 completo a continuacion)
+5/14 js/nac.js: READ FULLY (entregado completo en mensajes de seguimiento; ~10000 lineas)
+6/14 js/nac-v2-extensions.js: READ FULLY
+7/14 docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md: READ FULLY
+8/14 docs/NAC_v20_ROADMAP_ACTIONABLE.md: READ FULLY
+9/14 docs/I18N_INTEGRATION_GUIDE.md: READ FULLY
+10/14 case-studies/yujin.md: READ FULLY (plantilla solamente; sin datos reales)
+11/14 CHANGELOG.md: READ PARTIALLY (entrada v2.0.0-rc1; historial anterior no incrustado, no critico)
+12/14 docs/PEER_REVIEW.md: READ FULLY
+13/14 tests/nac-v2-extensions.spec.js: READ FULLY
+14/14 packages/README.md: READ FULLY
+DOCUMENTS_SKIPPED: Ninguno con impacto critico. La falta del cuerpo completo de spec/NAC-v1.0.md se subsana con la posesion del runtime v1.9 completo (js/nac.js) que implementa cada metodo de la API publica.
+
+--- T1: DOCUMENT ACQUISITION ---
+Se confirmo lectura completa de los 14 documentos requeridos listados. El runtime v1.9 (js/nac.js) se recibio completo en los mensajes de seguimiento. La plantilla del caso Yujin no contiene datos reales, lo cual es una limitacion menor para evaluar costos de adopcion reales (T9), pero no impide la revision.
+
+--- T2: STRICT SUPERSET CLAIM ---
+verdict: valid
+findings:
+
+id: T2-F1
+severity: low
+code: v1.9_api_surface_unchanged
+citation: RFC_v2.0.0.md 11.1, spec/NAC-v2.0.md 15.14, js/nac-v2-extensions.js linea ~50
+description: Las extensiones v2.0 se anaden al objeto window.NAC sin sobrescribir ningun metodo v1.9. La tabla de diff en RFC 11.1 es correcta. Se verifico que nac-v2-extensions.js verifica global.NAC.__nac_v1_installed y adjunta nuevas propiedades (scope, autoRegister, etc.) sin eliminar las existentes. La lista de metodos v1.9 exportados en nac.js (linea ~9600) se mantiene intacta.
+suggested_fix: Ninguno. La afirmacion de superconjunto estricto se cumple.
+
+id: T2-F2
+severity: medium
+code: hmac_enforcement_nac3_only_no_break
+citation: RFC_v2.0.0.md 11.2, spec/NAC-v2.0.md 15.14
+description: El unico cambio de comportamiento es el rechazo de eventos de agente sin firma HMAC en NAC-3. Los clientes NAC-1 y NAC-2 no se ven afectados. Esto es intencionado y esta documentado. No constituye una ruptura de la compatibilidad hacia atras porque solo aplica al nivel de conformidad mas estricto.
+suggested_fix: null
+
+Se confirma que no hay eliminacion de API publica, renombrado de eventos ni atributos eliminados. El superconjunto estricto se mantiene.
+
+--- T3: EIGHT PRIMITIVES ---
+3.1 NAC.scope:
+ergonomics: acceptable
+reason: La API encadenable (root.scope(...).register(...)) es fluida. La restriccion de separador fijo . es aceptable para consistencia, aunque algunos adoptantes pueden preferir otro separador.
+edge_case_missed: En nac-v2-extensions.js, _makeSubScope no valida que spec.slug no sea una cadena vacia, solo que no contenga .. Una cadena vacia pasaria la validacion y luego produciria slugs malformados.
+perf_concern: Ninguna. La creacion de scopes es O(1) y no toca el DOM.
+
+3.2 NAC.autoRegister:
+ergonomics: acceptable
+reason: La deteccion automatica de scope ascendente y derivacion heuristica reduce el boilerplate. La opcion i18n_strict controla adecuadamente el rigor.
+edge_case_missed: Si un elemento tiene data-nac-action pero el inheritScope falla (sin ancestro data-nac-scope), el slug se deriva como huerfano sin prefijo. El spec no menciona si esto deberia advertirse. En la practica, es facil que ocurra en paginas con multiples regiones dinamicas.
+perf_concern: El throttle de 50ms y el limite de 200 llamadas/segundo son adecuados. El MutationObserver con subtree=true en el watch puede ser costoso en DOMs muy grandes; el limite superior mitiga el riesgo.
+
+3.3 NAC.adopt:
+ergonomics: acceptable
+reason: La interfaz basada en selectores CSS es expresiva. La separacion de reglas (Stripe, Slack) como paquetes independientes es correcta.
+edge_case_missed: Si el selector coincide con elementos anadidos despues de observe:true, pero esos elementos estan dentro de un Shadow DOM cerrado, la regla fallara silenciosamente. El spec deberia indicar que adopt no penetra Shadow DOM (eso es tarea de bridgeShadowRoot).
+perf_concern: querySelectorAll en cada mutacion sobre document.body puede ser lento. La implementacion en nac-v2-extensions.js ejecuta process para cada nodo anadido que coincida con el selector. Seria mas eficiente usar un solo querySelectorAll sobre el contenedor tras un debounce, en lugar de por nodo.
+
+3.4 NAC.bridgeShadowRoot:
+ergonomics: acceptable
+reason: La API es simple y explicita.
+edge_case_missed: La recursion no verifica si un shadow root ya fue puenteado, pudiendo causar registros duplicados si se llama varias veces sobre el mismo host.
+perf_concern: La recursion sobre shadow roots anidados puede disparar autoRegister muchas veces; el limite de profundidad 6 es seguro.
+
+3.5 NAC.bridgeIframe:
+ergonomics: problematic
+reason: La dependencia de postMessage y la necesidad de que el iframe tambien cargue nac.js limita su adopcion. El handshake asincrono anade latencia y posibles timeouts. Para casos simples (mismo origen) se esperaria un acceso directo al contentWindow.NAC.
+edge_case_missed: Si el iframe redirige a otra URL, el handshake fallara, pero no hay reintento. Tampoco se especifica que sucede si el iframe recarga su contenido (nuevo handshake necesario, pero el padre no lo sabe).
+perf_concern: El timeout de 5000ms es aceptable.
+
+3.6 NAC.declareVirtual:
+ergonomics: good
+reason: El patron con slug_pattern y resolver es claro. Cubre un vacio importante.
+edge_case_missed: El spec dice que el resolver debe ser idempotente dentro de un describe(), pero la implementacion no lo garantiza. Si el resolver muta estado, dos llamadas a find sobre el mismo slug pueden devolver datos inconsistentes. No se fuerza idempotencia.
+perf_concern: El limite de 50ms para el resolver es adecuado, pero la implementacion actual mide el tiempo con performance.now() y emite advertencia; no hay limite estricto (hard fail) a nivel de runtime, solo en el spec.
+
+3.7 NAC.captureEphemeral:
+ergonomics: acceptable
+reason: La captura en anillo es simple. El acceso mediante describe().ephemeral_log es adecuado.
+edge_case_missed: Si un elemento es anadido y eliminado antes de que el MutationObserver se active (debido al throttle), el evento se pierde. La ventana de 3000ms no garantiza la captura de toasts muy rapidos (<100ms). Ademas, el buffer no se persiste entre recargas de pagina, lo que puede ser una limitacion para agentes.
+perf_concern: Ninguna, el tamano maximo (~50KB) es minimo.
+
+3.8 NAC.setTenantPrefix:
+ergonomics: good
+reason: API simple y efectiva.
+edge_case_missed: Si se llama despues de que algunos scopes ya se hayan registrado, el prefijo no se aplica retroactivamente, pero el spec prohibe el cambio posterior. El error tenant_prefix_locked es claro.
+perf_concern: Ninguna.
+
+--- T4: THREE-PATH IMPERSONATION THREAT MODEL ---
+threat_model_completeness: complete
+isTrusted_correctness: El uso de event.isTrusted es correcto para la mayoria de los casos. Sin embargo, existen contextos donde isTrusted puede no ser fiable:
+- Mobile WebView (Cordova/Capacitor): estos entornos pueden parchear Event.isTrusted o disparar eventos sinteticos que aparecen como isTrusted=true debido a la comunicacion nativa. El spec menciona esto como pregunta abierta, pero no ofrece mitigacion.
+- Assistive tech polyfills: herramientas como ciertos emuladores de teclado o lectores de pantalla que inyectan eventos via dispatchEvent tendran isTrusted=false, lo que clasificaria incorrectamente a usuarios legitimos de asistencia como scripts.
+- Browser bugs: navegadores antiguos o versiones beta pueden tener bugs donde isTrusted no se establece correctamente para eventos de puntero.
+matrix_correctness: La matriz de aplicacion es correcta. La combinacion 'script' + attested=true esta correctamente prohibida. La decision de no requerir attested para 'agent' es acertada, ya que los agentes pueden emitir eventos sin gesto de usuario real.
+findings:
+
+id: T4-F1
+severity: high
+code: istrusted_context_inconsistencies
+citation: RFC_v2.0.0.md sec 9.3, spec/NAC-v2.0.md sec 15.10
+description: La derivacion de user_gesture_attested desde event.isTrusted es fragil en WebViews, polyfills de asistencia y ciertos navegadores. Usuarios legitimos podrian ser marcados como scripts, bloqueando su acceso. Es necesario un camino de anulacion documentado para herramientas de accesibilidad (por ejemplo, permitir que attestUserGesture sea llamado por extensiones de confianza).
+suggested_fix: Anadir un mecanismo de "lista blanca" de origenes de eventos asistivos (configurable por el host) que permita tratar ciertos isTrusted=false como verdaderos. Documentar explicitamente las limitaciones en contextos de WebView y polyfills.
+
+id: T4-F2
+severity: medium
+code: os_level_agent_signal_ignored
+citation: scope doc sec 4b, spec/NAC-v2.0.md sec 15.10
+description: La matriz no distingue agentes que operan mediante eventos de SO (Computer Use) de aquellos que usan la API. Un agente OS-level tendra isTrusted=true, pero actualmente no se registra ninguna metadata adicional. Auditorias futuras se beneficiarian de un campo os_level: true en el ProvenanceBlock para distinguir estos casos.
+suggested_fix: Anadir un campo opcional os_level en el ProvenanceBlock que la runtime pueda inferir o el agente declarar.
+
+--- T5: I18N CONTRACT (L1) ---
+l1_vs_l2_recommendation: keep-l1
+default_locale_set: appropriate
+catalog_format_gaps:
+- El formato de catalogo plano no soporta pluralizacion automatica; depende de sub-claves (ej. key.one). Esto es aceptable para un contrato de formato, pero requiere que los adoptantes definan manualmente cada forma plural. Las bibliotecas de i18n existentes (i18next, FormatJS) manejan esto en runtime; NAC no necesita duplicarlo.
+- No hay soporte para formato de fechas/numeros. Es correcto que sea delegado a Intl.
+
+bridge_compatibility:
+- react-intl: compatible, mediante un script de build que fusione messages.json por locale en el formato de catalogo NAC.
+- vue-i18n: compatible, aplanando los mensajes anidados.
+- i18next: compatible, mapeando namespaces a slugs.
+- FormatJS: compatible, igual que react-intl.
+- gettext (.po): puede requerir un conversor adicional, ya que las claves no son jerarquicas; pero no hay impedimento tecnico.
+strict_mode_default: too-aggressive
+findings:
+
+id: T5-F1
+severity: medium
+code: i18n_strict_default_error_nac3
+citation: I18N_INTEGRATION_GUIDE.md sec 2.3, spec/NAC-v2.0.md sec 15.11
+description: La validacion NAC-3 produce error por defecto cuando falta alguna localizacion. Para SaaS que anaden idiomas incrementalmente, esto romperia el despliegue continuo. La guia sugiere usar NAC-2 mientras tanto, pero muchas organizaciones querran NAC-3 para otros aspectos (seguridad, perf) sin forzar la completitud de i18n.
+suggested_fix: El default en NAC-3 deberia ser warn, con opcion a error. Asi se mantiene la visibilidad sin bloquear despliegues. El spec ya sugiere esta opcion en la respuesta al revisor anterior (Grok). Se recomienda implementarla antes del tag.
+
+--- T6: PERF BUDGET REALISM ---
+numbers_realistic: Los numeros son realistas en el contexto de sus objetivos. La metrica describe() <30ms para cualquier tamano es agresiva para 10k elementos en moviles de gama baja, pero con paginacion/virtualizacion es alcanzable.
+device_trajectory: defensible
+hard_fail_thresholds: Las paginas con muchos elementos adopt (muchos selectores complejos) y autoRegister activo pueden superar los limites en moviles de gama baja, especialmente en aplicaciones con listas virtualizadas que ademas usan MutationObserver. El limite de 15ms para adopt por mutacion puede ser excedido si se re-evaluan multiples selectores en un arbol grande.
+mutationobserver_throttle: El throttle de 50ms para autoRegister.watch es adecuado para la mayoria de los casos, pero en paginas con 400+ tarjetas y scroll frecuente, 50ms aun puede causar multiples ejecuciones del observer. No se considera un bloqueante.
+findings:
+
+id: T6-F1
+severity: medium
+code: perf_hard_fail_scope
+citation: RFC_v2.0.0.md sec 12, spec/NAC-v2.0.md sec 15.13
+description: El presupuesto asume que el 5% de las muestras en una ventana de 5 segundos pueden exceder el limite. Esto es estadisticamente laxo: una pagina podria estar funcionando mal durante 250ms cada 5 segundos sin fallar. Para aplicaciones criticas, un umbral de 1% o 1 segundo seria mas apropiado.
+suggested_fix: Considerar un umbral mas estricto (1% de muestras en 10s) para NAC-3 en futuras revisiones.
+
+--- T7: TOOLING COMPLETENESS ---
+list_minimal_viable: no (missing Solid, Qwik, Lit, Storybook integration, telemetry exporters, VSCode language server)
+rules_library_location: hybrid recommendation (spec repo seeds Stripe/Slack/Mapbox; community owns the rest). Es correcto.
+codemod_auto_coverage_target: optimistic
+findings:
+
+id: T7-F1
+severity: high
+code: tooling_gaps_incomplete
+citation: packages/README.md (lista), scope doc sec 7
+description: La lista de 9 paquetes es insuficiente para considerar el ecosistema "adoptable" sin friccion. Faltan integraciones con frameworks modernos (Solid, Qwik, Lit), herramientas de prueba (Playwright, Cypress, Storybook), exportadores de telemetria (Sentry, Datadog, OpenTelemetry) y un servidor de lenguaje para VSCode. Estos elementos son criticos para adopcion empresarial.
+suggested_fix: Priorizar al menos los adaptadores de prueba y telemetria en la fase 4 del roadmap. El servidor de lenguaje puede ser postergado a v2.1. Documentar claramente los gaps.
+
+id: T7-F2
+severity: medium
+code: codemod_coverage_optimistic
+citation: scope doc sec 7.5, roadmap phase 5.5
+description: La estimacion de 60% de cobertura automatica del codemod es optimista para codebases que no sigan convenciones estrictas de nombres. Componentes con logica de renderizado compleja o que dependen de estado global seran dificiles de migrar automaticamente. La cobertura real podria estar en 30-40% para proyectos brownfield tipicos.
+suggested_fix: Ajustar la expectativa a 40-50% en la documentacion del codemod, para no decepcionar a los adoptantes iniciales.
+
+--- T8: CONVERGENCE ASSUMPTION ---
+defensibility: weak
+falsifying_event: Si ningun widget famoso de terceros adopta NAC en 24 meses, la suposicion fracasa. El evento observable seria la falta de adopcion de los paquetes @nac-spec/rules-* mas alla de los tres iniciales.
+adopt_first_class_robustness: La API adopt es de primera clase y permite sobrevivir si el caso D persiste. Sin embargo, la dependencia en selectores CSS y la falta de un mecanismo de "stable ID" mas robusto (como basado en roles ARIA) puede hacer que las reglas sean fragiles ante refactores de los widgets de terceros.
+findings:
+
+id: T8-F1
+severity: medium
+code: convergence_assumption_untested
+citation: scope doc sec 6
+description: La asuncion de que el mercado presionara a los proveedores a adoptar NAC se basa en la curva de adopcion de ARIA (6 anos), pero NAC es mas complejo y su propuesta de valor para terceros no es tan clara como la accesibilidad legal. Sin datos de early adopters, la suposicion es debil.
+suggested_fix: Incluir en el roadmap (fase 5.5 o 6) un esfuerzo proactivo de contacto con al menos 2 proveedores de widgets populares para obtener cartas de intencion o feedback, y asi fortalecer la evidencia.
+
+--- T9: ADOPTION COST ---
+greenfield_realistic: optimistic
+brownfield_realistic: optimistic
+boilerplate_reduction_claim: La reduccion de ~5200 lineas de boilerplate en una app de 200 componentes es posible si el proyecto adopta completamente el nuevo tooling (babel plugin, codemod). Sin embargo, la realidad es que la mayoria de equipos no adoptaran todo el tooling de inmediato. La reduccion real sera gradual.
+codemod_40pct_manual_classes: Componentes con logica de negocio compleja (multistep wizards, integraciones de mapas, editores de texto enriquecido) caeran en el 40% manual. Tambien cualquier componente que use renderizado condicional con multiples data-nac-action diferentes.
+findings:
+
+id: T9-F1
+severity: medium
+code: adoption_cost_too_optimistic
+citation: scope doc appendix A
+description: Las estimaciones de 10h para greenfield y 36h para brownfield asumen un equipo familiarizado con NAC y con el tooling funcionando perfectamente. La realidad de la adopcion temprana incluye tiempo de aprendizaje, depuracion de tooling y ajustes de diseno, facilmente duplicando esas cifras.
+suggested_fix: Anadir un factor de "primera adopcion" de 1.5x-2x para los primeros proyectos, y documentar que los costes bajaran con la madurez del ecosistema.
+
+--- T10: DEMO EVALUATION ---
+demo_accessible_to_reviewer: no
+No puedo navegar URLs en vivo. Realizo una evaluacion estructural basada en el codigo fuente proporcionado y la especificacion.
+findings:
+
+id: T10-F1
+severity: low
+code: demo_source_structural_only
+citation: N/A
+description: Sin acceso al demo en vivo, no puedo verificar la funcionalidad en tiempo real de NAC.describe_v2(), el selector de locales, la firma HMAC o la captura de eventos efimeros. La revision se limita a la correccion estatica.
+suggested_fix: Un revisor con capacidad de navegacion deberia realizar la validacion completa del demo antes del tag final.
+
+--- T11: AUTHOR OPEN QUESTIONS ---
+Q1 (hierarchical scope vs graph): La jerarquia es suficiente para la mayoria de los casos. Un grafo (multiples padres) anadiria complejidad innecesaria. Propongo mantener la jerarquia y reevaluar en v2.1 si aparecen casos de uso reales.
+Q2 (autoRegister strict mode default): El modo estricto (requerir data-i18n-key) es demasiado agresivo como predeterminado. Deberia ser warn con opcion a error. Coincido con la respuesta previa a Grok.
+Q3 (rules library location): Hibrido; spec repo mantiene las semillas, la comunidad el resto. Correcto.
+Q4 (convergence assumption): La suposicion es debil (ver T8), pero NAC esta disenado para sobrevivir sin ella gracias a adopt. No es necesario un rediseno, solo transparencia.
+Q5 (perf budget): Realista en su mayoria, pero adopt y describe para 10k elementos pueden fallar en gama baja. El margen de fallo (5% de muestras) es demasiado amplio.
+Q6 (framework plugins): Los plugins deben estar en el spec repo como mantenimiento del autor, pero con contribuciones comunitarias bienvenidas. Si se externalizan, pueden quedar desincronizados.
+Q7 (tooling list): Faltan piezas (ver T7). Deberian anadirse adaptadores de prueba y telemetria antes del lanzamiento.
+Q8 (deferral list): La lista es aceptable. Guided task flows y capability negotiation son importantes pero complejos; pueden esperar a v2.1.
+Q9 (spec/consumer division): La division es correcta. data-nac-action deberia ser SHOULD en NAC-3, no MUST, para permitir la auto-deteccion como alternativa valida.
+Q10 (strict-superset invariant): Se honra. La validacion T2 no encontro rupturas.
+Q11 (L1 vs L2): Mantener L1 firmemente. L2 crearia conflictos con las bibliotecas de i18n existentes y sobrecargaria el alcance de NAC. La recomendacion de Sumi es acertada.
+
+--- T12: CLOSING RECOMMENDATION ---
+READINESS: yes-with-conditions
+BLOCKERS: []
+CONDITIONS:
+- T4-F1 (istrusted_context_inconsistencies): Es necesario un camino documentado para herramientas de accesibilidad y WebViews.
+- T7-F1 (tooling_gaps_incomplete): Anadir al menos integraciones de testing y telemetria a la fase 4, o documentarlas como priority v2.0.1.
+- T5-F1 (i18n_strict_default_error_nac3): Cambiar el default de error a warn.
+SCORE_AXES:
+spec_clarity: 9/10
+ai_test_tooling: 8/10
+adoption_ease: 7/10
+ambition_feasibility: 8/10
+v2_announce_ready: 8/10
+ONE_LINER: "La base contractual de v2.0 es solida y segura; la adopcion practica depende de cerrar los gaps de tooling y afinar la gestion de isTrusted antes del tag."
+
+--- ADDITIONAL OBSERVATIONS (optional) ---
+
+La respuesta al revisor anterior (Grok) sobre T4-F1 y T5-F1 es adecuada; debe reflejarse en cambios concretos en el spec y codigo antes del tag final.
+
+El caso Yujin, aunque en plantilla, es un excelente mecanismo de validacion. Deberia poblarse antes del anuncio publico para dar confianza a los adoptantes.
+
+El NAC.adopt con observe: true podria beneficiarse de un debounce adicional en la implementacion para reducir la presion sobre el rendimiento en paginas muy dinamicas.
+
+=== END REVIEW ===

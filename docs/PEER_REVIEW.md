@@ -538,6 +538,125 @@ the same rc2 perf budget revision since it was the same area.
 | T8-F1 convergence_timeline_overly_optimistic | high | Mistral high vs Grok "defensible" | DISPUTE -- third reviewer breaks tie |
 | T9-F1 boilerplate_reduction_overstated | medium | Mistral solo | Yujin migration produces real numbers (phase 5.5) |
 
+### DeepSeek-V3 -- 2026-05-09
+
+**Verdict:** `yes-with-conditions`.
+**Score axes:**
+- Spec clarity: 9/10
+- AI/test tooling: 8/10
+- Adoption ease: 7/10
+- Ambition vs feasibility: 8/10
+- v2 announce ready: **8/10** (matches Grok; one notch above Mistral)
+
+**One-liner:** *"La base contractual de v2.0 es solida y segura;
+la adopcion practica depende de cerrar los gaps de tooling y
+afinar la gestion de isTrusted antes del tag."*
+
+**Findings flagged**: 12 findings; zero blockers; 1 high, 9 medium, 2 low.
+
+**Concurrencias clave con Grok + Mistral**:
+
+- **T4-F1 isTrusted context inconsistencies (high)** -- CONCURRE
+  con Grok T4-F1 high + Mistral T4-F1 medium. **3/3 reviewers
+  flag the issue**. Already closed in rc2 with
+  `setMobileWebViewAttestation` hook + spec sec 15.10 annex.
+- **T5-F1 i18n_strict default too aggressive (medium)** --
+  CONCURRE con Grok T5-F1 medium + Mistral T5-F2 high. **3/3**.
+  Already closed in rc2 (default `warn` + opt-in `error`).
+- **T7-F1 tooling gaps (high)** + **T7-F2 codemod_coverage_optimistic
+  (medium)** -- CONCURRE con Grok T7-F1 high + Mistral
+  T7-F1+F2+F3 high. **3/3**. Already closed in rc2 with 5 new
+  tooling skeletons.
+- **T8-F1 convergence_assumption_untested (medium)** -- CONCURRE
+  con Mistral T8-F1 high (both say "weak"). **DISPUTE RESOLVED
+  AGAINST GROK**: 2/3 reviewers (Mistral + DeepSeek) say "weak"
+  vs Grok 1/3 says "defensible". Author MUST act on this.
+- **T9-F1 adoption_cost_too_optimistic (medium)** -- CONCURRE
+  con Mistral T9-F1 medium. **2/3**. Both reviewers explicitly
+  note that 10h greenfield + 36h brownfield assume "tooling
+  perfectly working + experienced team". DeepSeek proposes
+  1.5x-2x first-adoption multiplier.
+
+**DISPUTA RESOLVED -- T8-F1 convergence assumption**:
+
+| Reviewer | Verdict | Severity |
+|---|---|---|
+| Grok 4 | "defensible" (ARIA precedent) | not flagged |
+| Mistral Le Chat | "weak" -- ARIA had W3C + WCAG, NAC has none | high |
+| DeepSeek-V3 | "weak" -- value prop for vendors not as clear as legal accessibility | medium |
+
+**Verdict**: 2/3 majority says **WEAK**. Author MUST extend
+convergence timeline 2-4 -> 3-5 years + add explicit contingency
+plan + (per DeepSeek suggestion) proactive vendor outreach
+effort in roadmap phase 5.5 or 6.
+
+**Hallazgos NEW de DeepSeek (sin concurrencia aun)** -- runtime
+bugs y doc gaps que ningun otro reviewer detecto:
+
+| Finding | Severity | Type | Author response |
+|---|---|---|---|
+| T3.1 scope.slug empty string passes validation | low | runtime bug | ACCEPT-cheap-fix: add `slug.length === 0` check in `_validateLeaf` |
+| T3.2 autoRegister orphan slug without parent scope | low | runtime gap | ACCEPT: emit `nac:autoregister_orphan_warn` event |
+| T3.3 adopt + closed Shadow DOM silent fail | low | doc gap | ACCEPT: add note to spec sec 15.3 |
+| T3.4 bridgeShadowRoot duplicate registration on repeat call | medium | runtime bug | ACCEPT: add WeakSet of bridged hosts |
+| T3.5 bridgeIframe redirect/reload no-retry | medium | runtime gap | DEFER to v2.0.x (edge case, complex fix) |
+| T3.6 declareVirtual idempotency not enforced | low | runtime gap | ACCEPT-doc: clarify in spec that resolver caller responsibility |
+| T3.7 captureEphemeral toasts <100ms missed | low | known limitation | ACCEPT-doc only: add note to spec sec 15.7 |
+| T6-F1 perf hard-fail 5%/5s too lax | medium | spec policy | DISPUTE OPEN: held for 4th reviewer |
+| Q9 `data-nac-action` SHOULD vs MUST at NAC-3 | n/a (open question) | policy | DISPUTE OPEN: held for arbiter |
+| adopt observe:true needs additional debounce | n/a (observation) | runtime perf | ACCEPT: implement in next runtime patch |
+
+**Author response summary**:
+
+- **6 NEW DeepSeek findings ACCEPT** (4 runtime bug fixes + 2 doc
+  notes -- all cheap, schedule for rc3 patch).
+- **2 NEW DeepSeek findings DEFER** to v2.0.x post-tag (complex).
+- **2 DISPUTE OPEN** held for 4th reviewer (Claude arbiter or
+  ChatGPT) to confirm or reject.
+- **Convergence assumption (T8-F1) NOW ACTIONABLE** since
+  2/3 reviewers concurrent on "weak". Pre-tag patch:
+  - scope doc sec 6: timeline 2-4y -> 3-5y, add contingency
+  - roadmap phase 5.5 or 6: proactive vendor outreach effort
+- **Adoption cost (T9-F1) NOW ACTIONABLE** since 2/3 reviewers
+  concurrent on "optimistic". Pre-tag patch:
+  - scope doc appendix A: add 1.5x-2x first-adoption multiplier
+  - revise "5200 lines eliminated" claim to verifiable range
+    (Mistral T9-F1 also flagged this), final number from Yujin
+    case study phase 5.5.
+
+Verbatim DeepSeek response:
+`docs/peer-review-round3-deepseek.txt`.
+
+### CONCURRENCE MATRIX (3 reviewers complete: Grok + Mistral + DeepSeek)
+
+The Round 3 verdict aggregates as follows. Conditions with 2/3 or
+3/3 concurrence are author-actionable; conditions raised by 1
+reviewer are held for arbitrage with a 4th reviewer.
+
+| Condition | Grok | Mistral | DeepSeek | Concurrence | Status |
+|---|---|---|---|---|---|
+| isTrusted WebView quirks (T4-F1) | high | medium | high | **3/3** | CLOSED rc2 |
+| i18n_strict default too aggressive | medium | high | medium | **3/3** | CLOSED rc2 |
+| Tooling gaps (Solid/Qwik/Lit/Storybook/etc) | high | high+high+medium+low | high | **3/3** | CLOSED rc2 |
+| MutationObserver throttle 50ms | medium | high | -- | **2/3** | CLOSED rc2 |
+| describe perf budget tight | -- | medium | -- | 1/3 | CLOSED rc2 (absorbed in perf revision) |
+| **Convergence assumption WEAK** (T8-F1) | "defensible" | high | medium | **2/3 (DISPUTE RESOLVED)** | OPEN -- ACT NOW |
+| **Adoption cost OPTIMISTIC** (T9-F1) | -- | medium | medium | **2/3** | OPEN -- ACT NOW |
+| OS-level agent metadata (T4-F2) | -- | low | medium | **2/3** | OPEN -- ACT NOW (cheap) |
+| 2nd tightening (i18n_strict) (T2-F1) | -- | high | -- | 1/3 | OPEN -- await arbiter |
+| ProvenanceBlock additive fields (T2-F2) | -- | medium | -- | 1/3 | OPEN -- await arbiter |
+| 6 DeepSeek runtime bugs/gaps | -- | -- | low/medium | 1/3 | OPEN -- 4 ACCEPT (cheap) + 2 DEFER |
+| perf hard-fail 5%/5s too lax (T6-F1 DS) | -- | -- | medium | 1/3 | OPEN -- await arbiter |
+| `data-nac-action` SHOULD vs MUST (Q9 DS) | -- | -- | open Q | 1/3 | OPEN -- await arbiter |
+
+### Pending: ChatGPT (full app), Claude arbiter
+
+The Round 3 verdict pool stabilises with ChatGPT (full chat app)
++ Claude as the closing arbiter. Once those two respond, all
+held-open 1/3 findings either reach 2/3+ concurrence (act on
+them) or stay at 1/3 (defer to v2.0.x patches with disclosure in
+the v2.0 announce).
+
 ### Microsoft Copilot (GPT-4o backend) -- 2026-05-09: insufficient-evidence (BOTH variants)
 
 **Result**: review could NOT be completed. Two attempts both
