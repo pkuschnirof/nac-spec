@@ -1,0 +1,168 @@
+================================================================
+NAC v2.0.0-rc1 -- Round 3 Peer Review -- Grok 4 (Fast Model)
+Verbatim response, retained under MIT license per
+PromptEvaluacion5.txt section "Publication of Your Response".
+Reviewer: Grok-4-2026
+Review date: 2026-05-09
+================================================================
+
+=== NAC v2.0.0-rc1 PEER REVIEW -- Grok-4-2026 ===
+
+REVIEW_DATE: 2026-05-09
+DOCUMENTS_FETCHED: All 14 required (READ FULLY): README.md, RFC_v2.0.0.md, spec/NAC-v2.0.md, spec/NAC-v1.0.md, js/nac.js, js/nac-v2-extensions.js, docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md, docs/NAC_v20_ROADMAP_ACTIONABLE.md, docs/I18N_INTEGRATION_GUIDE.md, case-studies/yujin.md (template), CHANGELOG.md, docs/PEER_REVIEW.md, tests/nac-v2-extensions.spec.js, packages/README.md. Optional consulted where relevant for context.
+DOCUMENTS_SKIPPED: None.
+
+--- T1: DOCUMENT ACQUISITION ---
+All 14 required: READ FULLY.
+
+--- T2: STRICT SUPERSET CLAIM ---
+verdict: valid
+No breaking changes at NAC-1/NAC-2 found. v1.9 clients continue unchanged (flat registration, events, describe() etc. preserved).
+The single intentional NAC-3 tightening (unsigned agent events rejected + user_gesture_attested matrix) is the only one identified. RFC_v2.0.0.md:28-32 ("All v1.9 plugin code keeps working unchanged... The duplicate-id lint promotion to strict is the single...") and spec/NAC-v2.0.md:9 ("Strict superset of: NAC v1.9.0") + 15.14 (backward compat proof) confirm. js/nac-v2-extensions.js:4-6 explicitly loads after nac.js without modifying v1.9 surface. No missed breakers.
+
+--- T3: EIGHT PRIMITIVES ---
+3.1 NAC.scope:
+ergonomics: good
+reason: Clean hierarchical builder with idempotency and parent_chain metadata.
+edge_case_missed: None major found (depth cap + duplicate_warn covered).
+perf_concern: null (shallow tree ops).
+3.2 NAC.autoRegister:
+ergonomics: acceptable
+reason: DOM-driven is powerful but derive heuristics + i18n_strict default add complexity.
+edge_case_missed: Rapid mutations exceeding 200/sec cap (RFC_v2.0.0.md:164-165 batches silently; potential loss on bursty UIs).
+perf_concern: MutationObserver subtree=true on 400-card catalog (scope doc section 5).
+3.3 NAC.adopt:
+ergonomics: good
+reason: Flexible derive functions + observe flag for third-party bridging.
+edge_case_missed: Stable_id_strategy interaction with dynamic third-party content that mutates text (RFC_v2.0.0.md:207-210).
+perf_concern: null (scoped observer).
+3.4 NAC.bridgeShadowRoot:
+ergonomics: acceptable
+reason: Simple host call but limited to open roots.
+edge_case_missed: Nested shadows exceeding 6 levels (spec/NAC-v2.0.md:156-157).
+perf_concern: Recursive walk on deep component trees (low-tier mobile).
+3.5 NAC.bridgeIframe:
+ergonomics: acceptable
+reason: PostMessage handshake is solid but requires iframe cooperation.
+edge_case_missed: Version mismatch during rotation (spec/NAC-v2.0.md:189-190).
+perf_concern: Handshake timeout on slow networks.
+3.6 NAC.declareVirtual:
+ergonomics: good
+reason: Resolver pattern elegant for virtualized data.
+edge_case_missed: Resolver throwing or slow async without proper flagging (RFC_v2.0.0.md:345).
+perf_concern: Resolver p95 <10ms critical on mobile.
+3.7 NAC.captureEphemeral:
+ergonomics: good
+reason: Ring buffer for toasts/modals practical.
+edge_case_missed: None major.
+perf_concern: null (small ring).
+3.8 NAC.setTenantPrefix:
+ergonomics: good
+reason: Simple prefix for multi-tenant.
+edge_case_missed: Call after registrations started (spec/NAC-v2.0.md:243-245 throws).
+perf_concern: null.
+
+--- T4: THREE-PATH IMPERSONATION THREAT MODEL ---
+threat_model_completeness: complete
+isTrusted_correctness: Mostly correct for standard browsers; lies possible in some WebViews/mobile hybrid contexts or synthetic event polyfills (common in test runners/RPA). Shadow DOM does not affect isTrusted on light DOM events.
+matrix_correctness: Mostly correct. Legitimate assistive tech (e.g. voice control injecting trusted events) should pass as 'user'. OS-level Computer Use (e.g. certain accessibility APIs) may need manual attestUserGesture override. No fourth major path obvious.
+findings:
+
+id: T4-F1
+severity: high
+code: istrusted_webview_quirks
+citation: docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md:130-136 (user/script impersonation) + spec/NAC-v2.0.md:285-288
+description: isTrusted derivation solid but mobile WebView contexts (common for voice/RPA) frequently synthesize events with isTrusted=false or inconsistent behavior.
+suggested_fix: Explicit guidance + fallback for known assistive tech in enforcement matrix.
+
+
+--- T5: I18N CONTRACT (L1) ---
+l1_vs_l2_recommendation: keep-l1
+default_locale_set: appropriate
+catalog_format_gaps: Sub-keys handle plurals/cases/gender well but no built-in interpolation validation or BIDI safety lint beyond html_unescaped warn. CJK width/kerning not addressed in catalog (host CSS).
+bridge_compatibility: react-intl/FormatJS: clean (flatten messages); vue-i18n: clean (flatten); i18next: clean (namespaces to dots); gettext: acceptable with script. No major breaks.
+strict_mode_default: too-aggressive (for incremental SaaS rollouts).
+findings:
+
+id: T5-F1
+severity: medium
+code: i18n_strict_incremental
+citation: docs/I18N_INTEGRATION_GUIDE.md:100-109 + spec/NAC-v2.0.md:352
+description: NAC-3 error on missing locale blocks incremental language adds common in SaaS.
+suggested_fix: Default to warn at NAC-3 or per-key tolerance list.
+
+
+--- T6: PERF BUDGET REALISM ---
+numbers_realistic: Yes, aligned with comparable libs (e.g. ARIA observers, React devtools).
+device_trajectory: defensible (conservative 12% YoY).
+hard_fail_thresholds: Fail on heavy dynamic pages (SPA with frequent mutations).
+mutationobserver_throttle: 50ms sufficient with batching; marginal on 400+ card catalogs with live updates.
+findings:
+
+id: T6-F1
+severity: medium
+code: auto_register_throttle_bursts
+citation: RFC_v2.0.0.md:164-165 + docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md:5 (perf section)
+description: 200 calls/sec cap + 50ms throttle may drop events in bursty agent-generated UIs.
+suggested_fix: Configurable burst buffer or adaptive throttle.
+
+
+--- T7: TOOLING ECOSYSTEM COMPLETENESS ---
+list_minimal_viable: no (missing Solid/Qwik/Lit, Storybook/Playwright, telemetry, VSCode LS).
+rules_library_location: spec-repo for seeds + community hybrid good.
+codemod_auto_coverage_target: realistic (~50-70% depending on codebase).
+findings:
+
+id: T7-F1
+severity: high
+code: tooling_gaps_frameworks
+citation: packages/README.md + docs/NAC_v20_ROADMAP_ACTIONABLE.md:173-184
+description: Missing Solid/Qwik/Lit and E2E integrations limits adoptability.
+suggested_fix: Prioritize in phase 4 or v2.0.1.
+
+
+--- T8: CONVERGENCE ASSUMPTION ---
+defensibility: defensible (ARIA curve precedent strong).
+falsifying_event: Major vendor (e.g. Stripe) publicly rejects NAC after 3 years.
+adopt_first_class_robustness: Good; first-class status helps survival.
+findings: None blocker.
+
+--- T9: ADOPTION COST ---
+greenfield_realistic: yes (~10h reasonable with primitives).
+brownfield_realistic: optimistic (Yujin template suggests higher friction).
+boilerplate_reduction_claim: realistic (hierarchical + auto + adopt eliminate much).
+codemod_40pct_manual_classes: Dynamic/third-party heavy components, custom i18n logic, Shadow roots without bridge.
+findings: None.
+
+--- T10: DEMO EVALUATION ---
+demo_accessible_to_reviewer: no (tool limitations on live interactive PHP demo; evaluated via source patterns in RFC + extensions.js + tests).
+Structural verdict: Matches expected (scope hierarchy, autoRegister, adopt rules, ephemeral capture, HMAC/isTrusted paths, i18n resolver, describe_v2). 10 locales + CJK/RTL structurally covered.
+findings: None.
+
+--- T11: AUTHOR OPEN QUESTIONS ---
+Q1: Hierarchical scope preferred over graph for simplicity and serialization.
+Q2: Strict mode default yes (with i18n warnings first).
+Q3: Hybrid (spec seeds + community).
+Q4: Defensible.
+Q5: Realistic.
+Q6: Spec repo for core plugins, community for others.
+Q7: Gaps in Solid/Lit/Storybook/telemetry/VSCode (see T7).
+Q8: Deferrals acceptable.
+Q9: Correct.
+Q10: Honored.
+Q11: Keep L1 (strong recommendation; L2 would bloat and conflict).
+
+--- T12: CLOSING RECOMMENDATION ---
+READINESS: yes-with-conditions
+BLOCKERS: []
+CONDITIONS: [T4-F1 istrusted_webview_quirks, T5-F1 i18n_strict_incremental, T7-F1 tooling_gaps_frameworks]
+SCORE_AXES:
+spec_clarity: 9/10
+ai_test_tooling: 8/10
+adoption_ease: 7/10 (improved from Claude's 6/10 via primitives)
+ambition_feasibility: 8/10
+v2_announce_ready: 8/10
+ONE_LINER: Strong v2.0-rc1 with excellent primitives and security hardening; address WebView quirks, i18n strictness, and tooling gaps for tag.
+--- ADDITIONAL OBSERVATIONS ---
+Yujin case study template is honest but populate it before final tag for credibility. Overall high quality; prior rounds' feedback well incorporated.
+=== END REVIEW ===

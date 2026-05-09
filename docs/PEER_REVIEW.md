@@ -285,6 +285,107 @@ cognitive disability).**
 
 ---
 
+## Round 3: v1.9 -> v2.0 review (in progress, May 2026)
+
+This round reviews `v2.0.0-rc1` (commits f251a32 + ec0d305 +
+9350339 on `main`). The prompt is `PromptEvaluacion5.txt` (URL-fetch
+variant) and `PromptEvaluacion5_Inline.txt` (embedded-bundle variant
+for reviewers that cannot fetch raw URLs).
+
+**Operational note**: at the time of this writing only Grok 4 was
+able to fetch + read the 14 required documents. The remaining
+panellists (DeepSeek, ChatGPT, Mistral Le Chat, MS Copilot, Claude
+arbiter) reported inability to fetch the canonical raw URLs. The
+inline-bundle prompt was created to unblock that -- same review
+contract, documents embedded.
+
+### Grok 4 (Fast Model) -- 2026-05-09
+
+**Verdict:** `yes-with-conditions`.
+**Score axes:**
+- Spec clarity: 9/10
+- AI/test tooling: 8/10
+- Adoption ease: 7/10 (improved from Claude's 6/10 in v1.9 closing
+  via the new primitives)
+- Ambition vs feasibility: 8/10
+- v2 announce ready: 8/10
+
+**One-liner:** *"Strong v2.0-rc1 with excellent primitives and
+security hardening; address WebView quirks, i18n strictness, and
+tooling gaps for tag."*
+
+**Findings flagged (3 conditions; zero blockers):**
+
+| ID | Severity | Code | Source |
+|---|---|---|---|
+| T4-F1 | high | `istrusted_webview_quirks` | scope doc 130-136 + spec 285-288 |
+| T5-F1 | medium | `i18n_strict_incremental` | i18n guide 100-109 + spec 352 |
+| T7-F1 | high | `tooling_gaps_frameworks` | packages/README + roadmap 173-184 |
+
+**T4-F1 (high)**: `event.isTrusted` derivation is mostly correct
+for standard browsers but mobile WebView contexts (Cordova,
+Capacitor, React Native WebView), assistive tech polyfills, and
+synthetic event runners can produce inconsistent values. Suggested
+fix: explicit guidance in spec sec 15.10 + fallback path for
+known-good assistive tech (Talon, Voice Access, OS-level Computer
+Use) in the enforcement matrix.
+
+**T5-F1 (medium)**: NAC-3 default of `error` severity on missing
+locale blocks incremental SaaS rollouts where languages are added
+one-at-a-time after launch. Suggested fix: default to `warn` at
+NAC-3 for missing locales, with opt-in to `error` via
+`set_validation_tolerance({i18n_strict: 'error'})`. Tightening
+remains available; the gate moves from default to opt-in.
+
+**T7-F1 (high)**: Tooling skeleton list (9 packages) misses
+Solid / Qwik / Lit / Web Components frameworks; Storybook /
+Playwright / Cypress integrations; telemetry exporters
+(Sentry / Datadog / OpenTelemetry); VSCode language server for
+manifest schema validation. Suggested fix: prioritise these in
+phase 4 or roll into v2.0.1 patch series.
+
+**T11 answer to Q11 (i18n L1 vs L2)**: keep L1 (strong
+recommendation; L2 would bloat NAC and conflict with established
+i18n libraries).
+
+**Demo evaluation**: source-only structural confirmation (Grok
+runtime could not interactively navigate the live demo). 10
+locales + CJK/RTL structurally covered.
+
+**Additional observation from Grok**: Yujin case study template is
+honest but should be populated before final tag for credibility.
+
+**Author response to Grok's three conditions**:
+
+- **T4-F1**: ACCEPTED. Spec sec 15.10 + scope doc sec 4b will be
+  extended with a non-normative annex listing tested assistive
+  tech behaviour + WebView quirks. Action item recorded for v2.0
+  pre-tag patch.
+- **T5-F1**: ACCEPTED with refinement. Default NAC-3 i18n severity
+  becomes `warn` with opt-in to `error`; this matches the v1.9
+  pattern for `data-nac-skip-reason` (warn at NAC-3 by default,
+  error opt-in). Spec sec 15.11 to be updated.
+- **T7-F1**: PARTIALLY ACCEPTED. Solid/Qwik/Lit + Storybook +
+  Playwright + telemetry + VSCode LS will be added to roadmap
+  phase 4 + roadmap phase 5.5 (post-tag patch series). Without
+  these v2.0 ships as adoptable but not maximally ergonomic for
+  every framework -- that is acceptable for the tag if we
+  document the gap honestly in the v2.0 announce.
+
+These three findings + author responses are now part of the v2.0.0
+release evidence. Verbatim Grok response retained in
+`docs/peer-review-round3-grok.txt`.
+
+### DeepSeek, ChatGPT, Mistral Le Chat, MS Copilot, Claude arbiter -- pending
+
+Pending re-attempt with `PromptEvaluacion5_Inline.txt` (embedded
+bundle variant). Their inability to fetch the raw URLs of the 14
+required documents downgraded their initial verdicts to
+"insufficient-evidence" per the prompt rules. Re-runs once the
+inline variant is distributed.
+
+---
+
 ## How to verify this independently
 
 ```bash
@@ -293,6 +394,9 @@ cd nac-spec
 git checkout v1.9.0
 git log -1 --format="%H %s"
 # 185c7df fix(nac-1.9): drift cleanup -- README Status block + ROADMAP v2.1 list
+
+# For v2.0.0-rc1:
+git log --oneline | head -10
 ```
 
 The full review corpus lives in:
@@ -301,6 +405,10 @@ The full review corpus lives in:
 - `EvidenciaInline_v1.9.txt` (the inline-content prompt that broke
   the closing arbiter's CDN cache, included for transparency about
   how the arbiter pass was actually run)
+- `PromptEvaluacion5.txt` (v2.0 Round 3 prompt -- URL-fetch variant)
+- `PromptEvaluacion5_Inline.txt` (v2.0 Round 3 prompt -- embedded
+  bundle variant for reviewers that cannot fetch raw URLs)
+- `docs/peer-review-round3-grok.txt` (Grok 4 verbatim review)
 
 **The cost of being wrong about a v2.0 announce is on the author,
 not on you.** If you are evaluating NAC for adoption and find the
@@ -312,4 +420,4 @@ test.
 
 **License:** MIT.
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
-**Last updated:** 2026-05-08 (post v1.9.0 closing pass).
+**Last updated:** 2026-05-09 (Round 3 in progress; Grok 4 first responder).
