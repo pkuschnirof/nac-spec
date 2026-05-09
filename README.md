@@ -5,6 +5,20 @@
 > interface as if they were human users -- without reading the source
 > code, without fragile selectors, without manual test scripts.
 
+> **Two principles. Same contract.**
+>
+> 1. **The system disappears**: humans interact with any NAC-conformant
+>    UI through natural language. They do NOT learn the backend.
+> 2. **Equality of access for humans, bots, agents, and AI**: every
+>    operator class --human voice, AT, RPA, AI agent, autonomous
+>    Computer-Use-- consumes the same manifest with the same security
+>    guarantees. No one needs prior backend training.
+>
+> Both principles are the same contract from two perspectives. The
+> system disappears for humans BECAUSE every operator class accesses
+> it through the manifest layer. NAC v2.0 (RFC sec 0a, spec sec 16)
+> formalises this; v1.9 implied it.
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![NAC v2.0.0-rc4](https://img.shields.io/badge/NAC-v2.0.0--rc4-violet.svg)](spec/NAC-v2.0.md)
 [![NAC v1.9.0 stable](https://img.shields.io/badge/v1.9.0-stable-success.svg)](spec/NAC-v1.0.md)

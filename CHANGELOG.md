@@ -22,6 +22,117 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [2.0.0-rc5] - 2026-05-09
+
+PATCH-style update on top of rc4. Codifies the central
+architectural insight: NAC is the visibility layer; the
+intermediary LLM is the disambiguator. Two principles raised to
+binding-text status across spec/RFC/migration-guide/README.
+
+37/37 tests pass (was 30/30 in rc4; 7 new for rc5 hooks).
+
+### Spec additions
+
+- **Sec 0a (RFC) -- Philosophy. NEW.**
+  Two principles, both binding:
+  1. The system disappears: the user interacts in natural
+     language; learning slugs/plugin names is NOT a
+     prerequisite to operate the UI.
+  2. Equality of access for humans, bots, agents and AI: every
+     operator class consumes the SAME manifest. The manifest IS
+     the permission. No second authorization layer keyed on
+     operator class.
+  Lists the design choices each principle motivates (manifest-
+  as-truth, no whitelist/blacklist on intermediaries, sitemap as
+  navigational metadata only).
+
+- **Sec 16 (spec) -- Intermediary system prompt contract. NEW.**
+  Hardens the contract between NAC runtime and the LLM that
+  disambiguates user intent. Subsections:
+  16.1 Why the contract exists (system disappears + equality of
+       access motivate the rules).
+  16.2 What the intermediary MUST do (treat tree as single source
+       of truth; never bias by plugin slug; multi-locale label_i18n
+       matching; recovery affordance on no-match).
+  16.3 What the intermediary MUST NOT do (no whitelist/blacklist;
+       no refusal for slugs in the tree; no privileging operator
+       class; no parsing manifest verbs as action kinds).
+  16.4 Recovery affordance contract (top-3 closest candidates on
+       no-match, NOT a flat refusal).
+  16.5 Multi-locale resolution rules (match against label_i18n in
+       any of the 10 supported locales; locale-mixed prompts OK).
+  This codifies what was previously implicit in the demo backend
+  prompt; intermediaries that violate sec 16 break the "system
+  disappears" principle.
+
+- **Sec 17 (spec) -- Sitemap primitive. NEW (OPTIONAL).**
+  Solves the "100+ screens" problem without violating principle
+  2. Hosts declare a navigational catalog so the intermediary
+  can plan paths to slugs not in the current visible tree.
+  17.1 Why a sitemap layer (visible tree is one projection).
+  17.2 Public API: NAC.declareSitemap({paths:[{slug, label_i18n,
+       affordance_to_navigate, requires_permission, tags}]}).
+  17.3 Authority separation (CRITICAL): sitemap is navigational
+       metadata only, NEVER authoritative for can-operate
+       decisions. The visible tree remains the only authority.
+  17.4 When to use (50+ logical screens; user can ask for
+       not-currently-visible paths; UI map for accessibility
+       audits).
+  17.5 Format extensibility (additive fields; `tags` host-defined).
+
+### Runtime additions
+
+- `NAC.declareSitemap(spec)` registers the path catalog. Validates:
+  spec is `{paths: array}`; each path has non-empty `slug`; no
+  duplicate slugs in one declaration.
+- `NAC.declareSitemap(null)` clears the sitemap.
+- `NAC.getSitemap()` returns a defensive shallow copy.
+- `describe_v2().sitemap` exposes the catalog (or `null`).
+- `describe_v2().nac_version` bumped from `2.0.0-rc3` to
+  `2.0.0-rc5` (corrects a stale literal that was not updated for
+  rc4).
+- `NAC.version_v2` bumped to `'2.0.0-rc5'`.
+
+### Migration guide additions
+
+- New section 6b -- Intermediary system prompt requirements
+  (NEW v2.0-rc4+). Subsections cover why this exists, what the
+  prompt MUST do, multi-step navigation pattern, how to test the
+  intermediary, sitemap as optional layer.
+
+### README additions
+
+- Header now leads with the two principles right after the
+  tagline, so adopters see the philosophy before the tech.
+
+### Tests added
+
+7 rc5 tests in tests/nac-v2-extensions.spec.js:
+- `rc5: declareSitemap stores paths and exposes via describe_v2`
+- `rc5: declareSitemap rejects non-object spec`
+- `rc5: declareSitemap rejects entry without slug`
+- `rc5: declareSitemap rejects duplicate slugs`
+- `rc5: declareSitemap(null) clears the sitemap`
+- `rc5: getSitemap returns defensive copy (no mutation leak)`
+- `rc5: describe_v2 includes nac_version=2.0.0-rc5`
+
+### Backend reference fix (Yujin nac-demo)
+
+The Yujin demo intermediary (`crm_desa/api/v1/yujin.php`
+function `yjNacDemoSystemPrompt`) was biased toward the 27 v1.9
+demo widgets and refused to operate on later-added plugins
+(reproduced as: "no encuentro el boton sign as agent" for the
+`v20_panel.X` family registered through `NAC.register`). Fixed
+by rewriting the prompt opening to enforce sec 16 as binding
+contract:
+- Adds an explicit PHILOSOPHY preamble naming the two principles.
+- Adds 6 ABSOLUTE RULES (A-F) prohibiting whitelists, refusals
+  for tree-resident slugs, training-data bias, and flat
+  refusals on no-match.
+- Reorients the action-kind catalog so manifest verbs are
+  passed through `click_by_verb`, never invented as new kinds.
+This fix is reference for any intermediary integrating NAC.
+
 ## [2.0.0-rc4] - 2026-05-09
 
 PATCH-style update on top of rc3. Closes the 4 valid findings

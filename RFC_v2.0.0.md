@@ -21,6 +21,70 @@ companion documents:
 
 ---
 
+## 0a. Philosophy (added v2.0-rc4)
+
+NAC's purpose is dual and these two principles define the contract:
+
+**1. The system disappears.** The human user interacts with any
+NAC-conformant UI through natural language (voice, chat, RPA).
+They do NOT have to learn backend specifics, slug names, or
+navigation hierarchy. The intermediary LLM consumes the NAC
+manifest and resolves ambiguity into specific slug invocations.
+
+**2. Equality of access for humans, bots, agents, and AI.** The
+same NAC-conformant UI is operated identically by:
+- a screen-reader user (NVDA, JAWS, VoiceOver),
+- a voice-control runner (Dragon, Talon, Voice Access),
+- a chat-driven assistant,
+- an RPA bot,
+- an autonomous AI agent (Anthropic Computer Use, OpenAI Operator),
+- and any combination of the above driving the same UI.
+
+None of them need backend training, schema knowledge, or
+special API access. They all consume the same manifest through
+the same API surface, with the same security guarantees (HMAC +
+isTrusted attestation + audit log) provided by the spec.
+
+**These two principles are not separate features.** They are the
+same contract from two perspectives. The system disappears for
+humans BECAUSE operators of every kind --including AI-- access it
+through the same manifest layer. If the contract is broken for one
+class of operator, it is broken for all.
+
+This dual purpose is the reason for several specific design
+choices in v2.0:
+
+- HMAC mandatory at NAC-3 (section 9): regulated environments
+  need verifiable agent provenance, and `audit_required` events
+  must be honoured uniformly across humans/bots/agents.
+- isTrusted identity binding (section 9): impersonation paths
+  available to bots/agents in v1.9 are closed in v2.0; humans
+  retain their attestation, agents must sign.
+- L1.5 i18n contract (section 10): every operator class consumes
+  the same labels in the same locales, with no translation gap.
+- Adopt third-party (section 3): when a third-party widget is
+  wrapped, ALL operator classes (human voice, bot, AI) gain
+  access simultaneously; the contract does not privilege one
+  class.
+- Intermediary system prompt contract (NEW section 16, sec 16
+  of spec): the LLM intermediary that sits between human language
+  and the manifest is itself bound by the contract -- no
+  whitelists, no hardcoded slugs, manifest is the single source
+  of truth for operability.
+- Sitemap primitive (NEW section 17 of spec): for apps with many
+  screens, the sitemap layer keeps principle 2 working at scale.
+  Without it, scaled apps require the intermediary to "know" the
+  app structure, which means privileging trained agents over
+  fresh ones, which breaks equality.
+
+This philosophy section was added in v2.0-rc4 because the rc3
+peer review surfaced a specific incident where an intermediary
+backend (Yujin's `/crm/api/v1/yujin/nac-demo`) was hardcoded to
+27 specific plugin slugs and refused operations on a newly-added
+plugin that was correctly registered in the manifest. The bug was
+in the intermediary, not the spec, but the spec did not yet
+formalise the intermediary contract. v2.0-rc4 closes that gap.
+
 ## 0. Abstract
 
 NAC v2.0 is a **strict superset** of v1.9.0:

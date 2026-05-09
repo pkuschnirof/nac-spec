@@ -706,6 +706,228 @@ can drop to 1%.
 
 ---
 
+## 16. Intermediary system prompt contract (NEW v2.0-rc4)
+
+### 16.1 Why this section exists (philosophy)
+
+NAC's purpose is dual:
+
+1. **The system disappears**. A human user interacts with any NAC-
+   conformant UI through natural language (voice, chat, RPA). They
+   do NOT have to learn backend specifics, slug names, or
+   navigation hierarchy. The intermediary LLM consumes the NAC
+   manifest and resolves ambiguity.
+
+2. **Equality of access for humans, bots, agents, and AI**. The
+   same NAC-conformant UI is operated identically by a screen-
+   reader user, a voice-control runner, a chat-driven assistant,
+   an RPA bot, an autonomous AI agent, or a Computer-Use
+   instance. None of them need backend training, schema knowledge,
+   or special API access. They all consume the same manifest with
+   the same security guarantees (HMAC + isTrusted attestation +
+   audit log).
+
+These two principles are NOT separate features. They are the same
+contract from two perspectives: the system disappears for humans
+because operators of every kind --including AI-- access it through
+the same manifest layer.
+
+If an LLM intermediary applies a whitelist, hardcodes plugin
+slugs, or refuses operations on elements that ARE in the manifest,
+**both principles fail simultaneously**. The user perceives a
+system with rules to learn (principle 1 broken), and bots/agents
+that see the manifest are systematically refused (principle 2
+broken). This section makes those failures non-conformant.
+
+### 16.2 Normative requirements for intermediaries
+
+An LLM intermediary that consumes a NAC manifest from a frontend
+and dispatches actions back MUST:
+
+1. **Treat the manifest as the single source of truth for
+   operability.** Specifically: every slug present in
+   `NAC.describe()` output is operable. Every slug NOT present
+   is not. The intermediary MUST NOT maintain a separate
+   whitelist or blacklist of allowed plugins/elements.
+2. **Resolve ambiguity by exhausting matching heuristics in this
+   priority order**:
+   - exact textContent match
+   - exact label_i18n match in user's current locale
+   - exact label_i18n match in any other locale (English fallback)
+   - fuzzy contains in textContent / label
+   - aria-label contains
+   - semantic role + position ("the third button on the panel")
+3. **NEVER respond "I don't have access" or "I can't do that" or
+   "I have no control over this" when the element exists in the
+   manifest.** The element's presence in the manifest IS the
+   permission. If the element should not be operable in a given
+   context, the host removes it from the manifest (e.g., via
+   `NAC.gcIntermediateScopes`, `tenant_entity_toggles`, or feature
+   flags), NOT via intermediary refusal.
+4. **On failed match, return `nac:command_rejected`** with the
+   top-3 similarity candidates so the user gets recovery
+   affordance. The user MUST NOT be told the system is incapable
+   when it is not.
+5. **Process the entire manifest, not just a subset**. Some
+   intermediaries truncate the manifest to fit a token budget;
+   when truncation occurs, it MUST preserve the slug + label at
+   minimum so the disambiguation heuristics still function.
+6. **Honour HMAC at NAC-3**: every dispatched action emitted by
+   the intermediary MUST carry `source.type='agent'` +
+   `source.signature` per sec 6.2.27.
+
+Implementations of intermediary system prompts SHOULD ship a
+test suite that:
+- Verifies a manifest with N plugins produces M correct
+  resolutions for M user prompts.
+- Verifies that adding a new plugin to the manifest at runtime
+  makes its elements immediately resolvable.
+- Verifies that the intermediary does NOT refuse elements that
+  ARE in the manifest.
+
+### 16.3 What the intermediary receives (visibility scope)
+
+Two complementary inputs:
+
+- **Visible tree** (`NAC.describe_v2()` output): the elements
+  operable RIGHT NOW. Authoritative for `can-operate` decisions.
+  Authoritative for security: if the element is not in the tree,
+  do NOT invoke.
+
+- **Sitemap** (`NAC.declareSitemap()` output, OPTIONAL primitive,
+  see sec 17): the catalog of paths the system KNOWS to exist,
+  with navigation affordances for getting from current state to
+  each path. Used by the intermediary to plan multi-step
+  navigation.
+
+The intermediary uses the sitemap to PLAN ("user wants SMTP
+config; SMTP is at `settings.system.smtp`; current visible tree
+shows `topbar.settings` button; plan: click settings, wait for
+re-render, then resolve again").
+
+The intermediary uses the visible tree to AUTHORIZE ("can I
+actually click `topbar.settings` right now? yes, it is in the
+visible tree; dispatch NAC.click").
+
+Authority lives in the visible tree always. The sitemap is
+navigational metadata, not permission.
+
+### 16.4 Failure modes the intermediary MUST avoid
+
+| Failure mode | Why it breaks the contract |
+|---|---|
+| Whitelist of allowed plugins | Principle 2 violated: bots/agents that see manifest are systematically refused. |
+| Hardcoded slug list | Principle 1 violated: user has to learn what slugs the system "knows about". |
+| Refusing on uncertainty | The user perceives the system as gatekeeper, not facilitator. The fallback is `nac:command_rejected` with top-3 candidates, not "I can't". |
+| Stale manifest cache | The intermediary refuses elements that just appeared. Manifest must be re-snapshot per turn or via SSE. |
+| Treating sitemap as authority | The intermediary invokes elements not in visible tree, bypassing security. Authority is visible-tree-only. |
+| Whitelist of allowed languages | Principle 1 violated: user must learn the supported languages. The 10-locale catalog + `NAC.locale()` resolves this; intermediary respects whatever locale the user uses. |
+
+### 16.5 Conformance test for intermediaries (added to validate_global_v2)
+
+A NAC-3-conformant intermediary integration MUST pass:
+
+- A "new plugin appears at runtime" test: register a plugin via
+  `NAC.register({plugin_slug:'X', elements:[...]})` AFTER the
+  user session begins; the intermediary MUST resolve subsequent
+  user requests against `X` without code/prompt change.
+- A "no whitelist refusal" test: send a user request matching a
+  manifest slug; the intermediary response MUST include an action
+  dispatch, not a refusal.
+
+The validator MAY ship these tests as part of `@nac-spec/cookbook`
+patterns 12 + 13 (target rc6+).
+
+---
+
+## 17. Sitemap primitive (NEW v2.0-rc4, OPTIONAL)
+
+### 17.1 Why a sitemap layer
+
+For apps with a small number of screens (1-10), the visible tree
+is enough. The user says "click X", the LLM finds X in
+`describe_v2()`, dispatches the click.
+
+For apps with many screens (100+), the visible tree is a
+projection of one current view. The user says "configurar SMTP";
+SMTP is not visible because we are on the dashboard. The LLM
+needs to KNOW that SMTP exists and HOW to navigate there.
+
+The pre-v2.0 workaround: the intermediary's training data
+included the app's structure. This violated principle 2 of sec 16
+(equality of access without backend training).
+
+The v2.0-rc4 solution: a declarative sitemap primitive that the
+host registers, and the intermediary consumes alongside the
+visible tree.
+
+### 17.2 Public API
+
+```javascript
+NAC.declareSitemap({
+  paths: [
+    {
+      slug: 'settings.system.smtp',
+      label_i18n: { es: 'Configuracion SMTP', en: 'SMTP settings', ... },
+      affordance_to_navigate: [
+        { action: 'click', target: 'topbar.settings' },
+        { action: 'click', target: 'settings.system' },
+        { action: 'click', target: 'settings.system.smtp' }
+      ],
+      requires_permission: ['admin'],  /* optional, for hint only */
+      tags: ['integration', 'mail', 'configuration']
+    },
+    /* ... */
+  ]
+});
+```
+
+`describe_v2()` exposes the sitemap via a new field
+`sitemap: { paths: [...] }`. Intermediaries serialise the sitemap
+into their context alongside the visible tree.
+
+### 17.3 Authority separation (CRITICAL)
+
+The sitemap is **navigational metadata only**. It is NOT
+authoritative for `can-operate` decisions.
+
+| Question | Answered by |
+|---|---|
+| Can I click slug X right now? | visible tree (`describe_v2().v2_scope_entries`). Yes if present, no if not. |
+| Does slug X exist somewhere in the system? | sitemap (`describe_v2().sitemap.paths`). |
+| How do I navigate to slug X? | sitemap `affordance_to_navigate`. |
+| Does the user have permission for X? | host's authorization layer (NAC does not implement permissions; `requires_permission` is hint metadata only). |
+
+The intermediary MUST resolve in this order:
+1. Is the slug in the visible tree? If yes, dispatch immediately.
+2. Is the slug in the sitemap? If yes, plan the navigation
+   sequence using `affordance_to_navigate`. Each step in the
+   sequence MUST be re-validated against the visible tree before
+   dispatch.
+3. Otherwise, return `nac:command_rejected` with top-3
+   candidates.
+
+### 17.4 When to use sitemap
+
+- Apps with 50+ logical screens / paths.
+- Apps where the user can ask for paths not currently visible.
+- Apps that want to publish their full UI surface to documentation
+  / search (the sitemap doubles as a UI map for accessibility
+  audits).
+
+When NOT to use:
+- Single-page apps with all affordances visible at once.
+- Demos / examples (the visible tree is enough).
+
+### 17.5 Sitemap format extensibility
+
+The `paths[].tags` field is for host-defined categorisation
+(searchable). The `requires_permission` field is for hint UI
+only. Future extensions may add `deprecated_since`,
+`replaces_path`, `availability_window`, etc.; all additive.
+
+---
+
 ## 15.14 Backward compatibility -- strict superset proof
 
 ### Public API diff

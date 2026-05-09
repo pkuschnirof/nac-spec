@@ -480,6 +480,134 @@ flow until the vendor adopts.
 
 ---
 
+## 6b. Intermediary system prompt requirements (NEW v2.0-rc4)
+
+This is for any deployment where an LLM sits between the human
+user and the NAC manifest -- chatbots, voice assistants,
+RPA controllers, AI agents.
+
+**Most adopters do NOT write their own intermediary**: they use a
+hosted one (Anthropic Claude, OpenAI, Google) or a vendored chat
+widget. **In that case this section is purely informational** --
+read it so you know what your intermediary should do.
+
+**A small number of adopters DO write their own intermediary**:
+they deploy a backend that takes user prompts, queries an LLM
+with the NAC manifest as context, and dispatches actions. **For
+those, this section is normative** -- spec sec 16 mandates the
+contract.
+
+### 6b.1 Why this section exists
+
+NAC's two principles (the system disappears for humans + equality
+of access for humans/bots/agents/AI) only deliver if the
+intermediary does not insert itself as a gatekeeper. A common
+mistake: the intermediary's system prompt has a hardcoded list of
+"allowed plugins". The user adds a new plugin to their app, the
+manifest correctly reflects it, but the intermediary refuses
+because the prompt didn't list it.
+
+This breaks both principles simultaneously:
+- The user perceives a system with rules to learn (which
+  plugins the chat "knows about").
+- A bot or AI agent looking at the same manifest sees the same
+  refusal, defeating equality.
+
+### 6b.2 What your intermediary system prompt MUST do
+
+```
+INPUTS YOU RECEIVE EACH TURN:
+  - prompt: the user's natural-language request
+  - nac_tree: full NAC.describe_v2() output. Authoritative.
+  - sitemap (optional): NAC.declareSitemap() catalog.
+  - history: prior turns
+
+YOUR JOB:
+  1. The nac_tree IS the source of truth. If a slug is in the
+     tree, it is operable. If it is not, it is not.
+  2. Match user intent to a slug using these heuristics in order:
+     - exact textContent match
+     - exact label_i18n match in user locale
+     - exact label_i18n in any other locale
+     - fuzzy contains (textContent, label, aria-label)
+     - semantic role + position
+  3. If multiple matches: ask one clarifying question.
+  4. If no match: return nac:command_rejected with top-3 closest
+     candidates. NEVER refuse with "I don't have access".
+
+NEVER:
+  - Maintain a whitelist or blacklist of plugin slugs.
+  - Refuse operations on slugs that ARE in the tree.
+  - Hardcode the app structure beyond the tree input.
+  - Treat sitemap as authority. Sitemap is navigation; tree is
+    permission.
+  - Claim the system has no control over X if X is in the tree.
+```
+
+### 6b.3 Multi-step navigation when target is not visible
+
+If the user requests `settings.system.smtp` but the visible tree
+shows only the dashboard:
+
+1. Query the sitemap for the path. If found, read
+   `affordance_to_navigate`.
+2. Execute the affordance steps one at a time:
+   - Validate each step against the current visible tree.
+   - Dispatch click; wait for the tree to refresh.
+   - Repeat until the target is in the tree.
+3. Dispatch the target action.
+4. Each step emits its own ProvenanceBlock with HMAC sign.
+
+If the path is not in the sitemap either: return
+`nac:command_rejected` with top-3 candidates by similarity.
+
+### 6b.4 Test your intermediary
+
+```bash
+# Test 1: new plugin appears at runtime
+# - Register a new plugin via NAC.register({plugin_slug:'X'}) AFTER
+#   the user session begins.
+# - Send user prompt that targets X.
+# - Assert: intermediary dispatches a NAC.click() action on X
+#   without requiring code or prompt change.
+
+# Test 2: no whitelist refusal
+# - Register a plugin with an unusual slug like 'experimental.alpha'.
+# - Send user prompt that targets it.
+# - Assert: intermediary response includes action dispatch, not refusal.
+
+# Test 3: multi-locale resolution
+# - User sends prompt in Italian; manifest labels are in Spanish.
+# - Assert: intermediary resolves via fallback chain
+#   (label_i18n.it -> label_i18n.es -> label_i18n.en).
+```
+
+### 6b.5 Sitemap (optional, for apps with 50+ paths)
+
+If your app has many screens that can NOT all be visible at once,
+declare a sitemap:
+
+```javascript
+NAC.declareSitemap({
+  paths: [
+    {
+      slug: 'settings.system.smtp',
+      label_i18n: { /* 10 locales */ },
+      affordance_to_navigate: [
+        { action: 'click', target: 'topbar.settings' },
+        { action: 'click', target: 'settings.system' },
+        { action: 'click', target: 'settings.system.smtp' }
+      ],
+      tags: ['mail', 'integration']
+    }
+  ]
+});
+```
+
+The sitemap is OPTIONAL. Apps with 1-10 screens do not need it.
+
+---
+
 ## 7. Common pitfalls
 
 | Pitfall | Symptom | Fix |

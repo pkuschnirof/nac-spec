@@ -14,6 +14,7 @@
      - NAC.declareVirtual(spec)             virtualized lists
      - NAC.captureEphemeral(opts)           transient UI capture
      - NAC.setTenantPrefix(slug)            multi-tenant naming
+     - NAC.declareSitemap(spec)             optional sitemap (sec 17)
      - NAC.attestUserGesture(opts)          isTrusted attestation
      - NAC.t(key, opts?)                    i18n resolver
      - NAC.registerCatalog(catalog)         i18n catalog registration
@@ -1154,6 +1155,59 @@
      no automatic GC; documented growth pattern. */
   var _intermediateScopes = Object.create(null);
 
+  /* v2.0-rc5 (spec sec 17): optional sitemap primitive. Hosts with
+     50+ logical screens declare the full path catalog so the
+     intermediary can plan navigation to slugs not currently in
+     the visible tree. Authority separation is CRITICAL: the
+     sitemap is navigational metadata only, never a source of
+     can-operate truth. The visible tree (_scopes / v1 manifest)
+     remains the only authority for dispatch. */
+  var _sitemap = null;        /* { paths: [...] } or null */
+
+  function declareSitemap(spec) {
+    if (spec === null || typeof spec === 'undefined') {
+      _sitemap = null;
+      return;
+    }
+    if (typeof spec !== 'object' || !Array.isArray(spec.paths)) {
+      throw new Error('[NAC v2] declareSitemap: spec must be { paths: [...] }');
+    }
+    var seenSlugs = Object.create(null);
+    var clean = [];
+    for (var i = 0; i < spec.paths.length; i++) {
+      var p = spec.paths[i];
+      if (!p || typeof p.slug !== 'string' || p.slug === '') {
+        throw new Error('[NAC v2] declareSitemap: paths[' + i + '].slug required');
+      }
+      if (seenSlugs[p.slug]) {
+        throw new Error('[NAC v2] declareSitemap: duplicate slug "' + p.slug + '"');
+      }
+      seenSlugs[p.slug] = true;
+      var entry = { slug: p.slug };
+      if (p.label_i18n && typeof p.label_i18n === 'object') {
+        entry.label_i18n = p.label_i18n;
+      }
+      if (Array.isArray(p.affordance_to_navigate)) {
+        entry.affordance_to_navigate = p.affordance_to_navigate.slice();
+      }
+      if (Array.isArray(p.requires_permission)) {
+        entry.requires_permission = p.requires_permission.slice();
+      }
+      if (Array.isArray(p.tags)) {
+        entry.tags = p.tags.slice();
+      }
+      clean.push(entry);
+    }
+    _sitemap = { paths: clean };
+  }
+
+  function getSitemap() {
+    if (!_sitemap) return null;
+    /* return a defensive shallow copy so callers cannot mutate
+       internal state */
+    return { paths: _sitemap.paths.slice() };
+  }
+
   /* Public GC API (rc4): the host passes a Set or array of path
      strings that are still considered "active". Any entry in the
      index whose path is NOT in that set gets removed. */
@@ -1205,7 +1259,7 @@
       return { slug_pattern: v.slug_pattern, count: count };
     });
     return {
-      nac_version: '2.0.0-rc3',
+      nac_version: '2.0.0-rc5',
       timestamp: Date.now(),
       tenant_prefix: _tenantPrefix,
       v1_plugins: v1.plugins || [],
@@ -1214,7 +1268,11 @@
       virtual: virtual_summary,
       ephemeral_log: _ephemeralRing.slice(),
       locale: _currentLocale,
-      supported_locales: _supported.slice()
+      supported_locales: _supported.slice(),
+      /* v2.0-rc5 (spec sec 17): null when host has not declared a
+         sitemap (small SPAs / demos); otherwise the path catalog.
+         Intermediaries treat this as PLANNING data, not authority. */
+      sitemap: _sitemap ? { paths: _sitemap.paths.slice() } : null
     };
   }
 
@@ -1328,6 +1386,8 @@
   NAC.describe_v2            = describe_v2;
   NAC.validate_global_v2     = validate_global_v2;
   NAC.gcIntermediateScopes   = gcIntermediateScopes;
+  NAC.declareSitemap         = declareSitemap;
+  NAC.getSitemap             = getSitemap;
 
   /* Convenience: expose internals for tests */
   NAC.__v2 = {
@@ -1360,7 +1420,7 @@
   setTimeout(_warmCrypto, 0);
 
   /* Bump version constants */
-  NAC.version_v2      = '2.0.0-rc4';
+  NAC.version_v2      = '2.0.0-rc5';
   NAC.spec_version_v2 = '2.0';
 
   document.dispatchEvent(new CustomEvent('nac:v2_installed', {

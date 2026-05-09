@@ -294,8 +294,8 @@ function test(name, fn) {
     assert.strictEqual(t.adopt_hard_fail_ms, 20);
   });
 
-  await test('rc4: version is 2.0.0-rc4', () => {
-    assert.strictEqual(NAC.version_v2, '2.0.0-rc4');
+  await test('rc5: version is 2.0.0-rc5', () => {
+    assert.strictEqual(NAC.version_v2, '2.0.0-rc5');
   });
 
   await test('rc4: gcIntermediateScopes() prunes index (Mistral T7-F2)', () => {
@@ -320,6 +320,71 @@ function test(name, fn) {
     const t = NAC.get_perf_tolerance();
     assert.strictEqual(t.perf_budget_fail_rate_pct, 2);
     assert.strictEqual(t.perf_budget_window_ms, 5000);
+  });
+
+  /* ----- rc5: sitemap primitive (spec sec 17) ----- */
+  await test('rc5: declareSitemap stores paths and exposes via describe_v2', () => {
+    NAC.declareSitemap({
+      paths: [
+        {
+          slug: 'settings.system.smtp',
+          label_i18n: { es: 'Configuracion SMTP', en: 'SMTP settings' },
+          affordance_to_navigate: [
+            { action: 'click', target: 'topbar.settings' },
+            { action: 'click', target: 'settings.system' }
+          ],
+          requires_permission: ['admin'],
+          tags: ['integration', 'mail']
+        }
+      ]
+    });
+    const d = NAC.describe_v2();
+    assert.ok(d.sitemap, 'sitemap is exposed');
+    assert.strictEqual(d.sitemap.paths.length, 1);
+    assert.strictEqual(d.sitemap.paths[0].slug, 'settings.system.smtp');
+    assert.deepStrictEqual(d.sitemap.paths[0].tags, ['integration', 'mail']);
+  });
+
+  await test('rc5: declareSitemap rejects non-object spec', () => {
+    assert.throws(() => NAC.declareSitemap('nope'), /paths/);
+    assert.throws(() => NAC.declareSitemap({}), /paths/);
+  });
+
+  await test('rc5: declareSitemap rejects entry without slug', () => {
+    assert.throws(() => NAC.declareSitemap({
+      paths: [{ label_i18n: { es: 'x', en: 'x' } }]
+    }), /slug/);
+  });
+
+  await test('rc5: declareSitemap rejects duplicate slugs', () => {
+    assert.throws(() => NAC.declareSitemap({
+      paths: [
+        { slug: 'a.b' },
+        { slug: 'a.b' }
+      ]
+    }), /duplicate/);
+  });
+
+  await test('rc5: declareSitemap(null) clears the sitemap', () => {
+    NAC.declareSitemap({ paths: [{ slug: 'foo.bar' }] });
+    assert.ok(NAC.describe_v2().sitemap);
+    NAC.declareSitemap(null);
+    assert.strictEqual(NAC.describe_v2().sitemap, null);
+  });
+
+  await test('rc5: getSitemap returns defensive copy (no mutation leak)', () => {
+    NAC.declareSitemap({ paths: [{ slug: 'gs.test', tags: ['t'] }] });
+    const out = NAC.getSitemap();
+    out.paths.push({ slug: 'injected' });
+    const fresh = NAC.getSitemap();
+    assert.strictEqual(fresh.paths.length, 1, 'mutation does not leak');
+    assert.strictEqual(fresh.paths[0].slug, 'gs.test');
+    NAC.declareSitemap(null);
+  });
+
+  await test('rc5: describe_v2 includes nac_version=2.0.0-rc5', () => {
+    const d = NAC.describe_v2();
+    assert.strictEqual(d.nac_version, '2.0.0-rc5');
   });
 
   /* ----- summary ----- */
