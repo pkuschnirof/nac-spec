@@ -1691,7 +1691,7 @@ a written-out design-system layer pattern in MANUAL.md.
 
 - **MANUAL.md Event correctness, framework-specific timing
   (NEW section)**. Per-framework commit-barrier table
-  (React/Vue/Svelte/Angular/Qwik) for the `data-nac-state` ↔
+  (React/Vue/Svelte/Angular/Qwik) for the `data-nac-state` <->
   `aria-*` boundary. Driven by HuggingChat: "React 18 with
   concurrent features, useTransition or useDeferredValue batch
   and defer DOM commits by design".
@@ -1707,7 +1707,7 @@ a written-out design-system layer pattern in MANUAL.md.
 ### Demo + backend fixes
 
 - **NAC + Yujin demo (yujin.app/nac-spec/example.php)**: when
-  the AI fallback chain (Claude → DeepSeek → Groq) exhausts and
+  the AI fallback chain (Claude -> DeepSeek -> Groq) exhausts and
   lands on the canned tier, the backend now short-circuits BEFORE
   attempting JSON parse. Returns the localised "AI temporarily
   unavailable" apology with `unavailable: true` flag instead of

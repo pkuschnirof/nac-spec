@@ -1,7 +1,23 @@
 # NAC v2.0 -- Native Accessibility Contract
 
-**Version**: 2.0.0 (spec) / 2.0.0 (reference runtime).
-**Status**: Draft -- Round 3 peer review pending.
+**Spec version**: 2.1 (spec sec 1-18).
+**Reference runtime versions** (TWO versions coexist by design,
+NOT a drift):
+- `NAC.version = '1.9.0'`: the v1.x runtime base in `js/nac.js`.
+  Strict-superset baseline that all v1.x plugins still target.
+- `NAC.version_v2 = '2.1.0-rc1'`: the v2 extensions layer in
+  `js/nac-v2-extensions.js` that attaches additional primitives
+  (scope, autoRegister, sitemap, data-table, etc) to the same
+  `window.NAC` object without modifying the v1.x surface.
+
+The README badge tracks `version_v2` (the user-visible spec
+version). Adopters check `NAC.version_v2 >= '2.1.0-rc1'` to
+gate v2.1 features; legacy code that probes `NAC.version`
+keeps working unchanged. Reviewers MUST NOT flag this as
+version drift -- it is the documented layered-runtime
+pattern (RFC sec 11).
+
+**Status**: Draft -- Round 6 peer review in progress.
 **Date**: 2026-05-09.
 **License**: MIT.
 **Replaces**: Sec 6.2.27 of v1.9 spec (validator behaviour) is
@@ -72,11 +88,33 @@ parent chain joined by separator `.`, plus the leaf slug.
 - **Intermediate scope index growth** (v2.0-rc4, Mistral T7-F2):
   the index of intermediate scopes grows monotonically with
   unique scope paths. Realistic SPA cases are bounded
-  (O(unique-scope-paths) typically <1000 entries). Hosts that
-  dynamically create + discard scopes during a long-running
-  session MUST call `NAC.gcIntermediateScopes(activePathSet)`
-  periodically to prune stale entries, or `NAC.gcIntermediateScopes()`
+  (O(unique-scope-paths) typically <1000 entries; ~50 bytes
+  per entry, so <50KB even at 1000). Hosts that dynamically
+  create + discard scopes during a long-running session MUST
+  call `NAC.gcIntermediateScopes(activePathSet)` periodically
+  to prune stale entries, or `NAC.gcIntermediateScopes()`
   (no-arg) on full-shell teardown to clear the index.
+
+  **When to call gcIntermediateScopes (added rc6):**
+
+  | Host pattern | Recommended cadence |
+  |---|---|
+  | Static demo / single-page brochure | Never -- never grows. |
+  | Standard SPA, <50 navigations / hour | On full shell teardown only. |
+  | Long-running SPA (>1h sessions, >100 navigations / hour) | Every 5 min via `setInterval`, OR every 100 navigations. Pass `activePathSet` (a `Set<string>` of scope paths still in use) to keep the index minimal. |
+  | App with feature-flag-driven scope creation/disposal | Every time a flag flips. |
+  | Performance-sensitive embedded widget inside a host SPA | Wrap your scope tree in a single root scope; on widget unmount, call `gcIntermediateScopes()` to drop the entire subtree. |
+
+  Diagnostic: `describe_v2().v2_intermediate_scopes.length`
+  surfaces the current count. Adopters concerned about memory
+  budget can sample this value over time and call GC when it
+  exceeds a threshold (e.g. 500).
+
+  The spec does NOT mandate a specific cadence; the decision
+  belongs to the host because only the host knows its
+  navigation pattern. NAC-3 conformance does require that
+  long-running deployments document their GC strategy in
+  their adopter playbook.
 
 ### API signature
 

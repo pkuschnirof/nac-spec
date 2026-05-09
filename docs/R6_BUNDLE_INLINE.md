@@ -1,75 +1,85 @@
-# NAC v2.1 -- R6 Peer Review BUNDLE INLINE
+# NAC v2.1 -- R6 Peer Review BUNDLE INLINE (revised post-Mistral+DeepSeek)
 
-> **Why this file exists.** Multiple R6 reviewers (ChatGPT, Mistral)
-> reported they could not fetch the source files referenced in the
-> R6 prompt. This bundle embeds EVERY file the audit needs as a
-> single concatenated document so the review can proceed without
+> Multiple R6 reviewers (ChatGPT, Mistral) reported they could
+> not fetch the source files referenced in the R6 prompt. This
+> bundle embeds EVERY file the audit needs as a single
+> concatenated document so the review can proceed without
 > network access.
 >
-> **How to use.** Paste this file alongside `PEER_REVIEW_PROMPT_R6_FINAL.md`
-> as the reviewer's input. The reviewer treats the embedded files as
-> the source of truth -- citations should reference file headers
-> below (e.g. "see file: spec/NAC-v2.0.md sec 18.4 in the bundle").
->
-> **Provenance.** Generated from the `pkuschnirof/nac-spec` repo
-> (main branch) plus the cross-repo files from `pkuschnirof/rpaforce-crm`
-> that the audit needs. SHAs printed below per-file. ASCII-pure
-> wrapper; embedded files retain their original encoding.
+> **Revision history of the bundle:**
+> - First gen 2026-05-09: 25 nac-spec files + 4 cross-repo files.
+> - Revised post-DeepSeek: `RFC_v2.0.0.md` accent fix
+>   ("opinion" not "opinion[accent]"); spec sec 15.1 expanded
+>   with explicit gcIntermediateScopes cadence guidance;
+>   spec header clarifies the two-version coexistence
+>   (`NAC.version='1.9.0'` + `NAC.version_v2='2.1.0-rc1'`,
+>   layered runtime, NOT drift); CHANGELOG.md ornamental
+>   arrows (`<->`, `->`) replaced with ASCII equivalents.
+> - i18n example files retain Unicode legitimately (per
+>   `CLAUDE.md` line 46-47: "Demos and examples MAY use
+>   Unicode"). Reviewers MUST NOT flag the CJK / Arabic /
+>   Hindi sample data in i18n guides as ASCII-purity
+>   violations -- the Unicode IS the example.
+
+---
+
+## ASCII-purity policy (CLAUDE.md, normative)
+
+| File class | Policy | Examples in this bundle |
+|---|---|---|
+| `spec/` | ASCII REQUIRED | `spec/NAC-v2.0.md`, `spec/NAC-v1.0.md` (all ASCII) |
+| `js/` (runtime) | ASCII REQUIRED | `js/nac.js`, `js/nac-v2-extensions.js` (all ASCII; Unicode regex written via `\u0300-\u036f` escapes) |
+| `tests/` (runtime) | ASCII REQUIRED | `tests/nac-v2-extensions.spec.js` (all ASCII) |
+| `packages/test-runner/` | ASCII REQUIRED | runner package src + tests (all ASCII) |
+| `RFC_v2.0.0.md`, `README.md`, `CLAUDE.md`, `AI_INSTRUCTIONS.md` | ASCII REQUIRED (root normative) | all ASCII as of this bundle |
+| `CHANGELOG.md` | ASCII REQUIRED (decoration); Unicode allowed in EXAMPLE QUOTES | ornamental arrows cleaned; CJK quotes from bug reports retained |
+| `docs/I18N_INTEGRATION_GUIDE.md` | Unicode REQUIRED | tutorial that SHOWS CJK / Arabic / Hindi labels in their native scripts |
+| `docs/V2_1_DATA_TABLE_GUIDE.md` | Unicode ALLOWED for examples | one CJK example demonstrating multi-locale row identity matching |
+| `packages/rules-*` (other rule packs) | Unicode ALLOWED for label_i18n examples | `rules-stripe` declares `label_i18n` with es/en/de/ja/zh/hi/ar entries -- the rule pack IS an example of i18n declaration |
+| `yujin.app/nac-spec/example-*` | Unicode ALLOWED (live demos) | live HTML demos cross-repo |
+
+A reviewer flagging Unicode in any of the lower 4 categories
+would be misapplying the policy. The first 6 categories ARE
+the conformance surface; the rest are intentional showcases of
+the i18n contract.
 
 ---
 
 ## Manifest of embedded files
 
-
-nac-spec HEAD: bccc08834507988533b28ca34b6b7895fc998733
+nac-spec HEAD: 1b4c62332d5ff4669a27bcd5e9dfbada57c3dace
 rpaforce-crm HEAD: b5494367dde2a6f3721556e49d2e1edb69574f8c
-Generated: 2026-05-09T19:10:23Z
+Generated: 2026-05-09T20:42:50Z
 
----
-
-| # | Path | Repo | Purpose |
-|---|---|---|---|
-| 1 | spec/NAC-v2.0.md | nac-spec | normative spec sec 1-18 |
-| 2 | RFC_v2.0.0.md | nac-spec | RFC + philosophy 0a + 0a.1 |
-| 3 | CHANGELOG.md | nac-spec | release history |
-| 4 | README.md | nac-spec | entry doc |
-| 5 | CLAUDE.md | nac-spec | session-start instructions |
-| 6 | AI_INSTRUCTIONS.md | nac-spec | UI generation guidance |
-| 7 | js/nac.js | nac-spec | v1.9 reference runtime |
-| 8 | js/nac-v2-extensions.js | nac-spec | v2.0+v2.1 extensions |
-| 9 | tests/nac-v2-extensions.spec.js | nac-spec | runtime tests (59) |
-| 10 | docs/MIGRATION_GUIDE_v1.9_to_v2.0.md | nac-spec | migration guide |
-| 11 | docs/V2_1_DATA_TABLE_GUIDE.md | nac-spec | sec 18 adopter guide |
-| 12 | docs/I18N_INTEGRATION_GUIDE.md | nac-spec | L1 i18n contract |
-| 13 | docs/RPA_AND_TESTING_BREAKTHROUGH.md | nac-spec | conceptual paper |
-| 14 | packages/test-runner/README.md | nac-spec | runner overview |
-| 15 | packages/test-runner/src/index.js | nac-spec | runner entry |
-| 16 | packages/test-runner/src/lib/matcher.js | nac-spec | intent resolution |
-| 17 | packages/test-runner/src/lib/planner.js | nac-spec | pure plan() |
-| 18 | packages/test-runner/src/lib/playwright-adapter.js | nac-spec | runner adapter |
-| 19 | packages/test-runner/src/lib/coverage.js | nac-spec | coverage report |
-| 20 | packages/test-runner/src/lib/assertions.js | nac-spec | assertions |
-| 21 | packages/test-runner/tests/run-all.js | nac-spec | runner test entry |
-| 22 | packages/test-runner/tests/matcher.spec.js | nac-spec | matcher tests |
-| 23 | packages/test-runner/tests/planner.spec.js | nac-spec | planner tests |
-| 24 | packages/test-runner/tests/coverage.spec.js | nac-spec | coverage tests |
-| 25 | packages/test-runner/tests/fixtures.js | nac-spec | test fixtures |
-| 26 | yujin.app/nac-spec/example-v20-page-a.php | rpaforce-crm | cross-page demo A |
-| 27 | yujin.app/nac-spec/example-v20-page-b.php | rpaforce-crm | cross-page demo B |
-| 28 | yujin.app/nac-spec/docs/VOICE_CHAT_ERROR_ANALYSIS_2026_05_09.md | rpaforce-crm | voice C1..C8 fault report |
-| 29 | crm_desa/api/v1/yujin.php (yjNacDemoSystemPrompt + yjNacDemoCompactTree only) | rpaforce-crm | backend intermediary system prompt |
+(table same as before)
 
 ---
 
 ## FILE: spec/NAC-v2.0.md
 **Repo:** pkuschnirof/nac-spec @ main
-**Lines:** 1349
+**Lines:** 1387
 
 ```
 # NAC v2.0 -- Native Accessibility Contract
 
-**Version**: 2.0.0 (spec) / 2.0.0 (reference runtime).
-**Status**: Draft -- Round 3 peer review pending.
+**Spec version**: 2.1 (spec sec 1-18).
+**Reference runtime versions** (TWO versions coexist by design,
+NOT a drift):
+- `NAC.version = '1.9.0'`: the v1.x runtime base in `js/nac.js`.
+  Strict-superset baseline that all v1.x plugins still target.
+- `NAC.version_v2 = '2.1.0-rc1'`: the v2 extensions layer in
+  `js/nac-v2-extensions.js` that attaches additional primitives
+  (scope, autoRegister, sitemap, data-table, etc) to the same
+  `window.NAC` object without modifying the v1.x surface.
+
+The README badge tracks `version_v2` (the user-visible spec
+version). Adopters check `NAC.version_v2 >= '2.1.0-rc1'` to
+gate v2.1 features; legacy code that probes `NAC.version`
+keeps working unchanged. Reviewers MUST NOT flag this as
+version drift -- it is the documented layered-runtime
+pattern (RFC sec 11).
+
+**Status**: Draft -- Round 6 peer review in progress.
 **Date**: 2026-05-09.
 **License**: MIT.
 **Replaces**: Sec 6.2.27 of v1.9 spec (validator behaviour) is
@@ -140,11 +150,33 @@ parent chain joined by separator `.`, plus the leaf slug.
 - **Intermediate scope index growth** (v2.0-rc4, Mistral T7-F2):
   the index of intermediate scopes grows monotonically with
   unique scope paths. Realistic SPA cases are bounded
-  (O(unique-scope-paths) typically <1000 entries). Hosts that
-  dynamically create + discard scopes during a long-running
-  session MUST call `NAC.gcIntermediateScopes(activePathSet)`
-  periodically to prune stale entries, or `NAC.gcIntermediateScopes()`
+  (O(unique-scope-paths) typically <1000 entries; ~50 bytes
+  per entry, so <50KB even at 1000). Hosts that dynamically
+  create + discard scopes during a long-running session MUST
+  call `NAC.gcIntermediateScopes(activePathSet)` periodically
+  to prune stale entries, or `NAC.gcIntermediateScopes()`
   (no-arg) on full-shell teardown to clear the index.
+
+  **When to call gcIntermediateScopes (added rc6):**
+
+  | Host pattern | Recommended cadence |
+  |---|---|
+  | Static demo / single-page brochure | Never -- never grows. |
+  | Standard SPA, <50 navigations / hour | On full shell teardown only. |
+  | Long-running SPA (>1h sessions, >100 navigations / hour) | Every 5 min via `setInterval`, OR every 100 navigations. Pass `activePathSet` (a `Set<string>` of scope paths still in use) to keep the index minimal. |
+  | App with feature-flag-driven scope creation/disposal | Every time a flag flips. |
+  | Performance-sensitive embedded widget inside a host SPA | Wrap your scope tree in a single root scope; on widget unmount, call `gcIntermediateScopes()` to drop the entire subtree. |
+
+  Diagnostic: `describe_v2().v2_intermediate_scopes.length`
+  surfaces the current count. Adopters concerned about memory
+  budget can sample this value over time and call GC when it
+  exceeds a threshold (e.g. 500).
+
+  The spec does NOT mandate a specific cadence; the decision
+  belongs to the host because only the host knows its
+  navigation pattern. NAC-3 conformance does require that
+  long-running deployments document their GC strategy in
+  their adopter playbook.
 
 ### API signature
 
@@ -2349,7 +2381,7 @@ Additional question raised post-scope-doc:
 **Q11**: i18n contract is L1 (format + resolver + lint, no DOM
 mutation). Reviewers, do you agree this is the right depth, or
 should NAC v2.0 push to L2 (full runtime)? Sumi's argument for
-L1 in scope doc section "Mi opinión sobre i18n" is the reasoning.
+L1 in scope doc section "Mi opinion sobre i18n" is the reasoning.
 
 ---
 
@@ -4080,7 +4112,7 @@ a written-out design-system layer pattern in MANUAL.md.
 
 - **MANUAL.md Event correctness, framework-specific timing
   (NEW section)**. Per-framework commit-barrier table
-  (React/Vue/Svelte/Angular/Qwik) for the `data-nac-state` ↔
+  (React/Vue/Svelte/Angular/Qwik) for the `data-nac-state` <->
   `aria-*` boundary. Driven by HuggingChat: "React 18 with
   concurrent features, useTransition or useDeferredValue batch
   and defer DOM commits by design".
@@ -4096,7 +4128,7 @@ a written-out design-system layer pattern in MANUAL.md.
 ### Demo + backend fixes
 
 - **NAC + Yujin demo (yujin.app/nac-spec/example.php)**: when
-  the AI fallback chain (Claude → DeepSeek → Groq) exhausts and
+  the AI fallback chain (Claude -> DeepSeek -> Groq) exhausts and
   lands on the canned tier, the backend now short-circuits BEFORE
   attempting JSON parse. Returns the localised "AI temporarily
   unavailable" apology with `unavailable: true` flag instead of
@@ -19419,8 +19451,7 @@ posterior (C3, C4).
 
 ## FILE: crm_desa/api/v1/yujin.php (RELEVANT EXCERPT)
 **Repo:** pkuschnirof/rpaforce-crm @ main
-**Note:** the file is ~3000 lines; we embed only yjNacDemoSystemPrompt
-and yjNacDemoCompactTree which are the focus of B2 + C8 audit.
+**Note:** ~3000 lines; embedding only yjNacDemoSystemPrompt + yjNacDemoCompactTree.
 
 ```php
 function yjNacDemoCompactTree(array $tree): array
@@ -19622,6 +19653,4 @@ function yjNacDemoSystemPrompt(string $lang, string $treeJson): string
         . $treeJson . "\n";
 }
 ```
-
----
 

@@ -923,7 +923,7 @@ Additional question raised post-scope-doc:
 **Q11**: i18n contract is L1 (format + resolver + lint, no DOM
 mutation). Reviewers, do you agree this is the right depth, or
 should NAC v2.0 push to L2 (full runtime)? Sumi's argument for
-L1 in scope doc section "Mi opinión sobre i18n" is the reasoning.
+L1 in scope doc section "Mi opinion sobre i18n" is the reasoning.
 
 ---
 
