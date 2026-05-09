@@ -1,0 +1,500 @@
+================================================================
+NAC v2.0.0-rc3 -- INTERIM ARBITER PASS (post-rc3, pre-Yujin)
+Arbiter: Claude (Anthropic)
+================================================================
+
+You reviewed v2.0.0-rc1/rc2 in Round 3 (your verbatim review at
+docs/peer-review-round3-claude.txt) on 2026-05-09 and produced:
+
+  READINESS:  yes-with-conditions
+  BLOCKERS:   [T4-F1 gesture_buffer_leak_breaks_user_attestation]
+  CONDITIONS: [T2-F1, T2-F2, T2-F3, T4-F2, T6-F1, T8-F1, T9-F1, T9-F2]
+  SCORE:      7/8/7/7/7
+
+The author has now shipped v2.0.0-rc3 (commit `8c6abda` on `main`)
+that closes the BLOCKER + 8 conditions you raised + every concurrent
+condition the other 3 reviewers (Grok 4, Mistral Le Chat,
+DeepSeek-V3) raised at >=2/4 concurrence + the DeepSeek 6 cheap
+fixes + your medium-severity runtime improvements.
+
+This pass is NOT the final closing arbitration of NAC v2.0. Per
+your own observation OBS-1 + OBS-3 in Round 3, the final closing
+runs as Round 4 AFTER the Yujin case study (roadmap phase 5.5)
+publishes real metrics. **This pass is the INTERIM ARBITER PASS
+that validates the rc2 -> rc3 deltas and rules whether the
+project is on a credible trajectory toward Round 4.**
+
+Your role here is specifically:
+
+  (a) Verify that the BLOCKER fix is implemented correctly +
+      does not introduce new regressions.
+  (b) Verify that each condition closure either solves the
+      finding OR is a defensible deferral.
+  (c) Identify any NEW defects introduced by rc3.
+  (d) Arbitrate the two solo findings still held open
+      (T6-F1 perf hard-fail 5%/5s; Q9 data-nac-action SHOULD vs MUST).
+  (e) Judge whether v2.0 can credibly proceed to Round 4
+      (post-Yujin) closing OR whether a new BLOCKER exists.
+
+You are NOT being asked to re-review the entire v2.0 surface.
+That work was Round 3. This pass is delta-focused.
+
+ABSOLUTE RULES OF THIS ARBITER PASS
+
+R1. FETCH THE DELTAS. The 4 documents you MUST read are listed
+    in section C below (URLs canonical raw GitHub). If your
+    runtime cannot fetch, declare so and your verdict ceiling
+    drops to insufficient-evidence per the same rule from
+    Round 3.
+
+R2. NO PARAPHRASE WITHOUT QUOTATION. Cite verbatim line range
+    or section anchor for every finding (e.g.
+    "spec/NAC-v2.0.md sec 15.10 lines about composedPath").
+
+R3. NO HALLUCINATION. If a section is unclear or missing, file
+    finding `evidence_missing`.
+
+R4. NO POLITENESS BIAS. The author closed your BLOCKER. Do NOT
+    auto-approve because your concern was addressed; verify the
+    fix is technically correct. The author wants a SECOND look,
+    not validation theatre.
+
+R5. NO SELF-VALIDATION. You have a structural conflict of
+    interest: you raised the BLOCKER, you proposed the fix,
+    the author implemented it. Acknowledge this in your output.
+    If you find the fix correct, say so explicitly with
+    citation. If you find it incomplete, say so plainly.
+
+R6. ARBITRATE THE 2 HELD-OPEN SOLO DISPUTES (T6-F1, Q9). These
+    are 1/4 reviewer-only; the author held them pending arbiter
+    judgement. Side with the reviewer (DeepSeek/yourself), side
+    with the author, or propose a third path. Be specific.
+
+R7. CHECK FOR REGRESSIONS. rc3 added ~600 lines of runtime + 8
+    new spec sections + 4 new APIs. New code = new bug surface.
+    Specifically validate:
+      - Does the gesture-buffer fix correctly bind to composedPath
+        across edge cases (delegated handlers, shadow-DOM clicks,
+        keyboard navigation)?
+      - Does the bridgeIframe HMAC verification fail open or fail
+        closed when the iframe omits signature?
+      - Does the autoRegister batch chunking preserve ordering
+        guarantees that callers may rely on?
+      - Does the intermediate scope tracking introduce memory
+        leaks (intermediate scopes persist forever)?
+
+R8. OUTPUT FORMAT MANDATORY (sec D below). Severity:
+    blocker | high | medium | low. Be specific in line citations.
+
+----------------------------------------------------------------
+SECTION A: REVIEW CONTEXT (deltas only)
+----------------------------------------------------------------
+
+What changed rc2 -> rc3 (verbatim from CHANGELOG.md
+[2.0.0-rc3] entry):
+
+BLOCKER closed (your T4-F1):
+- Runtime: gesture capture binds to composedPath, not global flag.
+- Runtime: GESTURE_FRESH_MS reduced 100ms -> 16ms.
+- Runtime: _readGestureAttested(forElement) verifies element in
+  captured path before honoring attested.
+- Runtime: _invoke passes entry.element to _readGestureAttested.
+- Spec sec 15.10: identity binding normative requirement added,
+  matrix updated with new finding `user_gesture_path_mismatch`.
+
+8 conditions closed (yours + concurrent):
+- T8-F1 convergence weak (Mistral+DeepSeek+you = 3/4 vs Grok 1/4):
+  scope doc sec 6 timeline 2-4y -> 3-5y, contingency plan,
+  vendor outreach.
+- T9-F2 boilerplate 5200 implausible (Mistral+DeepSeek+you = 3/4):
+  scope doc appendix A revised to 1000-1500 lines.
+- T9-F1 adoption cost optimistic (Mistral+DeepSeek = 2/4): +1.5x-2x
+  first-adoption multiplier, +50h i18n catalog disclosure.
+- T2-F2 ProvenanceBlock additive (Mistral+you = 2/4): spec sec
+  15.14 forward-compat policy.
+- T2-F3 second tightening (Mistral+you = 2/4): RFC sec 11.2 lists
+  THREE NAC-3 tightening changes.
+- T7-F1 codemod 60% optimistic (DeepSeek+you = 2/4): published
+  35-60% range, brownfield median 45%.
+- T2-F1 CHANGELOG missing entries (you solo): VERIFIED FALSE
+  ALARM. Author confirmed CHANGELOG actually has 1.7.0 ->
+  2.0.0-rc3 entries; you likely truncated your read.
+- T4-F2 bridgeIframe HMAC missing (you solo): runtime now
+  verifies handshake_ack signature when secret registered.
+
+Your other Claude-solo findings closed:
+- T4-F3 os_level field unenforced: runtime serializes
+  params.os_level. Spec sec 15.10.
+- T4-F4 os_level matrix gate: NAC-3 finding
+  agent_attested_without_os_level when agent + attested + no
+  os_level.
+- T5-F1 L1 -> L1.5 framing: RFC sec 10.4 + I18N guide sec 0.
+- T5-F4 RTL global scope: NAC.setAutoRTL(false) opt-out.
+- T6-F1 cumulative batch: spec sec 15.13 budget row + runtime
+  chunk batches >50 via requestIdleCallback.
+- T6-F2 HMAC cold-start: runtime warms SubtleCrypto at boot.
+- T7-F2 cookbook 30 patterns: 15 at v2.0 + 15 cumulative v2.0.x
+  (5 days for 15 = realistic 2.5h each).
+- T7-F3 Storybook deferred: time-boxed v2.0.1 (~2 weeks
+  post-tag), not indefinite v2.0.x.
+- T9-F3 greenfield i18n cost: +50h disclosure in scope doc.
+- T9-F1 Yujin case study: roadmap explicit Round 3 INTERIM,
+  Round 4 FINAL post-Yujin.
+
+DeepSeek 6 cheap fixes (no concurrence; obvious correctness):
+- T3.1 scope.slug empty validation
+- T3.2 autoRegister orphan slug warn event
+- T3.3 adopt + closed-shadow doc note
+- T3.4 bridgeShadowRoot WeakSet dedup
+- T3.6 declareVirtual regex metacharacter escape (security
+  fix: prevents arbitrary pattern match from `.` in slug
+  patterns)
+- T3.7 captureEphemeral fast-toast doc + sensitive flag
+
+Claude (you) medium runtime improvements:
+- T3.1 intermediate scope label_i18n exposure in describe_v2()
+- T3.2 _deriveLeafSlug position-aware identity (no hash collision
+  on N templated cards)
+- T3.3 adopt rule.containerEl scoped observer
+- T3.3 adopt derive function 5ms perf contract
+
+NEW runtime APIs in rc3:
+- NAC.setAutoRTL(boolean)
+
+NEW finding codes added at NAC-3:
+- user_gesture_path_mismatch (rc3 BLOCKER fix)
+- agent_attested_without_os_level (rc3 T4-F4)
+- adopt_blocked (rc3 closed-shadow detection)
+- adopt_derive_slow (rc3 derive perf budget)
+
+Tests: 22/22 -> 27/27 passing.
+Version bump: NAC.version_v2 = '2.0.0-rc3'.
+
+Pending Round 3: ChatGPT (full app) review still pending. The
+review pool stabilises with you + Grok + Mistral + DeepSeek for
+this arbiter pass.
+
+Held open (1/4 solo findings, no concurrence yet):
+- T6-F1 (DeepSeek) perf hard-fail 5%/5s threshold too lax;
+  proposes 1%/10s.
+- Q9 data-nac-action SHOULD vs MUST at NAC-3 (you + DeepSeek
+  agreed it should be SHOULD with auto-detect fallback; the
+  author has not yet codified this).
+
+----------------------------------------------------------------
+SECTION B: THE 10 ARBITER TASKS
+----------------------------------------------------------------
+
+T1. ACQUISITION CONFIRMATION
+
+  Per R1, confirm READ FULLY / READ PARTIALLY / COULD NOT
+  FETCH for each of the 4 delta documents below.
+
+T2. BLOCKER FIX VALIDATION (your T4-F1 specifically)
+
+  The runtime now binds `_lastGesturePath = e.composedPath()` and
+  `_readGestureAttested(forElement)` verifies forElement is in
+  that path. Validate:
+
+  T2.1 Is the composedPath capture correct under SHADOW DOM
+       click delegation? When user clicks an element inside an
+       open shadow root, e.target points to the shadow host
+       (per browser policy). composedPath() returns the full
+       path including shadow descendants. Does the runtime walk
+       composedPath BEFORE the browser retargets? Reference
+       js/nac-v2-extensions.js:_captureGestureFromDom.
+
+  T2.2 Is GESTURE_FRESH_MS = 16 too tight for legitimate cases?
+       Real click-to-handler latency on mid-tier mobile is
+       typically 1-5ms. 16ms covers 1 frame; promise-resolved-
+       later handlers (legitimate async work after a click)
+       lose attestation. Is this the desired behaviour or too
+       strict?
+
+  T2.3 Edge case: keyboard navigation. User presses Enter on a
+       focused button. The keydown event fires; default behaviour
+       fires a click on the focused element. Does the keydown's
+       composedPath include the button? If not, the button's
+       NAC.invoke() will fail user_gesture_path_mismatch despite
+       legitimate keyboard activation.
+
+  T2.4 Edge case: programmatic focus + Enter. Tab key navigates
+       focus, Enter triggers click. The keydown is genuinely
+       user-trusted, but its target is the previously-focused
+       element. Does the chain hold?
+
+  T2.5 New finding `user_gesture_path_mismatch` -- is the error
+       code descriptive enough? Will a debugging adopter grok
+       why their event was rejected?
+
+  T2.6 Verify the spec text in sec 15.10 (the annex Claude
+       wrote in Round 3) matches the runtime behaviour. Any
+       mismatch is a finding.
+
+T3. CONCURRENT CONDITION CLOSURE VALIDATION
+
+  For each of the 8 closed concurrent conditions (T8-F1, T9-F2,
+  T9-F1, T2-F2, T2-F3, T7-F1, T2-F1, T4-F2), validate:
+
+    (a) Does the rc3 implementation actually solve the finding,
+        or is it cosmetic?
+    (b) Are the spec/doc/runtime sites consistent with each other?
+    (c) Did rc3 introduce any drift between RFC, spec, runtime,
+        and CHANGELOG language?
+
+  Specifically scrutinise T2-F1 -- the author claimed it as a
+  "FALSE ALARM" because the CHANGELOG actually has the entries
+  you said were missing. Do you concur with the false-alarm
+  ruling, or did your Round 3 read accurately reflect a
+  rendering issue at the time?
+
+T4. CLAUDE-SOLO FINDINGS CLOSURE VALIDATION
+
+  For each of your 9+ solo findings closed (T4-F3, T4-F4, T5-F1,
+  T5-F4, T6-F1 cumulative-batch [your version], T6-F2, T7-F2,
+  T7-F3, T9-F3, T9-F1 yujin-roadmap-clarification), validate:
+
+    (a) Is the runtime behaviour what you described as the fix?
+    (b) Is the spec text honest about the change?
+    (c) Are there remaining gaps the closures missed?
+
+  Specifically scrutinise T4-F2 -- the author added handshake_ack
+  signature verification but you should check whether
+  `describe_result` messages also need verification (your
+  original finding mentioned both).
+
+T5. DEEPSEEK 6 CHEAP FIXES VALIDATION
+
+  Walk each: scope.slug empty validation, orphan warn event,
+  closed-shadow doc note, bridgeShadowRoot WeakSet, regex
+  escape, captureEphemeral fast-toast/sensitive. Are any of
+  them implemented incorrectly or covering a gap that
+  re-emerges?
+
+  Specifically the regex escape (DeepSeek T3.6) is a SECURITY
+  fix because malicious slug input could match wider patterns.
+  Verify the escape is applied to ALL static parts of the
+  pattern, not only the first.
+
+T6. CLAUDE MEDIUM RUNTIME IMPROVEMENTS VALIDATION
+
+  Walk: intermediate scope label_i18n exposure, position-aware
+  _deriveLeafSlug, adopt rule.containerEl, adopt derive 5ms
+  contract.
+
+  Specifically the position-aware _deriveLeafSlug now mixes in
+  position-in-parent. If a parent has children re-ordered (drag-
+  drop reorder, list shuffle), do those slugs change? If yes,
+  is the change documented as a known limitation or is it a
+  silent regression?
+
+T7. NEW REGRESSIONS CHECK (rc3 introduced)
+
+  rc3 added ~600 LOC. Specifically check:
+
+  T7.1 Does `set_provenance_secret` now block on the warm-up
+       sign call (which is async)? If so, secret rotation in a
+       hot path can introduce latency. Reference
+       js/nac-v2-extensions.js:set_provenance_secret.
+
+  T7.2 Does `bridgeIframe` HMAC verification on handshake_ack
+       fail OPEN (allow without verification when no secret
+       registered) or fail CLOSED (reject without secret)?
+       Both have security trade-offs; pick one.
+
+  T7.3 Does `autoRegister.watch` chunked flush preserve order?
+       Some adopters may rely on registration order to derive
+       UI sequence. requestIdleCallback runs at idle time,
+       which can interleave between sub-batches.
+
+  T7.4 The new `_intermediateScopes` index grows monotonically.
+       There is no GC. A long-running app that creates and
+       discards scopes will leak. Memory-leak finding?
+
+  T7.5 The new `_bridgedShadowHosts` WeakSet cleans up when
+       hosts are GC'd. Verify this is actually a WeakSet (not
+       Set) in the runtime so dead hosts don't leak.
+
+  T7.6 The new finding code list is 4 entries longer (
+       user_gesture_path_mismatch, agent_attested_without_os_level,
+       adopt_blocked, adopt_derive_slow). Check that the
+       conformance suite covers each.
+
+T8. ARBITRATE HELD-OPEN DISPUTES
+
+  T8.1 T6-F1 (DeepSeek) perf hard-fail threshold 5%/5s vs
+       proposed 1%/10s. The author held this for arbitrage.
+       Side with DeepSeek (tighter threshold = correctly
+       conservative for accessibility-critical UI), side with
+       author (5%/5s laxer = adopter-friendly), or propose a
+       middle ground.
+
+  T8.2 Q9 data-nac-action SHOULD vs MUST at NAC-3. You + DeepSeek
+       agreed SHOULD with auto-detect fallback. Author has not
+       codified. Should this land in rc4 (or a hypothetical rc4)
+       OR is auto-detection too risky for production audit
+       pipelines and MUST is the safer bar?
+
+T9. ROUND 4 READINESS
+
+  Per the rc3 roadmap, Round 4 closing arbitration runs after
+  the Yujin case study (phase 5.5) publishes real metrics. The
+  framing is "rc3 cleared interim peer review with conditions;
+  tag conditional on Yujin case study confirmation in Round 4
+  closing arbitration".
+
+  T9.1 Is this framing honest? Or does rc3 introduce sufficient
+       new defects (per T7) that another iteration (rc4) is
+       needed BEFORE Yujin migration starts?
+
+  T9.2 If rc3 is good enough to wait for Yujin, what specifically
+       MUST the case study demonstrate to clear Round 4?
+       Concrete pass criteria.
+
+  T9.3 If rc3 is NOT good enough, what specific finding(s) block
+       Round 4 wait?
+
+T10. CLOSING ARBITER VERDICT
+
+  Output:
+
+    READINESS:  ['proceed-to-round-4-yujin-wait' |
+                 'iterate-rc4-first' |
+                 'new-blocker-found' |
+                 'insufficient-evidence']
+
+    NEW_BLOCKERS_RC3: [list if any -- e.g. memory leak in
+      _intermediateScopes growing monotonically]
+
+    REGRESSIONS_RC3: [list of behavioural changes that may
+      surprise rc2 adopters]
+
+    HELD_OPEN_ARBITRATION:
+      T6-F1: [side-with-deepseek | side-with-author | middle-ground]
+        + reasoning
+      Q9:    [should-or-must-at-nac3] + reasoning
+
+    ROUND_4_CRITERIA: [specific pass criteria for the Yujin
+      case study to clear Round 4]
+
+    SCORE_AXES_DELTA (rc2 -> rc3):
+      spec_clarity:        N/10 (was 7/10 in your Round 3)
+      ai_test_tooling:     N/10 (was 8/10)
+      adoption_ease:       N/10 (was 7/10)
+      ambition_feasibility: N/10 (was 7/10)
+      v2_announce_ready:   N/10 (was 7/10)
+
+    ONE_LINER: <single sentence verdict>
+
+----------------------------------------------------------------
+SECTION C: REQUIRED DOCUMENTS (deltas only)
+----------------------------------------------------------------
+
+You read the v2.0-rc1/rc2 corpus in Round 3 (14 documents). For
+this arbiter pass you only need the rc3 deltas:
+
+  1. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/CHANGELOG.md
+     -- the [2.0.0-rc3] entry has full close-list with citations.
+
+  2. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/spec/NAC-v2.0.md
+     -- new sections on identity binding (15.10), cumulative-batch
+     budget (15.13), os_level matrix gate, intermediate scope
+     exposure (15.1), closed-shadow note (15.3), captureEphemeral
+     PII (15.7), declareVirtual regex escape (15.6).
+
+  3. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/js/nac-v2-extensions.js
+     -- runtime with all rc3 fixes. ~600 new LOC; you already
+     read rc2 in Round 3 so the diff is the focus here.
+
+  4. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/RFC_v2.0.0.md
+     -- sec 11.2 (three tightening changes), sec 10 (L1.5 framing).
+
+OPTIONAL / context (already read in Round 3, only check for
+drift):
+
+  5. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md
+     -- sec 6 convergence 3-5y, sec 7.5 codemod 35-60%,
+     sec 7.6 cookbook scope, appendix A boilerplate revision.
+
+  6. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/NAC_v20_ROADMAP_ACTIONABLE.md
+     -- sec 8 Round 3 INTERIM / Round 4 FINAL framing,
+     sec 4 phase 4 cookbook 15 patterns + Storybook v2.0.1.
+
+  7. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/I18N_INTEGRATION_GUIDE.md
+     -- sec 0 L1.5 framing, sec 7.5 gettext bridge defer, sec 7.6
+     RTL global scope warning.
+
+  8. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/tests/nac-v2-extensions.spec.js
+     -- 27 tests (was 22 in rc2; 5 new for rc3 hooks).
+
+  9. https://raw.githubusercontent.com/pkuschnirof/nac-spec/main/docs/PEER_REVIEW.md
+     -- Round 3 + cross-compare matrix (4 reviewers complete
+     plus Copilot insufficient-evidence).
+
+----------------------------------------------------------------
+SECTION D: OUTPUT FORMAT (MANDATORY)
+----------------------------------------------------------------
+
+Begin with:
+  === NAC v2.0.0-rc3 INTERIM ARBITER PASS -- Claude-Opus-4.7 ===
+  REVIEW_DATE: YYYY-MM-DD
+  DOCUMENTS_FETCHED: [list]
+  DOCUMENTS_SKIPPED: [if any with reason]
+  PROMPT-vs-ARTIFACT NOTE: [confirm artifact label is rc3]
+  STRUCTURAL CONFLICT OF INTEREST DECLARATION: [acknowledge
+    you raised the BLOCKER + proposed the fix; affirm you
+    are validating, not auto-approving]
+
+Then T1..T10 in order. Findings format same as Round 3:
+  - id: T<task>-F<n>
+    severity: blocker | high | medium | low
+    code: <short snake_case>
+    citation: <path:line> or <section anchor>
+    description: <paragraph>
+    suggested_fix: <paragraph or null>
+
+End with T10 closing in the exact shape above.
+
+----------------------------------------------------------------
+WHAT THE AUTHOR EXPECTS
+----------------------------------------------------------------
+
+You are the closing arbiter of v1.9 and you raised the BLOCKER
+of rc1. The author respects your judgement; the author also
+needs you to apply that judgement HONESTLY in the face of
+self-validation pressure (R5).
+
+If rc3 is genuinely good and ready to wait for Yujin, say so
+plainly. If rc3 introduced new defects, find them and document
+them with the same line-cited rigor as Round 3. If the held-open
+disputes (T6-F1, Q9) deserve further work, side with that
+position.
+
+The cost of being wrong is not a CI failure -- it is a user
+locked out of a system they need. Your job in this arbiter pass
+is to make sure rc3 actually delivers on the security and
+adoption claims it makes, not just the appearance of having
+delivered.
+
+If your verdict is "proceed-to-round-4-yujin-wait" without any
+new blockers, the author will treat that with suspicion (per
+the same logic in Round 3 -- yes-without-conditions is
+unrealistic). Most likely the right verdict is
+"proceed-to-round-4-yujin-wait" + a small list of regressions
+or remaining concerns to monitor during Yujin migration.
+
+----------------------------------------------------------------
+PUBLICATION OF YOUR RESPONSE
+----------------------------------------------------------------
+
+Per Round 3 R8, your response is retained verbatim under MIT
+license at docs/peer-review-round3-arbiter-claude.txt (new file
+distinct from the Round 3 verbatim already at
+peer-review-round3-claude.txt).
+
+If you do NOT want this published, declare so in line 1.
+
+----------------------------------------------------------------
+START YOUR ARBITER PASS NOW. The 4 required delta documents
+are at the canonical raw URLs in section C.
+----------------------------------------------------------------
