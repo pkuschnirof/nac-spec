@@ -1,0 +1,16 @@
+{
+  "name": "@nac-spec/babel-plugin-react",
+  "version": "2.0.0",
+  "description": "Babel plugin: auto-inject data-nac-id into React JSX from component name + key",
+  "main": "src/index.js",
+  "license": "MIT",
+  "peerDependencies": {
+    "@babel/core": "^7.0.0"
+  },
+  "keywords": ["nac", "accessibility", "babel", "react", "ai-operability"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pkuschnirof/nac-spec",
+    "directory": "packages/babel-plugin-react"
+  }
+}

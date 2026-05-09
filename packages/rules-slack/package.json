@@ -1,0 +1,7 @@
+{
+  "name": "@nac-spec/rules-slack",
+  "version": "2.0.0",
+  "description": "Pre-baked NAC.adopt rules for Slack web widget",
+  "main": "src/index.js",
+  "license": "MIT"
+}

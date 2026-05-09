@@ -6,13 +6,37 @@
 > code, without fragile selectors, without manual test scripts.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![NAC v1.9.0](https://img.shields.io/badge/NAC-v1.9.0-violet.svg)](spec/NAC-v1.0.md)
-[![Status: Stable](https://img.shields.io/badge/status-stable-success.svg)](#)
+[![NAC v2.0.0-rc1](https://img.shields.io/badge/NAC-v2.0.0--rc1-violet.svg)](spec/NAC-v2.0.md)
+[![NAC v1.9.0 stable](https://img.shields.io/badge/v1.9.0-stable-success.svg)](spec/NAC-v1.0.md)
+[![Status: RC](https://img.shields.io/badge/status-release--candidate-amber.svg)](#)
 
 **Authors:** Pablo Adrian Kuschniroff <pablo.kuschnirof@gmail.com>, Sumi.
 **License:** MIT.
-**Spec version:** v1.9.0 (2026-05-08).
-**Reference runtime:** v1.9.0 (`NAC.version === '1.9.0'`).
+**Spec version:** v2.0.0-rc1 (2026-05-09) -- pending Round 3 peer review.
+                  v1.9.0 stable (2026-05-08, tag `v1.9.0`).
+**Reference runtime:** v1.9.0 (`NAC.version === '1.9.0'`) + v2.0 extensions
+  (`NAC.version_v2 === '2.0.0'` after `js/nac-v2-extensions.js` is loaded).
+
+**What v2.0.0-rc1 adds** (full detail in `RFC_v2.0.0.md`):
+- `NAC.scope()` hierarchical constructor
+- `NAC.autoRegister()` + `NAC.adopt()` (closes the largest adopter gap)
+- `NAC.bridgeShadowRoot()` + `NAC.bridgeIframe()`
+- `NAC.declareVirtual()` + `NAC.captureEphemeral()`
+- `NAC.setTenantPrefix()` (multi-tenant SaaS)
+- HMAC mandatory at NAC-3 for `source.type='agent'`
+- `user_gesture_attested` field (closes user/script impersonation paths)
+- i18n contract layer L1: `NAC.t()` + `NAC.locale()` + 10-locale catalog
+  format + lint findings (NAC does NOT mutate DOM; libraries keep
+  being the runtime). See `docs/I18N_INTEGRATION_GUIDE.md` for the
+  integration playbook.
+
+Tooling skeletons under `packages/`: babel/vue/svelte plugins,
+DevTools extension, codemod CLI, cookbook, rules-stripe / -slack /
+-mapbox.
+
+Side-by-side demos:
+- `yujin.app/nac-spec/example.php` -- v1.9 stable
+- `yujin.app/nac-spec/example-v20.php` -- v2.0-rc1 showcase
 **Strict superset of:** v1.8, v1.7, v1.6, v1.5, v1.4, v1.3, v1.2, v1.1, v1.0.
 **What v1.9.0 adds (the v2.0 patch round):**
 - **`data-nac-skip-reason` REQUIRED** when `data-nac-validate=

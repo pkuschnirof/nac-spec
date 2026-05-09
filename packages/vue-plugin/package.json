@@ -1,0 +1,8 @@
+{
+  "name": "@nac-spec/vue-plugin",
+  "version": "2.0.0",
+  "description": "Vue 3 plugin: auto-inject data-nac-id from SFC component name + key",
+  "main": "src/index.js",
+  "license": "MIT",
+  "peerDependencies": { "vue": "^3.0.0" }
+}

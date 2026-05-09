@@ -22,6 +22,169 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [2.0.0-rc1] - 2026-05-09
+
+MAJOR release candidate. v2.0 is a strict superset of v1.9.0.
+8 new composition primitives + HMAC mandatory at NAC-3 +
+isTrusted attestation closing user/script impersonation +
+i18n contract layer (L1: format + resolver + lint, no DOM
+mutation) + tooling ecosystem skeletons.
+
+This is the **release candidate** pending Round 3 peer review.
+Tag `v2.0.0` only after arbiter sign-off.
+
+### Spec additions (sec 15.x in `spec/NAC-v2.0.md`)
+
+- **15.1** Hierarchical scope constructor `NAC.scope(spec)` -- closes
+  the flat-naming limitation flagged for hierarchical UIs (shell
+  -> hub -> card -> modal). Max depth 6, separator `.` fixed,
+  re-registration idempotent under same-element.
+- **15.2** Auto-registration `NAC.autoRegister(el, opts)` +
+  `NAC.autoRegister.watch(container, opts)` -- closes the
+  dynamic-UI gap. MutationObserver + ancestor scope walk +
+  throttle 50ms. i18n_strict default at NAC-3.
+- **15.3** Adopt third-party non-compliant `NAC.adopt(rule)` --
+  closes the largest adopter-side gap (~30-60% of typical
+  production UIs are third-party). Selector + derive functions +
+  `_autoderived` flag for mono-locale fallback.
+- **15.4** Bridge Shadow DOM `NAC.bridgeShadowRoot(host)` -- walks
+  open shadow roots up to 6 levels nested. Closed shadow roots
+  emit `nac:shadow_blocked`.
+- **15.5** Bridge same-vendor iframes `NAC.bridgeIframe(iframeEl, opts)`
+  -- "NAC iframe channel v1" wire protocol over postMessage with
+  trusted_origins allowlist + signature_chain for cross-origin
+  agent events. Closes the cross-origin iframe gap DeepSeek
+  deferred from v1.8.
+- **15.6** Declare virtual manifests `NAC.declareVirtual(spec)` --
+  virtualized lists where 50 of 10000 rows are in DOM. Resolver
+  on-demand keeps the agent operable on row 9472 without
+  materialising it.
+- **15.7** Capture ephemeral UI `NAC.captureEphemeral(opts)` --
+  ring buffer of toasts / dropdowns / drag previews so the agent
+  can read "what was that 3-second toast?" after it disappears.
+- **15.8** Multi-tenant prefix `NAC.setTenantPrefix(slug)` -- SaaS
+  platform deployments where the same plugin slug appears in N
+  tenants. Cross-tenant lint awareness.
+- **15.9** HMAC mandatory at NAC-3 -- closes the v1.9 closing
+  arbiter's critical-path recommendation. Agent-source events
+  MUST sign; validator emits error severity at NAC-3 when
+  unsigned. `NAC.set_provenance_secret(s)` accepts string |
+  string[] for rotation overlap.
+- **15.10** isTrusted attestation -- closes the user/script
+  impersonation paths the v1.9.1 HMAC patch alone left open.
+  `source.user_gesture_attested` field auto-derived from DOM
+  `Event.isTrusted`. Three-way enforcement matrix at NAC-3:
+  user must attest, agent must sign, script must declare false.
+  Forbidden combinations explicit (`user_gesture_unattested`,
+  `script_claims_user_gesture`).
+- **15.11** i18n contract L1 -- canonical 10-locale catalog format
+  + `NAC.t(key, opts)` resolver + `NAC.locale(code)` getter/setter
+  + `NAC.setSupportedLocales(arr)` extender + `NAC.setRTLLocales(arr)`.
+  Validator findings: `i18n_missing_locale`, `i18n_invalid_locale`,
+  `i18n_string_empty`, `i18n_orphan_key`, `i18n_unused_locale`,
+  `i18n_mono_locale_autoderived`. NAC does NOT mutate DOM;
+  existing i18n libraries (react-intl, vue-i18n, i18next) keep
+  being the runtime. See `docs/I18N_INTEGRATION_GUIDE.md` for the
+  full integration playbook.
+- **15.12** Conformance levels reaffirmed (NAC-1/2/3).
+- **15.13** Performance budget at NAC-3 with hard fail thresholds
+  on low-tier mobile 2026.
+- **15.14** Backward compatibility -- strict superset proof.
+
+### Runtime (`js/nac-v2-extensions.js` -- ~620 lines)
+
+- New extension file loaded after `js/nac.js` v1.9.0. Attaches v2
+  primitives onto `window.NAC` without touching the v1.9 surface.
+- Implements all 8 primitives + HMAC + isTrusted + i18n contract.
+- 18 unit tests pass (`tests/nac-v2-extensions.spec.js`).
+- ASCII-only.
+
+### Reference demo
+
+- New file `yujin.app/nac-spec/example-v20.php` -- showcases all
+  v2.0 primitives + 10-locale switcher + HMAC sign demo +
+  isTrusted distinction in real time.
+- The v1.9 demo `example.php` stays alive for **side-by-side
+  comparison**. Reviewers can navigate both.
+
+### Tooling ecosystem (`packages/`)
+
+Skeletons for 9 npm-publishable packages:
+- `@nac-spec/babel-plugin-react`
+- `@nac-spec/vue-plugin`
+- `@nac-spec/svelte-preprocessor`
+- `@nac-spec/devtools` (Chrome / Firefox extension)
+- `@nac-spec/codemod` (CLI for brownfield migration)
+- `@nac-spec/cookbook` (30 patterns; index defined, content phase 4)
+- `@nac-spec/rules-stripe`
+- `@nac-spec/rules-slack`
+- `@nac-spec/rules-mapbox`
+
+Skeletons define the API surface; full implementation work mapped
+in `docs/NAC_v20_ROADMAP_ACTIONABLE.md` phase 4.
+
+### Documentation
+
+- `RFC_v2.0.0.md` (~750 lines) -- formal RFC.
+- `docs/NAC_v20_SCOPE_AND_ECOSYSTEM.md` (~700 lines) -- input for
+  Round 3 peer review.
+- `docs/NAC_v20_ROADMAP_ACTIONABLE.md` (~450 lines) -- operational
+  plan with 7 phases + Yujin case study + demo refactor + Pablo
+  decision gates.
+- `docs/I18N_INTEGRATION_GUIDE.md` -- authoritative document on
+  adding new locales (Pablo's explicit ask).
+- `docs/MIGRATOR_TOOL_ANALYSIS.md` -- commercial feasibility
+  analysis: 4 tiers, $200k-$800k Y1 ARR projection.
+- `case-studies/yujin.md` -- TEMPLATE for population during
+  actual migration.
+
+### Migration impact (v1.9.0 -> v2.0.0-rc1)
+
+- **Plugin code**: NO change required for NAC-1 + NAC-2.
+- **NAC-3 audit pipelines**: now reject unsigned agent events +
+  user-claiming-untrusted events + script-claiming-trusted
+  events. This is the intended behaviour change.
+- **AI agents and tools** (Computer Use, browser-use, Talon, voice
+  control): must sign agent events OR declare `source.type='script'`
+  for testing tools.
+- **i18n**: existing 10-locale catalogs already in compliant
+  format pass `i18n_strict` lint at NAC-3 unchanged. Catalogs
+  with fewer locales emit findings until completed.
+
+### Reviewer attribution
+
+- HMAC mandatory at NAC-3: closing v1.9 arbiter (Claude, 2026-05-08).
+- isTrusted attestation closing user impersonation: Pablo Adrian
+  Kuschniroff (2026-05-09).
+- 8 composition primitives: scope doc collaborative analysis
+  (Pablo + Sumi, 2026-05-09).
+- L1 i18n contract: collaborative (Pablo asked the question,
+  Sumi recommended L1 over L2; Pablo approved).
+- Convergence assumption + tooling list: collaborative.
+
+### Known limits in v2.0-rc1
+
+- Bridge iframe wire protocol may need its own RFC sub-review
+  (Sumi confidence: low).
+- `adopt` selector perf on DOM-heavy pages requires real
+  benchmark (pending phase 5.5 Yujin migration).
+- Tooling skeletons are not production-ready; full impl in phase 4.
+- No independent runtime port yet (Python/Rust/Kotlin) -- v2.1+.
+- Closed Shadow DOM penetration impossible by browser security
+  (out of scope).
+
+### Pablo decision gates remaining before tag
+
+1. Round 3 peer review pass on RFC + spec + scope + i18n guide.
+2. Phase 3 + 4 implementation completion.
+3. Phase 4.5 demo refactor + cross-browser smoke.
+4. Phase 5 conformance + perf benchmarks pass.
+5. Phase 5.5 Yujin migration case study published.
+6. Phase 6 closing peer review arbiter sign-off.
+7. `git tag v2.0.0` on the chosen commit.
+
+---
+
 ## [1.9.0] - 2026-05-08
 
 MINOR release. The v2.0 patch round closing every gap the

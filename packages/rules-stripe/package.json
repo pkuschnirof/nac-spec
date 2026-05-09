@@ -1,0 +1,7 @@
+{
+  "name": "@nac-spec/rules-stripe",
+  "version": "2.0.0",
+  "description": "Pre-baked NAC.adopt rules for Stripe Elements widgets",
+  "main": "src/index.js",
+  "license": "MIT"
+}

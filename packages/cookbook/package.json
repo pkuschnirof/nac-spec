@@ -1,0 +1,6 @@
+{
+  "name": "@nac-spec/cookbook",
+  "version": "2.0.0",
+  "description": "30 resolved NAC v2.0 patterns: form, list, modal, navigation, data viz, media, specialised",
+  "license": "MIT"
+}

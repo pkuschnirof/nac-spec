@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "NAC DevTools",
+  "version": "2.0.0",
+  "description": "Live NAC manifest tree, validation, and fix suggestions for any page",
+  "permissions": ["activeTab", "scripting"],
+  "devtools_page": "devtools.html",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

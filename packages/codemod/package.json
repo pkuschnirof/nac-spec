@@ -1,0 +1,8 @@
+{
+  "name": "@nac-spec/codemod",
+  "version": "2.0.0",
+  "description": "CLI: scan codebase, infer NAC annotations, output PR-ready diff",
+  "bin": { "nac-codemod": "./bin/nac-codemod.js" },
+  "main": "src/index.js",
+  "license": "MIT"
+}

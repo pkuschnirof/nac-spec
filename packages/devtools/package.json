@@ -1,0 +1,7 @@
+{
+  "name": "@nac-spec/devtools",
+  "version": "2.0.0",
+  "description": "Browser DevTools extension: live NAC manifest tree + validation + fix suggestions",
+  "license": "MIT",
+  "files": ["manifest.json", "devtools.html", "devtools.js", "panel.html", "panel.js", "icons/"]
+}

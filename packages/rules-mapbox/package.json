@@ -1,0 +1,7 @@
+{
+  "name": "@nac-spec/rules-mapbox",
+  "version": "2.0.0",
+  "description": "Pre-baked NAC.adopt rules for Mapbox GL JS",
+  "main": "src/index.js",
+  "license": "MIT"
+}

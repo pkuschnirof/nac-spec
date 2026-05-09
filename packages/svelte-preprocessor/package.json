@@ -1,0 +1,8 @@
+{
+  "name": "@nac-spec/svelte-preprocessor",
+  "version": "2.0.0",
+  "description": "Svelte preprocessor: auto-inject data-nac-id",
+  "main": "src/index.js",
+  "license": "MIT",
+  "peerDependencies": { "svelte": "^4.0.0 || ^5.0.0" }
+}
