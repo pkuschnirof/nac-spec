@@ -1,0 +1,124 @@
+================================================================
+NAC v2.0.0-rc1 -- Round 3 Peer Review attempt -- Microsoft Copilot
+                   (GPT-4o backend, 2026-05 build)
+Verbatim response retained per prompt section "Publication of Your
+Response". Result: INSUFFICIENT EVIDENCE -- review could not be
+completed due to transmission constraints, NOT due to spec issues.
+Reviewer: Microsoft Copilot (declared as GPT-4o-2026-05)
+Review attempts: 2 (URL-fetch variant + inline bundle variant)
+Review date: 2026-05-09
+================================================================
+
+This document records two attempts. Both failed to produce a
+technically valid review. The author retains them for transparency
+of the peer review process; they do NOT count as validated reviews
+in the Round 3 aggregate.
+
+----------------------------------------------------------------
+ATTEMPT 1: URL-fetch variant (PromptEvaluacion5.txt)
+----------------------------------------------------------------
+
+Cause of failure: reviewer runtime cannot access external URLs.
+All 14 canonical documents COULD NOT FETCH. Per prompt rule R1,
+verdict ceiling automatically downgraded to insufficient-evidence.
+
+Verbatim closing recommendation:
+  READINESS:  insufficient-evidence
+  BLOCKERS:   [T2-F1, T3-F1, T4-F1, T5-F1, T6-F1, T7-F1,
+               T8-F1, T9-F1, T10-F1] -- all "evidence_missing"
+  ONE_LINER: "I cannot complete the required peer review because
+  I could not fetch any of the 14 mandatory canonical documents
+  or access the demo; provide the listed documents or enable
+  fetch access so a full, line-cited technical review can
+  proceed."
+
+This was the expected outcome for runtimes without URL fetch.
+The author then distributed the inline bundle variant
+(PromptEvaluacion5_Inline.txt) to retry.
+
+----------------------------------------------------------------
+ATTEMPT 2: Inline bundle variant (PromptEvaluacion5_Inline.txt)
+----------------------------------------------------------------
+
+Cause of failure: the inline bundle (~95K tokens, 6656 lines)
+was TRUNCATED in transmission to the reviewer interface. The
+reviewer only received the bundle header + partial README.md
+content. The remaining 13 required documents (RFC, spec,
+runtime, scope doc, i18n guide, case study, CHANGELOG, peer
+review history, tests, packages README, full nac.js, full
+spec/NAC-v1.0.md baseline, full nac-v2-extensions.js) never
+arrived in the reviewer's context window.
+
+This is a TRANSMISSION FAILURE (likely the chat interface input
+limit being smaller than the model's nominal context window),
+NOT a spec issue or a reviewer competence issue.
+
+Verbatim quote from reviewer's diagnostic:
+  "The inline bundle provided by the user contained the README.md
+  content up to a truncation point; the rest of the 14 required
+  documents were not present in the inline bundle. Per the review
+  contract R1/R2/R3, missing required documents force an
+  'insufficient evidence' ceiling for any definitive verdicts that
+  require those documents."
+
+Verbatim closing recommendation:
+  READINESS:  insufficient-evidence
+  BLOCKERS:   [T2-F1 through T10-F1] -- all "docs_missing"
+  ONE_LINER: "I cannot complete the mandated line-cited technical
+  peer review because the inline bundle is truncated and the 13
+  required normative documents and demo/runtime sources are
+  missing; provide the full embedded texts (RFC, spec, scope, i18n
+  guide, runtime JS, demo sources, tests, roadmap, packages
+  README, and changelog) so I can perform the required,
+  citation-anchored review."
+
+----------------------------------------------------------------
+ATTEMPT 3 (planned): Mini bundle variant
+----------------------------------------------------------------
+
+To unblock interfaces that truncate at sub-100K-token inputs, the
+author will create PromptEvaluacion5_Mini.txt containing only the
+3 core documents (RFC + spec NAC-v2.0 + runtime nac-v2-extensions
+.js) totalling ~30K tokens. This permits a bounded review focused
+on:
+
+- T2 strict superset (RFC + spec sufficient).
+- T3 eight primitives (spec + runtime sufficient).
+- T4 threat model (RFC + spec sufficient).
+- T5 i18n contract (spec sec 15.11 sufficient).
+- T6 perf budget (spec sec 15.13 sufficient for numbers; benchmarks
+  remain unverifiable without them, but this is acceptable).
+- T11 author open questions.
+- T12 closing.
+
+Tasks that REMAIN insufficient-evidence under the mini bundle
+(deliberately):
+- T7 tooling completeness (packages README not embedded).
+- T8 convergence assumption (scope doc not embedded).
+- T9 adoption cost (scope doc + Yujin case study not embedded).
+- T10 demo evaluation (PHP source not embedded; ok, structural
+  review of runtime is sufficient).
+
+Pending Pablo decision: distribute the mini bundle vs. enable
+network fetch for Copilot vs. skip Copilot entirely and rely on
+the other reviewers (DeepSeek, ChatGPT, Claude arbiter) which
+appear to have larger input limits.
+
+----------------------------------------------------------------
+NET CONCLUSION
+----------------------------------------------------------------
+
+Microsoft Copilot Round 3 review remains OPEN. Neither attempt
+produced findings the v2.0 release evidence aggregates. The
+failure modes are orthogonal to the spec quality:
+- Attempt 1: known limitation of Copilot's runtime (no URL fetch).
+- Attempt 2: chat-interface input truncation (likely <30K-50K
+  token cap, vs. model's nominal 128K).
+
+Both attempts are recorded for transparency of the peer review
+process. Neither contributes to the Round 3 verdict pool.
+
+When the Round 3 review pool stabilises, the author may either
+re-attempt with the mini bundle or accept that Copilot did not
+produce a valid review and document that explicitly in the v2.0
+announce.

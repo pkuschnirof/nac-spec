@@ -538,7 +538,37 @@ the same rc2 perf budget revision since it was the same area.
 | T8-F1 convergence_timeline_overly_optimistic | high | Mistral high vs Grok "defensible" | DISPUTE -- third reviewer breaks tie |
 | T9-F1 boilerplate_reduction_overstated | medium | Mistral solo | Yujin migration produces real numbers (phase 5.5) |
 
-### DeepSeek, ChatGPT, MS Copilot, Claude arbiter -- pending
+### Microsoft Copilot (GPT-4o backend) -- 2026-05-09: insufficient-evidence (BOTH variants)
+
+**Result**: review could NOT be completed. Two attempts both
+failed for orthogonal reasons:
+
+**Attempt 1 (URL-fetch variant)**: reviewer runtime cannot access
+external URLs. All 14 canonical documents `COULD_NOT_FETCH`. Per
+prompt rule R1, verdict ceiling auto-downgraded to
+insufficient-evidence. Expected outcome.
+
+**Attempt 2 (inline bundle variant)**: the bundle (~95K tokens,
+6656 lines) was **TRUNCATED in transmission** to the Copilot chat
+interface. Reviewer only received header + partial README.md;
+remaining 13 documents never arrived. Likely cause: Copilot
+interface input limit (sub-50K tokens guess) is smaller than the
+backing model's nominal 128K context window.
+
+This is a transmission failure, NOT a spec issue. Both attempts
+recorded verbatim at `docs/peer-review-round3-copilot.txt` for
+transparency, but **neither contributes findings** to the Round 3
+verdict pool.
+
+**Workaround in flight**: the author is creating
+`PromptEvaluacion5_Mini.txt` with only the 3 core documents (RFC
++ spec NAC-v2.0 + runtime nac-v2-extensions.js, ~30K tokens) for
+interfaces with smaller input caps. T7/T8/T9 tasks under the mini
+variant will remain insufficient-evidence by design (the docs
+they need exceed 30K when included), but T2-T6 and T11-T12 can
+proceed with full citations.
+
+### DeepSeek, ChatGPT (full ChatGPT app, not Copilot), Claude arbiter -- pending
 
 Pending re-attempt. The author distributed
 `PromptEvaluacion5_Inline.txt` (embedded bundle variant) for
