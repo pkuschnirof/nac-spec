@@ -700,8 +700,9 @@ NAC-2.** Verification:
 5. The duplicate-id lint upgrade to `strict` is opt-in (default
    stays `warn`).
 
-**At NAC-3 there are TWO intentional tightening changes** (rc3
-update per Mistral T2-F1 + Claude T2-F3 2/4 concurrence):
+**At NAC-3 there are FOUR intentional tightening changes** (rc4
+update; rc3 listed three, rc4 adds bridgeIframe fail-closed per
+Mistral T7-F1 closure):
 
 1. **HMAC mandatory** for `source.type='agent'` events. Unsigned
    agent events emit `agent_source_missing_signature` finding.
@@ -717,8 +718,15 @@ update per Mistral T2-F1 + Claude T2-F3 2/4 concurrence):
    the invocation target is NOT in the captured event composedPath.
    v1.9 had no attestation, so this is additive at NAC-1/NAC-2,
    tightening at NAC-3.
+4. **`bridgeIframe` fail-closed at NAC-3** (rc4, Mistral T7-F1).
+   NAC-3 rejects `bridgeIframe` invocations when no
+   `provenance_secret` is registered (finding
+   `iframe_no_secret_at_nac3`); rejects `handshake_ack` /
+   `describe_result` messages without signature (finding
+   `iframe_signature_missing` escalates to error). NAC-1 and
+   NAC-2 keep fail-open.
 
-These three tightening changes apply ONLY to NAC-3. NAC-1 and
+These four tightening changes apply ONLY to NAC-3. NAC-1 and
 NAC-2 clients are unaffected.
 
 The client-visible deltas a v1.9 plugin can experience at NAC-3:

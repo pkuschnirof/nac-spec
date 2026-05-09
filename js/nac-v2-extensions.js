@@ -266,7 +266,16 @@
     describe_target_ms: 50,            /* was 30 in rc1 (Mistral T6-F2) */
     describe_hard_fail_ms: 150,        /* was 100 in rc1 */
     adopt_hard_fail_ms: 20,            /* was 15 in rc1 */
-    autoregister_hard_fail_ms: 5
+    autoregister_hard_fail_ms: 5,
+    /* v2.0-rc4 (Claude T8.1 middle ground): hard-fail RATE
+       tightened from 5%/5s (rc2/rc3) to 2%/5s (rc4). Same
+       window width, tighter rate. Rationale: 5% over 5s = ~1
+       hitched describe() per 20s on Snapdragon 6 Gen 1 = breaks
+       SR reading flow; 1%/10s window too long for bursty
+       stalls. 2%/5s captures sustained AND bursty correctly.
+       Tunable for hosts that need looser thresholds. */
+    perf_budget_fail_rate_pct: 2,      /* was implicit 5% in rc3 */
+    perf_budget_window_ms: 5000        /* unchanged */
   };
 
   function set_perf_tolerance(opts) {
@@ -289,7 +298,16 @@
      SaaS rollouts. Hosts that want strict 'error' behaviour opt
      in via set_validation_tolerance({i18n_strict: 'error'}). */
   var _validationTolerance = {
-    i18n_strict: 'warn'  /* 'warn' (default) | 'error' | 'silent' */
+    i18n_strict: 'warn',  /* 'warn' (default) | 'error' | 'silent' */
+    /* v2.0-rc4 (Mistral T7-F1): iframe_strict opt-in turns on
+       NAC-3 fail-closed for bridgeIframe. Default 'warn' = rc3
+       fail-open behaviour preserved for NAC-1/NAC-2. */
+    iframe_strict: 'warn',  /* 'warn' (default) | 'error' */
+    /* v2.0-rc4 (Claude T8.2): autoderived_action signals when
+       autoRegister inferred the action without an explicit
+       data-nac-action attribute. Default 'warn'; opt-in 'error'
+       for regulated-environment audit pipelines. */
+    autoderived_action: 'warn'  /* 'warn' (default) | 'error' | 'silent' */
   };
 
   function set_validation_tolerance(opts) {
@@ -298,6 +316,12 @@
     }
     if (opts.i18n_strict && ['warn', 'error', 'silent'].indexOf(opts.i18n_strict) >= 0) {
       _validationTolerance.i18n_strict = opts.i18n_strict;
+    }
+    if (opts.iframe_strict && ['warn', 'error'].indexOf(opts.iframe_strict) >= 0) {
+      _validationTolerance.iframe_strict = opts.iframe_strict;
+    }
+    if (opts.autoderived_action && ['warn', 'error', 'silent'].indexOf(opts.autoderived_action) >= 0) {
+      _validationTolerance.autoderived_action = opts.autoderived_action;
     }
   }
   function get_validation_tolerance() { return Object.assign({}, _validationTolerance); }
@@ -850,6 +874,13 @@
     var trusted = opts.trusted_origins || [];
     var timeout = opts.timeout_ms || 5000;
     var iframeId = iframeEl.id || 'iframe_' + Math.random().toString(36).slice(2,8);
+    /* v2.0-rc4 (Mistral T7-F1 + Claude T4-F2.1): NAC-3 enforcement
+       opt-in. When opts.nac_level === 3 (or auto-detected from
+       _validationTolerance.iframe_strict === 'error'), runtime
+       enforces fail-closed on missing secret and verifies
+       signatures on BOTH handshake_ack AND describe_result. */
+    var nacLevel = opts.nac_level
+      || (_validationTolerance.iframe_strict === 'error' ? 3 : 1);
 
     /* v2.0-rc3 (Claude T4-F2): the spec mandates HMAC chain on
        cross-origin agent-source events. We additionally require
@@ -857,7 +888,8 @@
        signature fields verifiable against our registered HMAC
        secret. Without this, a compromised trusted-origin (XSS in
        a vendor's CDN) can ride on the allowlist trust to inject
-       manifest entries unchecked. */
+       manifest entries unchecked.
+       v2.0-rc4: extended to describe_result + NAC-3 fail-closed. */
     return new Promise(function (resolve, reject) {
       var done = false;
       function listener(ev) {
@@ -871,10 +903,21 @@
         if (!d || d.ns !== ns) return;
         if (d.cmd === 'handshake_ack') {
           if (done) return;
+          /* v2.0-rc4 (Mistral T7-F1): NAC-3 fail-closed. If no
+             secret registered AND we are at NAC-3, reject the
+             handshake. NAC-1/NAC-2 path keeps fail-open with
+             warn (rc3 behaviour). */
+          if (nacLevel >= 3 && !_hasSecrets()) {
+            done = true;
+            window.removeEventListener('message', listener);
+            document.dispatchEvent(new CustomEvent('nac:iframe_no_secret_at_nac3', {
+              detail: { iframeId: iframeId }, bubbles: true
+            }));
+            reject(new Error('iframe_no_secret_at_nac3'));
+            return;
+          }
           /* v2.0-rc3: verify signature on handshake_ack if HMAC
-             secret registered. Skip verification when no secret
-             is registered (NAC-1/NAC-2 path); enforce at NAC-3
-             via the validator. */
+             secret registered. */
           if (_hasSecrets() && d.signature) {
             _verify_with_registered({ ns: d.ns, cmd: d.cmd, version: d.version, signature: d.signature })
               .then(function (ok) {
@@ -892,13 +935,21 @@
             return;
           }
           if (_hasSecrets() && !d.signature) {
-            /* Secret registered but iframe did not sign -> reject
-               at NAC-3 (warn at NAC-2). */
+            /* Secret registered but iframe did not sign -> at
+               NAC-3 fail-closed; at lower levels emit warn and
+               continue. */
+            if (nacLevel >= 3) {
+              done = true;
+              window.removeEventListener('message', listener);
+              document.dispatchEvent(new CustomEvent('nac:iframe_signature_missing', {
+                detail: { iframeId: iframeId, message: 'handshake_ack' }, bubbles: true
+              }));
+              reject(new Error('iframe_signature_missing'));
+              return;
+            }
             document.dispatchEvent(new CustomEvent('nac:iframe_signature_missing', {
               detail: { iframeId: iframeId, message: 'handshake_ack' }, bubbles: true
             }));
-            /* Continue without rejecting hard -- enforcement is
-               validator's job. */
           }
           _continueHandshakeAck();
 
@@ -912,8 +963,52 @@
               return;
             }
             window.removeEventListener('message', listener);
-            resolve({ iframeId: iframeId, version: d.version, signed: !!d.signature });
+            resolve({ iframeId: iframeId, version: d.version,
+              signed: !!d.signature, nac_level: nacLevel });
           }
+        }
+        /* v2.0-rc4 (Mistral T4-F2.1): describe_result messages
+           ALSO must be HMAC-verified at NAC-3. The handshake
+           promise has already resolved by this point; this
+           listener stays installed for follow-up describe()
+           pulls. We emit events but cannot reject the promise
+           (already settled). */
+        if (d.cmd === 'describe_result') {
+          if (nacLevel >= 3 && !_hasSecrets()) {
+            document.dispatchEvent(new CustomEvent('nac:iframe_no_secret_at_nac3', {
+              detail: { iframeId: iframeId, message: 'describe_result' },
+              bubbles: true
+            }));
+            return;
+          }
+          if (_hasSecrets() && d.signature) {
+            _verify_with_registered({
+              ns: d.ns, cmd: d.cmd, manifest: d.manifest, signature: d.signature
+            }).then(function (ok) {
+              if (!ok) {
+                document.dispatchEvent(new CustomEvent('nac:iframe_signature_invalid', {
+                  detail: { iframeId: iframeId, message: 'describe_result' },
+                  bubbles: true
+                }));
+                return;
+              }
+              /* Verified: forward manifest to whoever subscribes. */
+              document.dispatchEvent(new CustomEvent('nac:iframe_describe_received', {
+                detail: { iframeId: iframeId, manifest: d.manifest }, bubbles: true
+              }));
+            });
+            return;
+          }
+          if (_hasSecrets() && !d.signature) {
+            document.dispatchEvent(new CustomEvent('nac:iframe_signature_missing', {
+              detail: { iframeId: iframeId, message: 'describe_result' }, bubbles: true
+            }));
+            if (nacLevel >= 3) return; /* drop unsigned at NAC-3 */
+          }
+          /* NAC-1/NAC-2 + no secret: forward manifest as-is. */
+          document.dispatchEvent(new CustomEvent('nac:iframe_describe_received', {
+            detail: { iframeId: iframeId, manifest: d.manifest }, bubbles: true
+          }));
         }
       }
       window.addEventListener('message', listener);
@@ -1047,8 +1142,40 @@
   /* v2.0-rc3 (Claude T3.1): track intermediate scope nodes so
      describe_v2 can expose their label_i18n. Without this,
      a catalog declares `shell.topbar` label but no consumer
-     reads it because the intermediate node has no element. */
+     reads it because the intermediate node has no element.
+
+     v2.0-rc4 (Mistral T7-F2): the index grows monotonically with
+     unique scope paths created. Realistic SPA case is bounded
+     (~6 levels x ~few sections = O(N small)) but an SPA that
+     dynamically creates and discards scopes can leak. WeakMap
+     was rejected because keys are strings (paths), not objects.
+     Solution: NAC.gcIntermediateScopes(activePathSet) lets the
+     host prune entries no longer in use. Default behaviour:
+     no automatic GC; documented growth pattern. */
   var _intermediateScopes = Object.create(null);
+
+  /* Public GC API (rc4): the host passes a Set or array of path
+     strings that are still considered "active". Any entry in the
+     index whose path is NOT in that set gets removed. */
+  function gcIntermediateScopes(activePaths) {
+    if (!activePaths) {
+      /* No-arg form: clear ALL intermediate scopes. Use only when
+         tearing down the SPA / navigating to a totally new shell. */
+      _intermediateScopes = Object.create(null);
+      return 0;
+    }
+    var active = (typeof activePaths.has === 'function')
+      ? activePaths
+      : new Set(activePaths);
+    var removed = 0;
+    Object.keys(_intermediateScopes).forEach(function (k) {
+      if (!active.has(k)) {
+        delete _intermediateScopes[k];
+        removed++;
+      }
+    });
+    return removed;
+  }
 
   function describe_v2() {
     var v1 = (typeof NAC.describe === 'function') ? NAC.describe() : { plugins: [] };
@@ -1143,6 +1270,33 @@
         }
       });
     }
+
+    /* v2.0-rc4 (Claude T8.2 codification): at NAC-3, autoderived
+       data-nac-action is SHOULD with REQUIRED fallback. Emit
+       data_nac_action_autoderived per scope where the action was
+       inferred rather than declared. Severity follows
+       _validationTolerance.autoderived_action (default warn). */
+    var autodSev = opts.autoderived_action_severity
+      || _validationTolerance.autoderived_action;
+    if (autodSev !== 'silent') {
+      var autodBucket = autodSev === 'error' ? findings.errors : findings.warnings;
+      Object.keys(_scopes).forEach(function (slug) {
+        var entry = _scopes[slug];
+        if (entry.element && !entry.element.hasAttribute('data-nac-action')) {
+          /* Only emit for elements that DO have a registered
+             intent but lack the explicit data-nac-action attr.
+             autoRegister-only path: the slug exists in _scopes
+             but the host did not declare data-nac-action. */
+          if (entry.autoderived || entry.adopted) {
+            autodBucket.push({
+              code: 'data_nac_action_autoderived',
+              slug: slug,
+              severity: autodSev
+            });
+          }
+        }
+      });
+    }
     return findings;
   }
 
@@ -1173,6 +1327,7 @@
   NAC.get_validation_tolerance = get_validation_tolerance;
   NAC.describe_v2            = describe_v2;
   NAC.validate_global_v2     = validate_global_v2;
+  NAC.gcIntermediateScopes   = gcIntermediateScopes;
 
   /* Convenience: expose internals for tests */
   NAC.__v2 = {
@@ -1205,7 +1360,7 @@
   setTimeout(_warmCrypto, 0);
 
   /* Bump version constants */
-  NAC.version_v2      = '2.0.0-rc3';
+  NAC.version_v2      = '2.0.0-rc4';
   NAC.spec_version_v2 = '2.0';
 
   document.dispatchEvent(new CustomEvent('nac:v2_installed', {

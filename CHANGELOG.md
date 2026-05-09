@@ -22,6 +22,144 @@ Versioning conventions for the spec:
 
 Nothing yet.
 
+## [2.0.0-rc4] - 2026-05-09
+
+PATCH-style update on top of rc3. Closes the 4 valid findings
+Mistral Le Chat raised in the rc3 interim arbiter pass + codifies
+the held-open consensus from 4 arbiter responses (Mistral, Grok,
+DeepSeek, Claude). 30/30 tests pass (was 27/27 in rc3; 4 new for
+rc4 hooks).
+
+Note: 1 of Mistral's 5 arbiter findings was a FALSE POSITIVE
+(T5-F1 declareVirtual regex escape; the rc3 code already escapes
+all parts via parts.map(_escapeRegex), Mistral misread the diff).
+4 valid findings closed below.
+
+### Mistral arbiter findings closed
+
+- **T4-F2.1 bridgeIframe describe_result HMAC missing**.
+  Mistral correctly identified that rc3 verified HMAC on
+  handshake_ack but NOT on describe_result messages. Spec
+  mandate (HMAC chain on cross-origin agent-source) extends to
+  all messages. Fix: extended verification to describe_result;
+  emits nac:iframe_describe_received on success, drops at
+  NAC-3 with finding nac:iframe_signature_invalid /
+  nac:iframe_signature_missing on failure.
+  Spec sec 15.5 normative requirement added.
+  Runtime js/nac-v2-extensions.js:850-1010.
+
+- **T7-F1 bridgeIframe fail-open**. rc3 fail-open behaviour
+  preserved for NAC-1/NAC-2 (compatibility) but NAC-3 now
+  fail-closed. Hosts opt in via opts.nac_level=3 OR
+  set_validation_tolerance({iframe_strict:'error'}). New finding
+  iframe_no_secret_at_nac3. Spec sec 15.5 normative.
+
+- **T7-F2 _intermediateScopes memory leak**. Plain-object index
+  rejected (would force WeakMap with object keys, but scope
+  paths are strings). New API NAC.gcIntermediateScopes(activePaths)
+  for hosts to prune; NAC.gcIntermediateScopes() (no-arg) clears
+  all. Default behaviour: no automatic GC; documented growth
+  pattern in spec sec 15.1. Realistic SPA case is bounded; the
+  GC API addresses dynamically-spawning-scopes long-running
+  sessions.
+
+- **T6-F1 position-aware deriveLeafSlug regression**. Documented
+  limitation in spec sec 15.2: position-in-parent component of
+  the rc3 hash means slugs change under reordering. Hosts that
+  need stable IDs MUST use explicit el.id, data-nac-action, OR
+  stable_id_strategy='frozen-on-first-encounter' for adopt rules.
+
+### Held-open consensus codified (4-arbiter weighted)
+
+- **T8.1 perf hard-fail rate**. Claude middle-ground 2%/5s
+  adopted (was 5%/5s in rc2/rc3). Same window, tighter rate.
+  Captures sustained slowness AND bursts. Tunable via
+  NAC.set_perf_tolerance({perf_budget_fail_rate_pct:n}).
+  Spec sec 15.13 perf budget normative requirement updated.
+
+- **T8.2 Q9 data-nac-action SHOULD vs MUST at NAC-3**.
+  Resolved as SHOULD with REQUIRED fallback (Claude refinement
+  beyond bare SHOULD; mirror i18n_strict tolerance pattern).
+  New warn finding data_nac_action_autoderived emitted when
+  runtime infers action via fallback. Tolerance knob:
+  set_validation_tolerance({autoderived_action:'error'}) for
+  regulated environments. Spec sec 15.2 normative requirement.
+
+### Spec changes
+
+- Spec sec 15.5: bridgeIframe NAC-3 fail-closed enforcement +
+  describe_result HMAC verification.
+- Spec sec 15.1: intermediate scope index growth pattern +
+  gcIntermediateScopes API.
+- Spec sec 15.2: data-nac-action SHOULD with REQUIRED fallback
+  + autoderived_action warn finding.
+- Spec sec 15.2: position-aware slug stability documented
+  limitation + stable_id workarounds.
+- Spec sec 15.13: perf budget rate 5% -> 2% middle-ground +
+  tunable.
+- Spec sec 15.14: FOUR NAC-3 tightening changes (was three in
+  rc3): added bridgeIframe fail-closed.
+- RFC sec 11.2: parallel update to FOUR tightening changes.
+
+### Runtime API additions
+
+- NAC.gcIntermediateScopes(activePathSet | nothing) -- prune
+  intermediate scope index.
+- set_validation_tolerance now accepts iframe_strict
+  ('warn'|'error') + autoderived_action ('warn'|'error'|'silent').
+- set_perf_tolerance now accepts perf_budget_fail_rate_pct +
+  perf_budget_window_ms.
+- bridgeIframe(iframeEl, opts) accepts opts.nac_level=3 to
+  force fail-closed even when global tolerance is 'warn'.
+
+### Test suite
+
+30/30 unit tests pass (was 27/27 in rc3; 3 rc3 tests retained,
+4 new for rc4 hooks: gcIntermediateScopes, iframe_strict +
+autoderived_action tolerance, perf_budget_fail_rate_pct default).
+
+### Reviewer attribution -- rc3 interim arbiter pass
+
+- **Mistral Le Chat**: iterate-rc4-first, 5 findings (4 valid +
+  1 false positive). Score 8/8/6/7/5.
+- **Grok 4**: proceed-to-round-4-yujin-wait, 1 medium gesture
+  16ms freshness. Score 8/8/8/7/8. Partial code read --
+  missed composedPath block.
+- **DeepSeek-V3** (impersonating Claude per prompt header):
+  proceed-to-round-4-yujin-wait, 0 new blockers. Score 8/8/8/7/9.
+- **Claude (Anthropic)**: insufficient-evidence due to CDN cache
+  stale on raw.githubusercontent.com (same as v1.9 closing
+  arbiter). EvidenciaInline_v2.0_rc3.txt produced for re-eval.
+
+Verbatim arbiter responses retained at:
+- docs/peer-review-round3-arbiter-mistral.txt
+- docs/peer-review-round3-arbiter-grok.txt
+- docs/peer-review-round3-arbiter-deepseek.txt
+- docs/peer-review-round3-arbiter-claude.txt (CDN-stale notes)
+
+### Migration impact rc3 -> rc4
+
+- Plugin code: NO change required for NAC-1, NAC-2.
+- NAC-3 audit pipelines: bridgeIframe now requires registered
+  HMAC secret before invocation; reject events without signature.
+  Adopters using bridgeIframe in NAC-3 must call
+  NAC.set_provenance_secret() before NAC.bridgeIframe().
+- Tests against rc3: any test asserting nac_version === '2.0.0-rc3'
+  must update to '2.0.0-rc4' (or use prefix /^2\.0\.0/).
+- Performance: hard-fail rate tightened 5% -> 2% on default
+  perf_budget. Adopters whose rc3 builds passed at the 5% bar
+  may need to optimize OR raise tolerance via
+  set_perf_tolerance({perf_budget_fail_rate_pct:5}).
+
+### Pablo decision gates remaining before tag v2.0.0
+
+1. Claude (Anthropic) re-evaluation with EvidenciaInline_v2.0_rc3
+   (CDN cache stale workaround).
+2. Round 4 closing arbitration AFTER Yujin case study phase 5.5
+   publishes real metrics.
+3. (Optional) Cure53 / Trail of Bits security audit.
+4. git tag v2.0.0 on chosen commit (Pablo).
+
 ## [2.0.0-rc3] - 2026-05-09
 
 PATCH-style update on top of rc2. Closes the BLOCKER raised by

@@ -69,6 +69,14 @@ parent chain joined by separator `.`, plus the leaf slug.
   `v2_intermediate_scopes` field so consumers (assistive tech,
   agent IA) can render breadcrumb-style labels like "Shell ->
   Topbar -> Profile" in their UX.
+- **Intermediate scope index growth** (v2.0-rc4, Mistral T7-F2):
+  the index of intermediate scopes grows monotonically with
+  unique scope paths. Realistic SPA cases are bounded
+  (O(unique-scope-paths) typically <1000 entries). Hosts that
+  dynamically create + discard scopes during a long-running
+  session MUST call `NAC.gcIntermediateScopes(activePathSet)`
+  periodically to prune stale entries, or `NAC.gcIntermediateScopes()`
+  (no-arg) on full-shell teardown to clear the index.
 
 ### API signature
 
@@ -106,7 +114,25 @@ attribute and use its value as parent prefix.
   silently batched.
 - The registered slug = `<ancestor-scope> + '.' + <leaf>`. Leaf
   is `el.id`, else `el.dataset.nacAction`, else
-  `'auto_' + hash(el.outerHTML.slice(0,100))`.
+  position-aware hash of (tagName + textContent + position-in-parent
+  + outerHTML[0..80]) introduced rc3 (Claude T3.2 fix for hash
+  collisions across templated cards).
+- **Position-aware slug stability** (v2.0-rc4 documented limitation,
+  Mistral T6-F1): the position-in-parent component of the hash
+  means slugs CHANGE when the host reorders children (drag-drop
+  reorder, list shuffle, virtualised re-render). Hosts that
+  require stable IDs across reordering MUST either:
+  (a) provide explicit `id` attributes on each interactive element
+      (most preferred -- the runtime uses `el.id` as the leaf
+      directly when present);
+  (b) provide explicit `data-nac-action` slugs (also preferred);
+  (c) for `adopt`-rule paths, set
+      `stable_id_strategy: 'frozen-on-first-encounter'` to lock
+      the derived slug after first registration.
+  Without one of those mitigations, voice-control bookmarks or
+  agent-saved slug references break under reordering. This is a
+  documented trade-off between hash collision avoidance (the rc3
+  fix) and slug stability under reordering.
 - `MutationObserver` MUST clean up on element removal:
   manifest entry deleted, `nac:unregistered` event emitted.
 - **i18n strict mode** (default at NAC-3): registration MUST be
@@ -114,6 +140,31 @@ attribute and use its value as parent prefix.
   `data-i18n-key` (resolving against the registered catalog) nor
   an explicit `label_i18n` in the manifest. Permissive mode allows
   mono-locale registration with `_autoderived: true` flag.
+
+### `data-nac-action` requirement (v2.0-rc4, Claude T8.2 codification)
+
+At NAC-3, `data-nac-action` SHOULD be present on the target
+element when its action is to be auto-derived. If absent, the
+runtime MUST fall back to action inference from semantic role
+(`<button>` -> click, `<a href>` -> navigate, `<input type=text>` ->
+fill, etc.). The fallback path is REQUIRED by spec; bare SHOULD
+without fallback is insufficient.
+
+Whenever the runtime infers an action via this fallback path, the
+validator MUST emit finding `data_nac_action_autoderived` (warn
+severity by default at NAC-3). Hosts in regulated environments
+that require explicit declaration opt in:
+
+```javascript
+NAC.set_validation_tolerance({autoderived_action: 'error'});
+```
+
+Mirrors the i18n_strict tolerance pattern from rc2. Rationale:
+forcing `data-nac-action` as MUST would hard-fail any plugin
+that legitimately uses semantic HTML (a `<button>` with
+`aria-label` is unambiguously a click action without needing the
+attribute). Bare SHOULD is too lax for audit pipelines; SHOULD
++ required-fallback + tolerance knob threads the needle.
 
 ---
 
@@ -196,7 +247,7 @@ into the manifest.
 
 ---
 
-## 15.5 Bridge same-vendor iframes
+## 15.5 Bridge same-vendor iframes (rc4 hardened)
 
 ### Normative requirement
 
@@ -226,6 +277,46 @@ implementing the "NAC iframe channel v1" wire protocol over
   `iframe_handshake_timeout`.
 - Major version mismatch (parent v2 vs iframe v3+) emits
   `nac:iframe_version_mismatch` and rejects.
+
+### NAC-3 fail-closed enforcement (v2.0-rc4, Mistral T7-F1)
+
+At NAC-3 conformance level, the runtime MUST fail-closed when:
+
+- `bridgeIframe` is invoked but `set_provenance_secret` has NOT
+  been called. New finding `iframe_no_secret_at_nac3` emitted;
+  promise rejects with `iframe_no_secret_at_nac3`.
+- An incoming `handshake_ack` or `describe_result` carries no
+  `signature` field while a secret IS registered. New finding
+  `iframe_signature_missing` (already declared in rc3) escalates
+  to error severity at NAC-3 and rejects.
+
+Hosts opt into NAC-3 enforcement either by passing
+`opts.nac_level: 3` to `bridgeIframe()` OR by globally setting
+`set_validation_tolerance({iframe_strict: 'error'})`.
+
+NAC-1 and NAC-2 keep fail-open behaviour (rc3 default) for
+backwards compatibility: missing secret + missing signature emits
+`nac:iframe_signature_missing` but allows the handshake to
+complete.
+
+### describe_result HMAC verification (v2.0-rc4, Mistral T4-F2.1)
+
+The original rc3 implementation verified HMAC only on
+`handshake_ack`. The spec mandate (cross-origin agent-source HMAC
+chain) extends to all messages, not just the handshake. rc4
+verifies signatures on `describe_result` messages too:
+
+- If a secret is registered AND `describe_result.signature`
+  verifies: emit `nac:iframe_describe_received` with the manifest.
+- If signature missing: emit `nac:iframe_signature_missing` and
+  drop the manifest at NAC-3 (or pass through with warn at lower
+  levels).
+- If signature invalid: emit `nac:iframe_signature_invalid` and
+  drop unconditionally.
+
+The handshake promise still settles on `handshake_ack`; subsequent
+`describe_result` messages are exposed via the
+`nac:iframe_describe_received` event for callers that subscribe.
 
 ---
 
@@ -600,7 +691,18 @@ fallback) per sub-batch. Cumulative blocking budget: 50ms target,
 Implementations MUST expose `perf_probe` for conformance suite
 measurement. Findings of type `perf_budget_exceeded` MUST emit at
 error severity at NAC-3 when measurements exceed hard fail
-threshold for >5% of samples in a 5-second window.
+threshold for >**2%** of samples in a 5-second window
+(rc4 update per Claude T8.1 middle-ground arbitration; was 5% in
+rc2/rc3). Rationale: 5%/5s = ~1 hitched describe() per 20s on
+Snapdragon 6 Gen 1 = breaks screen-reader reading flow. 1%/10s
+window proposed by DeepSeek masks bursty stalls during route
+transitions. 2%/5s same window width as rc3, tighter rate,
+captures sustained slowness AND bursts.
+
+Hosts that need looser thresholds tune via
+`NAC.set_perf_tolerance({perf_budget_fail_rate_pct: <n>})`.
+Hosts that need tighter thresholds for accessibility-critical UX
+can drop to 1%.
 
 ---
 
@@ -615,8 +717,9 @@ See RFC_v2.0.0 section 11.1 for the full table. Summary:
 - Zero v1.9 attribute removed.
 - Zero behavioural change to v1.9 NAC-1 + NAC-2 plugin contracts.
 
-**Three semantically-tightening changes at NAC-3** (rc3 update per
-Mistral T2-F1 + Claude T2-F3, T4-F1):
+**Four semantically-tightening changes at NAC-3** (rc4 update;
+rc3 listed three, rc4 adds bridgeIframe fail-closed per Mistral
+T7-F1):
 
 1. **HMAC mandatory** for `source.type='agent'` events.
 2. **i18n_strict findings** in `validate_global()` output (warn
@@ -626,6 +729,11 @@ Mistral T2-F1 + Claude T2-F3, T4-F1):
    rejects `source.type='user'` when the invocation target is not
    in the originating event's composedPath, with finding code
    `user_gesture_path_mismatch`.
+4. **`bridgeIframe` fail-closed at NAC-3** (rc4, Mistral T7-F1).
+   NAC-3 rejects `bridgeIframe` invocations when no
+   `provenance_secret` is registered, and rejects
+   `handshake_ack`/`describe_result` messages without
+   signature.
 
 NAC-1 and NAC-2 are unaffected.
 

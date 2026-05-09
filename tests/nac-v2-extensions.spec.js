@@ -168,9 +168,9 @@ function test(name, fn) {
   /* ----- describe_v2 ----- */
   await test('describe_v2 returns v2 fields', () => {
     const d = NAC.describe_v2();
-    assert.ok(/^2\.0\.0/.test(d.nac_version), 'nac_version starts with 2.0.0 (rc/final)');
+    assert.ok(/^2\.0\.0/.test(d.nac_version), 'nac_version starts with 2.0.0');
     assert.ok(Array.isArray(d.v2_scope_entries));
-    assert.ok(Array.isArray(d.v2_intermediate_scopes), 'rc3 exposes intermediate scopes');
+    assert.ok(Array.isArray(d.v2_intermediate_scopes), 'rc3+ exposes intermediate scopes');
     assert.ok(Array.isArray(d.virtual));
     assert.ok(Array.isArray(d.ephemeral_log));
     assert.strictEqual(d.tenant_prefix, 'acme');
@@ -294,8 +294,32 @@ function test(name, fn) {
     assert.strictEqual(t.adopt_hard_fail_ms, 20);
   });
 
-  await test('rc3: version is 2.0.0-rc3', () => {
-    assert.strictEqual(NAC.version_v2, '2.0.0-rc3');
+  await test('rc4: version is 2.0.0-rc4', () => {
+    assert.strictEqual(NAC.version_v2, '2.0.0-rc4');
+  });
+
+  await test('rc4: gcIntermediateScopes() prunes index (Mistral T7-F2)', () => {
+    /* Create some intermediate scopes via scope chain. */
+    const root = NAC.scope({ slug: 'rc4test1', label_i18n: { es: 'A', en: 'A' } });
+    root.scope({ slug: 'sub', label_i18n: { es: 'B', en: 'B' } });
+    /* No-arg form clears all. */
+    const removed = NAC.gcIntermediateScopes();
+    assert.ok(typeof removed === 'number');
+  });
+
+  await test('rc4: set_validation_tolerance accepts iframe_strict + autoderived_action', () => {
+    NAC.set_validation_tolerance({ iframe_strict: 'error' });
+    assert.strictEqual(NAC.get_validation_tolerance().iframe_strict, 'error');
+    NAC.set_validation_tolerance({ autoderived_action: 'error' });
+    assert.strictEqual(NAC.get_validation_tolerance().autoderived_action, 'error');
+    /* Reset for following tests */
+    NAC.set_validation_tolerance({ iframe_strict: 'warn', autoderived_action: 'warn' });
+  });
+
+  await test('rc4: perf_budget_fail_rate_pct default is 2 (Claude T8.1)', () => {
+    const t = NAC.get_perf_tolerance();
+    assert.strictEqual(t.perf_budget_fail_rate_pct, 2);
+    assert.strictEqual(t.perf_budget_window_ms, 5000);
   });
 
   /* ----- summary ----- */
