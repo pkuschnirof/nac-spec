@@ -1370,6 +1370,168 @@ without throwing).
 
 ---
 
+## 19. End-to-end intent chain conformance test (NEW v2.1)
+
+### 19.1 Why this section exists
+
+NAC v2.0+ describes a multi-stage pipeline: a user expresses an
+ambiguous, incomplete, metaphorical, or locale-mixed natural-
+language intent; the intermediary LLM (sec 16) reads the
+manifest + sitemap + data_tables (sec 17, 18) and emits a
+typed action; the runtime (sec 15.* + 18.*) dispatches that
+action; the dispatch causes a canonical event to fire (sec 6.2
+of v1.9 + sec 18.6 of v2.1).
+
+Each stage has its own conformance contract. **None of those
+contracts catch a stage-boundary regression.** The reference
+implementation already had one: a backend compactor that
+silently dropped `data_tables` from the snapshot before the
+LLM saw it, so rule 14 of the system prompt ("iterate
+current_state.rows to resolve row identity") had no rows to
+iterate. Spec correct, frontend correct, runtime correct,
+backend wrong -- all unit tests pass, end-to-end demo
+hallucinates.
+
+The fix-class for that whole error mode is **mandatory
+end-to-end chain testing**. v2.1 codifies it as a NAC-3
+conformance requirement.
+
+### 19.2 The four-stage chain
+
+For every intent the host claims to support, an end-to-end
+chain test MUST verify all four stages:
+
+| Stage | What is verified |
+|---|---|
+| **1. Intent detection** | The intermediary LLM, given the live `describe_v2()` snapshot, classifies the user's natural-language phrase into one of the documented action kinds (sec 16 vocabulary). The test asserts which kind was selected, NOT the natural-language ack the LLM emits. |
+| **2. Disambiguated dispatch** | The kind + parameters resolve to a concrete invocation against the runtime (e.g. `NAC.dt_remove_row('invoice.lines', 'L5')`). The test asserts the parameters, drawn from the snapshot the LLM saw, match what the runtime needs. |
+| **3. Runtime event emission** | The runtime, on receiving the dispatch, emits the canonical event(s) documented in sec 6.2 / 18.6. The test asserts the event type AND the detail payload shape. |
+| **4. Side-effect coherence** | The post-dispatch state of the runtime reflects the intent (row removed, cell edited, table committed, navigation completed). The test asserts via `describe_v2()` re-snapshot. |
+
+Skipping any stage produces false confidence:
+
+- Skipping stage 1 misses LLM regressions (silent kind drift,
+  prompt template changes, model upgrade hallucinations).
+- Skipping stage 2 misses parameter resolution bugs (row_id
+  resolved to wrong row because the snapshot was incomplete --
+  the bug-class that motivated this section).
+- Skipping stage 3 misses runtime regressions where the
+  dispatch succeeds but the canonical event is not fired
+  (downstream audit pipelines silently lose visibility).
+- Skipping stage 4 misses cosmetic-only fixes (the action
+  acked, the event fired, but the visible state of the table
+  did not change because of a subscription gap).
+
+### 19.3 Public test primitive
+
+The reference test runner ships `runChainTest`:
+
+```javascript
+const { runChainTest } = require('@nac-spec/test-runner');
+
+const result = await runChainTest({
+  intent:        'borra los auriculares',
+  page:          playwrightPage,                  // OR snapshot:
+  expected: {
+    stage_1_kind:        'dt_remove_row',
+    stage_2_params: {
+      table_id:          'invoice.lines',
+      row_id_resolves_via: { column: 'product', value: 'Auriculares' }
+    },
+    stage_3_event: {
+      type:              'nac:dt:row_removed',
+      detail_match: { table_id: 'invoice.lines' }
+    },
+    stage_4_state_assertion: (afterSnap) => {
+      const dt = afterSnap.data_tables
+        .find(t => t.table_id === 'invoice.lines');
+      const stillThere = dt.current_state.rows
+        .some(r => r.product === 'Auriculares');
+      return { passed: !stillThere,
+               note: stillThere ? 'row still in table' : 'row gone' };
+    }
+  }
+});
+// result: { passed, stages: [{name, passed, evidence}], log, latency_ms }
+```
+
+The primitive runs the same agentic dispatch path the
+production agent uses, captures the LLM's chosen kind, the
+resolved parameters, every event fired during the dispatch
+window, and the post-state -- then matches against
+`expected.stage_*`.
+
+When `page` is supplied (Playwright), the test is
+end-to-end against a real browser. When `snapshot` is
+supplied (a frozen `describe_v2()`), the test runs offline
+against the matcher + planner only -- useful for rapid
+iteration on a snapshot fixture without spinning up a
+browser. Both modes verify the same four stages.
+
+### 19.4 Conformance mandate
+
+**A NAC-3 deployment is non-conformant if it lacks chain
+tests covering at least:**
+
+| Operator domain | Required chain test count |
+|---|---|
+| Data-table collection (sec 18) | 1 add + 1 edit + 1 remove + 1 commit + 1 read_aggregate |
+| Data-table matrix (sec 18) | 1 set_cell |
+| Sitemap navigation (sec 17) | 1 cross-page intent |
+| Confirm-dialog (sec 6.2.32) | 1 destructive intent + voice yes/no answer |
+| Locale switch (rule 13) | 1 change_locale meta-command |
+| Plain click (sec 16 baseline) | 1 single-click intent + 1 click_by_verb |
+
+A deployment with five data-tables, three sitemap paths, and
+two destructive actions ships at least 11 chain tests. The
+adopter's CI MUST run them on every push; a red chain test
+blocks merge. Validators MAY ship a `validate_chain_coverage()`
+helper that reads the deployment's data_tables / sitemap /
+confirm registry and reports missing chain-test slugs.
+
+This is intentionally stricter than v2.0's spec test
+(`tests/nac-v2-extensions.spec.js`, 59 unit tests) because
+unit tests cannot detect the stage-boundary bug class -- only
+chain tests can.
+
+### 19.5 Reference fixtures
+
+The reference implementation includes:
+
+- `packages/test-runner/tests/chain.spec.js` -- 8 chain tests
+  exercising every required intent class against the
+  `example-v21-data-table.php` demo (or its offline snapshot
+  fixture). All 8 must pass before tagging any v2.x release.
+- `packages/test-runner/src/lib/chain-test.js` -- the
+  `runChainTest` implementation. Pure, browser-independent
+  for snapshot mode; uses Playwright for live mode.
+- `tests/fixtures/v21-data-table-snapshot.json` -- a frozen
+  `describe_v2()` of the demo that lets adopters run the
+  chain tests offline as part of their unit-test suite.
+
+### 19.6 Why this is normative, not advisory
+
+The spec previously said NAC-3 conformance requires HMAC,
+isTrusted attestation, and i18n catalogue completeness (sec
+9, 10, 11). It said nothing about end-to-end coherence, so an
+implementation could pass every conformance check while
+silently breaking the user-facing flow. The Pablo session of
+2026-05-09 (data-table demo) was the proof.
+
+Sec 19 closes that hole: NAC-3 conformance is now AND of:
+
+- Static contract conformance (HMAC + isTrusted + i18n + ASCII).
+- Unit-test coverage on the runtime primitives.
+- End-to-end chain test coverage on the user-facing intents.
+
+Adopters who ship without chain tests do not get the NAC-3
+badge. The cost of writing chain tests is bounded (a typical
+business app needs 15-30 of them); the cost of NOT writing
+them is recurring silent regressions that destroy adopter
+trust.
+
+---
+
 ## Cross-references
 
 - Formal RFC: `RFC_v2.0.0.md`
@@ -1377,6 +1539,7 @@ without throwing).
 - Operational plan: `docs/NAC_v20_ROADMAP_ACTIONABLE.md`
 - I18n integration: `docs/I18N_INTEGRATION_GUIDE.md`
 - Data-table guide: `docs/V2_1_DATA_TABLE_GUIDE.md` (NEW v2.1)
+- Chain test guide: `docs/V2_1_CHAIN_TEST_GUIDE.md` (NEW v2.1)
 - Tooling skeletons: `packages/`
 - Adopter case study: `case-studies/yujin.md` (in progress)
 - v1.9 baseline spec: `spec/NAC-v1.0.md`

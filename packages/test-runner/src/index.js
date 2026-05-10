@@ -6,6 +6,7 @@ var planner    = require('./lib/planner');
 var matcher    = require('./lib/matcher');
 var assertions = require('./lib/assertions');
 var coverage   = require('./lib/coverage');
+var chainTest  = require('./lib/chain-test');
 
 /* Playwright adapter is loaded lazily so the package works in
    environments without @playwright/test installed. */
@@ -24,6 +25,9 @@ module.exports = {
   assertConfidence: assertions.assertConfidence,
   NACAssertionError: assertions.NACAssertionError,
 
+  /* End-to-end chain conformance test (NAC v2.1 spec sec 19) */
+  runChainTest: chainTest.runChainTest,
+
   /* with-Playwright */
   get runIntent()                 { return _loadAdapter().runIntent; },
   get snapshot()                  { return _loadAdapter().snapshot; },
@@ -31,5 +35,5 @@ module.exports = {
   get dispatchDataTableOp()       { return _loadAdapter().dispatchDataTableOp; },
   get clickAnchorWithContinuation() { return _loadAdapter().clickAnchorWithContinuation; },
 
-  version: '0.2.0'
+  version: '0.3.0'
 };

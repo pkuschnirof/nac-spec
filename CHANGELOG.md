@@ -20,7 +20,77 @@ Versioning conventions for the spec:
 
 ## [Unreleased]
 
-Nothing yet.
+### Added -- spec sec 19: end-to-end chain conformance test (NEW)
+
+Mandatory at NAC-3. Pablo's 2026-05-09 demo session caught a
+class of bug that no unit test could catch: a backend
+compactor silently dropping data_tables[] from the prompt,
+the LLM hallucinating row content, the user-visible flow
+broken end-to-end while every spec contract held individually.
+Sec 19 codifies the fix-class.
+
+The four-stage chain that every supported intent MUST verify:
+
+  1. Intent detection: LLM resolves natural-language phrase
+     to a typed action kind (sec 16 vocabulary).
+  2. Disambiguated dispatch: kind + parameters resolve via
+     the snapshot the LLM saw to a concrete runtime call.
+  3. Runtime event emission: dispatch causes the canonical
+     event documented in sec 6.2 / 18.6 to fire.
+  4. Side-effect coherence: post-dispatch describe_v2() shows
+     the intent reflected in state.
+
+Coverage mandate (sec 19.4): a NAC-3 deployment with five
+data-tables, three sitemap paths, and two destructive actions
+ships ~15 chain tests, run in CI on every push, blocking
+merge on red.
+
+### Added -- @nac-spec/test-runner v0.3.0: runChainTest
+
+packages/test-runner/src/lib/chain-test.js (NEW) implements
+the chain-test primitive. Two modes:
+- Live (Playwright + browser + LLM): verifies all four stages
+  against a real session.
+- Offline (frozen snapshot): verifies stages 1 + 2 in pure
+  node, no DOM, no LLM. Cheap iteration.
+
+8 reference tests in packages/test-runner/tests/chain.spec.js
+covering remove/edit/add/commit/aggregate/locale plus a
+deliberate REGRESSION TEST that strips data_tables from the
+snapshot and asserts stage 2 fails -- the unit test that
+would have caught Pablo's bug at CI time on day one.
+
+Suite total: 33/33 pass (was 25/25 before chain-test).
+
+### Added -- docs/V2_1_CHAIN_TEST_GUIDE.md (NEW)
+
+11-section adopter guide: why chain tests are mandatory, the
+four stages, two modes, expected shape, contract for stage 2,
+the regression-test pattern, live-mode Playwright setup, CI
+integration, limits, references.
+
+### Updated -- system prompt rules 15 + 16
+
+Two new rules in yjNacDemoSystemPrompt (cross-repo,
+rpaforce-crm) that close the LLM-emits-only-message bug class:
+- Rule 15: ACTIONS ARE MANDATORY for mutation intents
+  ('borra', 'agrega', 'cambia', etc). Returning only
+  {message:'Borrando...'} with actions:[] is BROKEN. ALWAYS
+  emit both.
+- Rule 16: RESOLVE row_id BEFORE emitting dt_remove_row /
+  dt_edit_cell, with explicit 5-step recipe drawing on
+  current_state.rows.
+
+### Updated
+
+- spec/NAC-v2.0.md -- new sec 19 + cross-references.
+- CLAUDE.md -- new "End-to-end chain testing is MANDATORY at
+  NAC-3" reminder right after the ASCII-purity rule.
+- packages/test-runner/package.json -- 0.2.0 -> 0.3.0.
+- nac-chat-client.js -- diagnostic log of every backend
+  response so 'chat says X but nothing happens' is
+  distinguishable from 'chat dispatched X but it failed
+  silently'.
 
 ## [2.1.0-rc1] - 2026-05-09
 

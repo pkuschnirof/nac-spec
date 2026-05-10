@@ -45,6 +45,19 @@ to use what" is required reading before you make changes here.
   impl (rule from spec section 11). Do not introduce non-ASCII
   characters in `spec/`, `js/`, `validator/`, `runner/`. Demos
   and examples MAY use Unicode.
+- **End-to-end chain testing is MANDATORY at NAC-3** (sec 19,
+  added v2.1). The spec test suite + unit tests do NOT catch
+  stage-boundary regressions where, for example, the backend
+  intermediary silently drops `data_tables` from the prompt
+  and the LLM hallucinates the rows. Every claim of NAC-3
+  conformance MUST ship `runChainTest`-based tests covering
+  the four-stage pipeline (intent detection -> disambiguated
+  dispatch -> runtime event -> side-effect coherence) for
+  every intent class the host supports. Reference primitive:
+  `packages/test-runner/src/lib/chain-test.js`. CI gate:
+  `packages/test-runner/tests/chain.spec.js` is the offline
+  conformance suite; the live counterpart runs in the host's
+  Playwright suite.
 
 ## When you ship UI in another repo
 
