@@ -194,7 +194,13 @@ event emission tests run in pure node without jsdom.
 - RPA bots reading state once + planning a transactional batch
   of edits + committing.
 
-## [2.0.0-rc5] - 2026-05-09
+### Subset of 2.0.0-rc5: @nac-spec/test-runner v0.1.0
+
+(Shipped together with 2.0.0-rc5 below; documented separately
+here for clarity. The test-runner package was the first
+consumer of the sec 17 sitemap primitive + the breakthrough
+that made E2E + RPA + AI agent integration converge on one
+manifest.)
 
 `packages/test-runner/v0.1.0` -- autonomous test runner that
 plans actions from `describe_v2()` + sitemap, executes against
@@ -252,8 +258,6 @@ testing + RPA + AI agent integration) into one surface. Covers:
 
 Adds a "Testing & RPA breakthrough" section linking to the new
 package + breakthrough doc, in the "What v2.0 adds" preamble.
-
-## [2.0.0-rc5] - 2026-05-09
 
 ## [2.0.0-rc5] - 2026-05-09
 

@@ -246,13 +246,52 @@
     return null;
   }
 
+  /* Buffer for validate_global_v2 to surface findings emitted
+     by runtime guards (added rc6). Declared BEFORE
+     attestUserGesture so the override-blocking branch can
+     push into it without a temporal-dead-zone error. */
+  var _validatorFindings = [];
+
   var _scriptOverride = null;
   function attestUserGesture(opts) {
     opts = opts || {};
+    /* 2026-05-09 (Claude R6 MEDIUM): the API was previously a
+       complete bypass for the identity-binding check. A page-
+       level script could call
+       attestUserGesture({trusted:true, type:'user'}) and the
+       next invoke would inherit attested=true with NO identity
+       binding to a real isTrusted gesture path. The override
+       was specified as testing-only (sec 15.10) but the runtime
+       accepted arbitrary opts.type values.
+
+       Fix: opts.type may ONLY be 'script' or 'agent'. Attempts
+       to claim 'user' (the only type that maps to source.type=
+       'user' downstream) are blocked at runtime AND emit a
+       finding code script_override_claims_user that
+       validate_global_v2() reports. The override remains
+       useful for headless test fixtures (testing-only as the
+       spec always said) but cannot launder a script-origin
+       action as a user-origin one. */
+    var requestedType = (typeof opts.type === 'string' && opts.type) ? opts.type : 'script';
+    if (requestedType === 'user') {
+      _validatorFindings.push({
+        code: 'script_override_claims_user',
+        severity: 'error',
+        timestamp: Date.now(),
+        note: 'attestUserGesture rejected opts.type="user" -- only script/agent permitted'
+      });
+      console.warn('[NAC v2] attestUserGesture: opts.type="user" rejected; '
+        + 'forcing type="script". Identity-binding bypass blocked.');
+      requestedType = 'script';
+    }
+    if (requestedType !== 'script' && requestedType !== 'agent') {
+      throw new Error('[NAC v2] attestUserGesture: opts.type must be '
+        + '"script" or "agent" (got "' + requestedType + '")');
+    }
     _scriptOverride = {
       trusted: !!opts.trusted,
-      type: opts.type || 'script',
-      ts: Date.now()
+      type:    requestedType,
+      ts:      Date.now()
     };
   }
 
@@ -1291,6 +1330,20 @@
   function validate_global_v2(opts) {
     opts = opts || {};
     var findings = { errors: [], warnings: [] };
+    /* 2026-05-09 (Claude R6): drain runtime guard findings
+       FIRST, before any early-return, so security-relevant
+       events (script_override_claims_user, etc.) ALWAYS reach
+       the validator output regardless of i18n severity. */
+    for (var fi = 0; fi < _validatorFindings.length; fi++) {
+      var rf = _validatorFindings[fi];
+      var bkt = rf.severity === 'error' ? findings.errors : findings.warnings;
+      bkt.push({
+        code:      rf.code,
+        severity:  rf.severity,
+        timestamp: rf.timestamp,
+        note:      rf.note
+      });
+    }
     /* v2.0-rc2 (Grok T5-F1 + Mistral T5-F2): severity for missing-
        locale findings now honours the tolerance setting. Default
        at NAC-3 is 'warn'; hosts that need NAC-4-equivalent strict

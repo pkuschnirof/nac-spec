@@ -286,9 +286,29 @@ https://github.com/pkuschnirof/nac-spec
 
 ## Last updated
 
-2026-05-07. NAC spec version: 1.8.0 / runtime 1.8.0 (strict
-superset of 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0). v1.8.0
-is a MINOR release landing every action item from the
+2026-05-09. **NAC spec version: 2.1 / runtime: v1.9.0 base
+(`NAC.version`) + v2.1.0-rc1 extensions (`NAC.version_v2`)**
+(strict superset of 2.0, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3,
+1.2, 1.1, 1.0).
+
+The v2.x line adds: hierarchical scope constructor
+(`NAC.scope`), auto-registration from DOM (`NAC.autoRegister`),
+adopt third-party non-compliant (`NAC.adopt`), Shadow DOM /
+iframe bridging, virtual manifests (`NAC.declareVirtual`),
+ephemeral capture, multi-tenant prefix, HMAC mandatory at
+NAC-3 + isTrusted attestation with composedPath identity
+binding (16ms freshness window), L1 i18n contract with
+10-locale catalogs, the intermediary system prompt contract
+(spec sec 16), the sitemap primitive (sec 17), the data-table
+primitive (sec 18 v2.1 -- collection + matrix + readonly
+subkinds, transactional commit, computed columns, validators,
+events with by:'user'|'agent' attribution), and the
+end-to-end chain conformance test mandate at NAC-3 (sec 19,
+runChainTest in @nac-spec/test-runner).
+
+The v1.8.0 historical note below remains for back-reference:
+
+v1.8.0 was a MINOR release landing every action item from the
 four-AI peer review of v1.7.0 (Microsoft Copilot, DeepSeek,
 Mistral Le Chat, Grok). Highlights: ProvenanceBlock
 (`source: { type: 'user' | 'agent' | 'script', id?, tool? }`)

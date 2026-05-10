@@ -536,6 +536,18 @@ runtime MUST honour this override for the next NAC action invocation
 (within 16ms freshness window in rc3+, was 100ms in rc2) and ignore
 it thereafter.
 
+**`opts.type` is restricted to `'script'` or `'agent'` (rc6,
+Claude R6 MEDIUM)**. The runtime MUST NOT honour `opts.type='user'`;
+attempting to claim user attestation from a script-level call is a
+laundering vector that bypasses the identity-binding check
+(rc3 T4-F1 fix) entirely. The runtime MUST log the attempt as
+finding `script_override_claims_user` (severity: error, surfaced
+via `validate_global_v2()`), force the override to `type='script'`,
+and emit a `console.warn` so the developer is aware. Hosts that
+genuinely need user-gesture attestation use the real DOM event
+path (which the rc3 identity binding validates); the override is
+testing-only and stays so by construction.
+
 ### Mobile WebView attestation hook (v2.0-rc2, Mistral T4-F1)
 
 Mobile WebView contexts (Cordova, Capacitor, React Native WebView,
