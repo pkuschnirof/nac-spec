@@ -1,3 +1,20 @@
+> # HISTORICAL ARCHIVE -- NAC v1.0 (frozen 2026-05-10)
+>
+> This repository holds **NAC v1.0**, the first line of the protocol, under
+> its original name (*Navegabilidad Automatica Compliance*). It is frozen
+> and kept only as the historical record of that line. **It is not
+> maintained and must not be implemented against.**
+>
+> **The protocol is now NAC3 -- Native Agent Contract. It lives here:**
+>
+> - Specification + reference runtime: **https://github.com/yujinapp/nac-spec**
+> - Documentation site: **https://yujin.app/nac-spec/**
+> - Package: `npm install @nac3/runtime`
+>
+> Attribute names, verbs and identifiers changed between v1.0 and NAC3.
+> The text below describes the old contract and will not match the
+> current runtime.
+
 # NAC -- Navegabilidad Automatica Compliance
 
 > A design norm that lets AI agents, voice assistants, RPA bots and
